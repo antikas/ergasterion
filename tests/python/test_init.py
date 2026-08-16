@@ -15,6 +15,7 @@ import tempfile
 import traceback
 from pathlib import Path
 
+import duckdb
 import yaml
 
 # Allow direct execution from the repository root.
@@ -450,6 +451,14 @@ def test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph() -> None:
             _fail("`dbt build -t duckdb` against the scaffolded estate failed", p)
         assert (estate / "target" / "consumer_scaffold.duckdb").exists(), (
             "the consumer build must create its local DuckDB database"
+        )
+        with duckdb.connect(str(estate / "target" / "consumer_scaffold.duckdb"), read_only=True) as con:
+            rows = con.execute(
+                "select alpha_name, alpha_code "
+                "from main_canonical.canonical_alpha order by alpha_code"
+            ).fetchall()
+        assert rows == [("Alpha One", "A1"), ("Alpha Two", "A2")], (
+            "the consumer build must preserve each source record's canonical payload"
         )
 
         # (7) contracts + ODPS descriptor + graph map, all emitted inside the scaffolded

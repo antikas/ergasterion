@@ -274,7 +274,10 @@ def _fixture_declaration() -> dict:
                         "bridge": {
                             "resolutions": [{
                                 "alias": "alpha_res", "model": "res_alpha", "join_type": "inner",
-                                "conditions": ["alpha_res.source_system = source.source_system"],
+                                "conditions": [
+                                    "alpha_res.source_system = source.source_system",
+                                    "alpha_res.source_id = source.source_id",
+                                ],
                             }],
                             "select": [
                                 {"name": "source_id", "expression": "source.source_id"},
@@ -293,7 +296,10 @@ def _fixture_declaration() -> dict:
                         "bridge": {
                             "resolutions": [{
                                 "alias": "beta_res", "model": "res_beta", "join_type": "inner",
-                                "conditions": ["beta_res.source_system = source.source_system"],
+                                "conditions": [
+                                    "beta_res.source_system = source.source_system",
+                                    "beta_res.source_id = source.source_id",
+                                ],
                             }],
                             "select": [
                                 {"name": "source_id", "expression": "source.source_id"},
