@@ -1,0 +1,5 @@
+mercaro_record_id,mercaro_order_id,mercaro_product_id,line_number,quantity,unit_price,line_revenue,currency,order_date
+MERC-OL-001,MERC-O-001,MERC-PROD-002,1,1,34.99,34.99,GBP,2025-07-05
+MERC-OL-002,MERC-O-001,MERC-PROD-001,2,1,57.50,57.50,GBP,2025-07-05
+MERC-OL-003,MERC-O-002,MERC-PROD-003,1,2,91.00,182.00,GBP,2025-07-06
+MERC-OL-004,MERC-O-003,MERC-PROD-002,1,1,34.99,34.99,GBP,2025-07-07

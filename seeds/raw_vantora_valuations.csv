@@ -1,0 +1,9 @@
+valuation_id,vantora_fund_id,vantora_company_id,valuation_date,value_usd,method,valuation_level,confidence_score
+CEP-VAL-001,CPS-1001,CEP-PC-001,2025-03-31,14200000,manager_mark,level_3,0.91
+CEP-VAL-002,CPS-1001-A,CEP-PC-001,2025-06-30,14900000,manager_mark,level_3,0.92
+CEP-VAL-003,CPS1001,CEP-PC-002,2025-09-30,8300000,manager_mark,level_3,0.88
+CEP-VAL-004,CPS-2002,CEP-PC-003,2025-09-30,21400000,manager_mark,level_3,0.90
+CEP-VAL-005,CPS-3003,CEP-PC-004,2025-06-30,11100000,manager_mark,level_3,0.83
+CEP-VAL-006,CPS3003,CEP-PC-004,2025-09-30,11850000,manager_mark,level_3,0.84
+CEP-VAL-007,CPS-4004,CEP-PC-005,2025-09-30,7600000,mark_to_model,level_3,0.86
+CEP-VAL-008,CPS-5005,CEP-PC-006,2025-09-30,4200000,manager_mark,level_3,0.77

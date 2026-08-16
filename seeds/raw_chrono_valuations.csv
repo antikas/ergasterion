@@ -1,0 +1,4 @@
+mark_uid,vehicle_code,asset_uid,mark_date,usd_fair_value,mark_method,fair_value_bucket,extraction_confidence
+CHR-VAL-001,CHR-AG2-A,CHR-PC-LUMINA,2025-12-31,18800000,manager_mark,level_3,0.91
+CHR-VAL-002,CHR-NB4-M,CHR-PC-NOVA,2025-12-31,14200000,manager_mark,level_3,0.88
+CHR-VAL-003,CHR-HELIO-CLIMATE-I,CHR-PC-SUNVALE,2025-12-31,6200000,mark_to_model,level_3,0.84

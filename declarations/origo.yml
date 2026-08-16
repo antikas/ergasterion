@@ -1,0 +1,170 @@
+source:
+  name: origo
+  display_name: ORIGO
+  system: ORIGO deal-origination CRM feed
+  priority: 60
+
+# DESCRIPTIVE-ONLY (see vantora.yml header): validate_canonical_mappings checks every
+# value below for spelling/schema drift against the OpenIM PM-15 Deal model on every
+# emit. It does NOT generate the canonical layer; models/canonical/canonical_deal.sql
+# is hand-authored. Deal resolution deduplicates records within the single ORIGO CRM
+# feed. Fund resolution is a separate cross-source process.
+canonical_mappings:
+  deal:
+    model_file: model/entities/specialisations/private-markets/PM-15-deal.md
+    business_keys:
+      source_deal_id: deal_id
+      external_deal_id: deal_id
+      deal_name: deal_name
+    attributes:
+      deal_name: deal_name
+      target_entity_id: target_entity_id
+      strategy: strategy
+      originating_team: originating_team
+      source_channel: source_channel
+      sourced_date: sourced_date
+      structure: structure
+      converted_record_type: converted_record_type
+      converted_record_id: converted_record_id
+
+tables:
+  deals:
+    raw_model: raw_origo_deals
+    description: >
+      Synthetic CRM-shaped deal-origination feed (ORIGO). Two intra-source duplicate
+      pairs share a deal external id (tier-1 merge); one middle-band pair carries no
+      external id and near-identical names (tier-2 review). One deal converts to an
+      existing fund golden key; one deal targets an existing golden company.
+    seed_tests:
+      - {name: deal_id, data_tests: [unique, not_null]}
+      - {name: deal_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_deal_id, data_tests: [not_null]}
+      - {name: deal_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'origo'"}
+      - {name: source_record_id, expression: "cast(deal_id as string)"}
+      - {name: source_deal_id, expression: "cast(deal_id as string)"}
+      - {name: external_deal_id, expression: "{{ blank_to_null('external_deal_id') }}"}
+      - {name: deal_name, expression: "cast(deal_name as string)"}
+      - {name: target_entity_id, expression: "{{ blank_to_null('target_entity_id') }}"}
+      - {name: strategy, expression: "cast(strategy as string)"}
+      - {name: originating_team, expression: "cast(originating_team as string)"}
+      - {name: source_channel, expression: "cast(source_channel as string)"}
+      - {name: sourced_date, expression: "{{ dpf_safe_cast('sourced_date', 'date') }}"}
+      - {name: structure, expression: "cast(structure as string)"}
+      - {name: converted_record_type, expression: "{{ blank_to_null('converted_record_type') }}"}
+      - {name: converted_record_id, expression: "{{ blank_to_null('converted_record_id') }}"}
+    vault_entities:
+      # Deal master: hub_deal + sat_deal + bv_deal golden record, resolved via res_deal.
+      # The where-clause drops pending_probabilistic deals (null golden key) -- they
+      # await tier-2 review and never enter the golden record, the same discipline the
+      # fund cascade uses.
+      - name: deals
+        entity: deal
+        record_source: "!ORIGO_DEALS"
+        bridge:
+          resolutions:
+            - alias: deal_resolution
+              model: res_deal
+              join_type: inner
+              conditions:
+                - deal_resolution.source_system = source.source_system
+                - deal_resolution.source_id = source.source_deal_id
+                - deal_resolution.source_record_id = source.source_record_id
+          select:
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_deal_id, expression: source.source_deal_id}
+            - {name: external_deal_id, expression: source.external_deal_id}
+            - {name: deal_name, expression: source.deal_name}
+            - {name: target_entity_id, expression: source.target_entity_id}
+            - {name: strategy, expression: source.strategy}
+            - {name: originating_team, expression: source.originating_team}
+            - {name: source_channel, expression: source.source_channel}
+            - {name: sourced_date, expression: source.sourced_date}
+            - {name: structure, expression: source.structure}
+            - {name: converted_record_type, expression: source.converted_record_type}
+            - {name: converted_record_id, expression: source.converted_record_id}
+            - {name: deal_resolution_tier, expression: deal_resolution.resolution_tier}
+            - {name: deal_resolution_confidence, expression: deal_resolution.confidence}
+            - {name: effective_from, expression: source.sourced_date}
+            - {name: golden_deal_key, expression: deal_resolution.golden_deal_key}
+          where:
+            - deal_resolution.golden_deal_key is not null
+
+      # Deal -> target-company link (rides hub_deal + hub_portfolio_company). Resolves
+      # the target to an EXISTING golden company via the read-only external-id lookup;
+      # a deal whose target does not resolve simply produces no edge (no ghost link).
+      - name: deal_target_company
+        entity: deal_target_company
+        record_source: "!ORIGO_DEAL_TARGET_COMPANY"
+        bridge:
+          resolutions:
+            - alias: deal_resolution
+              model: res_deal
+              join_type: inner
+              conditions:
+                - deal_resolution.source_system = source.source_system
+                - deal_resolution.source_id = source.source_deal_id
+                - deal_resolution.source_record_id = source.source_record_id
+            - alias: company_lookup
+              model: int_deal_target_company
+              join_type: left
+              conditions:
+                - company_lookup.company_external_id = source.target_entity_id
+          select:
+            - {name: source_deal_id, expression: source.source_deal_id}
+            - {name: target_entity_id, expression: source.target_entity_id}
+            - {name: target_company_external_id, expression: source.target_entity_id}
+            - {name: effective_from, expression: source.sourced_date}
+            - {name: golden_deal_key, expression: deal_resolution.golden_deal_key}
+            - {name: golden_portfolio_company_key, expression: company_lookup.golden_portfolio_company_key}
+          where:
+            - deal_resolution.golden_deal_key is not null
+            - company_lookup.golden_portfolio_company_key is not null
+
+      # Deal -> fund conversion link (rides hub_deal + hub_fund). The funnel exit edge:
+      # a closed deal's converted_record_id resolves to an existing well-resolved fund
+      # golden key via the read-only external-id lookup. Only converted+resolved deals
+      # produce an edge.
+      - name: deal_fund_conversion
+        entity: deal_fund_conversion
+        record_source: "!ORIGO_DEAL_FUND_CONVERSION"
+        bridge:
+          resolutions:
+            - alias: deal_resolution
+              model: res_deal
+              join_type: inner
+              conditions:
+                - deal_resolution.source_system = source.source_system
+                - deal_resolution.source_id = source.source_deal_id
+                - deal_resolution.source_record_id = source.source_record_id
+            - alias: fund_lookup
+              model: int_deal_conversion_fund
+              join_type: left
+              conditions:
+                - fund_lookup.fund_external_id = source.converted_record_id
+          select:
+            - {name: source_deal_id, expression: source.source_deal_id}
+            - {name: converted_record_type, expression: source.converted_record_type}
+            - {name: converted_record_id, expression: source.converted_record_id}
+            - {name: effective_from, expression: source.sourced_date}
+            - {name: golden_deal_key, expression: deal_resolution.golden_deal_key}
+            - {name: golden_fund_key, expression: fund_lookup.golden_fund_key}
+          where:
+            - deal_resolution.golden_deal_key is not null
+            - fund_lookup.golden_fund_key is not null
+
+entity_resolution:
+  deal:
+    model: stg_origo_deals
+    columns:
+      source_system: source_system
+      source_id: source_deal_id
+      source_record_id: source_record_id
+      deal_name: deal_name
+      normalised_name: "{{ normalise_name('deal_name') }}"
+      external_deal_id: external_deal_id
+      strategy: strategy
+      sourced_date: sourced_date

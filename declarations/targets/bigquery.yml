@@ -1,0 +1,25 @@
+# Structural budget declaration for the bigquery deployment target.
+# ergasterion/structure_gate.py validates every emitted and hand-authored model
+# against these budgets; an artefact exceeding a budget fails generation with
+# the budget and the artefact named. The values are estate policy data, set to
+# hold on this adapter and tightened where portability across the declared
+# targets demands it.
+adapter: bigquery
+kind: deployment
+budgets:
+  # Consecutive view levels a single statement expands. Computation layers
+  # materialise as tables; a view is a one-deep interface artefact at a
+  # declared boundary (declarations/targets/interfaces.yml).
+  max_view_chain_depth: 1
+  # Source bytes of one model statement.
+  max_statement_bytes: 262144
+  # Relation identifiers: model, seed, and source table names.
+  max_relation_identifier_chars: 255
+  # Column identifiers: schema-file columns and seed CSV headers.
+  max_column_identifier_chars: 255
+  # One description string shipped as relation or column metadata.
+  max_description_bytes: 1024
+  # Data rows in one declared dbt seed. Larger feeds land through a source.
+  max_seed_rows: 10000
+  # Source bytes in one declared dbt seed CSV.
+  max_seed_bytes: 10485760

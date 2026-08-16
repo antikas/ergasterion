@@ -1,0 +1,4 @@
+mercaro_record_id,mercaro_product_id,shared_product_code,product_name,brand,category,list_price,currency,product_status,as_of_date
+MERC-PR-001,MERC-PROD-001,GTIN-1001,Wireless Earbuds,Aurio,audio,57.50,GBP,active,2025-03-01
+MERC-PR-002,MERC-PROD-002,GTIN-1003,Desk Lamp,Lumio,home,34.99,GBP,active,2025-03-01
+MERC-PR-003,MERC-PROD-003,GTIN-1004,Coffee Grinder,Zentra,kitchen,91.00,GBP,active,2025-03-01

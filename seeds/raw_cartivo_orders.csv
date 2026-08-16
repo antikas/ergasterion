@@ -1,0 +1,3 @@
+cartivo_record_id,cartivo_order_id,cartivo_customer_id,order_date,order_status,currency,order_total,channel
+CART-OR-001,CART-O-001,CART-CUST-001,2025-07-01,fulfilled,GBP,99.97,web
+CART-OR-002,CART-O-002,CART-CUST-003,2025-07-03,fulfilled,GBP,89.99,web

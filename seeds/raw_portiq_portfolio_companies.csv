@@ -1,0 +1,6 @@
+portiq_company_id,portiq_fund_id,company_name,company_lei,shared_external_id,sector,country
+PORTIQ-PC-901,PORTIQ-33,Lumina Health,549300LUMINAHEALTH01,OPENIM-PC-LUMINA,healthcare,US
+PORTIQ-PC-902,PORTIQ-33,GridForge Energy,,OPENIM-PC-GRIDFORGE,energy,US
+PORTIQ-PC-903,PORTIQ-44,NovaFoods,549300NOVAFOODS0001,OPENIM-PC-NOVA,consumer,GB
+PORTIQ-PC-904,PORTIQ-55,Atlas Robotics,,,industrials,DE
+PORTIQ-PC-905,PORTIQ-66,Blue Rail Logistics,,,transport,US

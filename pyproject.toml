@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ergasterion-factory"
+version = "0.3.0"
+description = "Deterministic, source-declaration-driven dbt data-product factory engine."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md", "LICENSES/*"]
+authors = [{ name = "antikas" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database",
+    "Topic :: Software Development :: Code Generators",
+]
+# All three sit in the artefact-producing path (Jinja renders every model,
+# PyYAML serialises every contract and descriptor, jsonschema validates them),
+# so the byte-stable gates depend on their behaviour: floors at the tested
+# versions, ceilings at the next major.
+dependencies = [
+    "pyyaml>=6.0,<7",
+    "jinja2>=3.1,<4",
+    "jsonschema>=4.17,<5",
+]
+
+[project.optional-dependencies]
+duckdb = [
+    "dbt-core==1.11.12",
+    "dbt-duckdb==1.11.0",
+]
+snowflake = [
+    "dbt-core==1.11.12",
+    "dbt-snowflake==1.11.6",
+]
+bigquery = [
+    "dbt-core==1.11.12",
+    "dbt-bigquery==1.11.3",
+]
+all = [
+    "dbt-core==1.11.12",
+    "dbt-duckdb==1.11.0",
+    "dbt-snowflake==1.11.6",
+    "dbt-bigquery==1.11.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/antikas/ergasterion"
+Documentation = "https://github.com/antikas/ergasterion#readme"
+Issues = "https://github.com/antikas/ergasterion/issues"
+Source = "https://github.com/antikas/ergasterion"
+
+[project.scripts]
+ergasterion = "ergasterion.cli:main"
+
+[tool.setuptools]
+packages = [
+    "ergasterion",
+    "ergasterion.scaffold",
+    "ergasterion.scaffold.macros",
+    "ergasterion.scaffold.targets",
+    "ergasterion.schemas",
+    "ergasterion.templates",
+]
+
+[tool.setuptools.package-data]
+# scaffold/** is the consumer-scaffold engine data `ergasterion init` copies --
+# generated from the engine source tree by ergasterion/sync_scaffold.py and shipped
+# in the wheel so a non-editable install scaffolds from its own package.
+ergasterion = [
+    "templates/*",
+    "schemas/*.json",
+    "scaffold/*.yml",
+    "scaffold/targets/*.yml",
+    "scaffold/macros/*.sql",
+]

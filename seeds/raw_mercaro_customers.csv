@@ -1,0 +1,4 @@
+mercaro_record_id,mercaro_customer_id,loyalty_id,email,full_name,city,buyer_segment,customer_status,as_of_date
+MERC-CR-001,MERC-CUST-001,LOY-1001,ava.m@example.com,Ava Thompson,London,gold,active,2025-04-01
+MERC-CR-002,MERC-CUST-002,,Ben.Carter@example.com,Ben Carter,Bristol,silver,active,2025-02-20
+MERC-CR-003,MERC-CUST-003,LOY-1004,diego.ramos@example.com,Diego Ramos,Madrid,bronze,active,2025-05-12

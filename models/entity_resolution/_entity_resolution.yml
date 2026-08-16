@@ -1,0 +1,193 @@
+version: 2
+
+# entity_resolution_decisions_log is a plain Snowflake table dbt never builds or
+# truncates -- created once, idempotently, by the on-run-start hooks in
+# dbt_project.yml (macros/entity_resolution_decisions.sql). Declared as a `source`,
+# not a seed/model, precisely because dbt must never manage its lifecycle: a seed
+# truncate-reloads on every build, which is the exact defect this replaces. Written
+# to directly by streamlit/streamlit_app.py's write_decision(); read by
+# int_entity_resolution_latest_decision.sql.
+sources:
+  - name: entity_resolution_raw
+    schema: "{{ target.schema }}_RAW"
+    tables:
+      - name: entity_resolution_decisions_log
+        description: >
+          Append-only analyst-decision log for the ER tier-2 review queue.
+          One row per Approve/Reject action a steward takes in
+          streamlit/streamlit_app.py -- INSERT only, never UPDATE/DELETE, so
+          re-adjudicating a pair appends a new row rather than overwriting the prior
+          one. Snowflake-only (the review-queue app is explicitly in-account-Snowflake
+          -only); created idempotently by the on-run-start hooks in dbt_project.yml,
+          never by a dbt seed/model, so no dbt build ever truncates it.
+
+models:
+  - name: int_vantora_fund_id_normalised
+    description: Tier 0 VANTORA fund-ID normalisation. Collapses VANTORA variants such as CPS-1001-A and CPS1001 to one canonical VANTORA key.
+    columns:
+      - name: source_record_id
+        data_tests: [unique, not_null]
+      - name: source_fund_id
+        data_tests: [not_null]
+      - name: canonical_vantora_fund_id
+        data_tests: [not_null]
+  - name: res_fund
+    description: Fund resolution map across VANTORA, MERIDEX, and PORTIQ using tier 0 VANTORA normalisation and tier 1 deterministic exact IDs.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_system, source_id, source_record_id]
+    columns:
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: res_gp
+    description: GP / manager resolution map across the three synthetic feeds.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_system, source_id]
+    columns:
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: res_portfolio_company
+    description: Portfolio-company resolution map across the three synthetic feeds.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_system, source_id]
+    columns:
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: res_deal
+    description: >
+      Deal resolution map for the single ORIGO CRM feed. INTRA-SOURCE ONLY
+      -- tier-1 deterministic merge on a shared deal external id; a name-only sighting
+      with no external id stays pending_probabilistic for the tier-2 review queue. Fund
+      resolution is a separate cross-source process.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_system, source_id, source_record_id]
+    columns:
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: res_customer
+    description: >
+      Customer resolution map for the e-commerce customer-360 domain
+      across the CARTIVO storefront, MERCARO marketplace and RELATIO CRM feeds. Tier-1
+      deterministic merge on a shared loyalty id (rank 1) or a normalised email (rank 2);
+      a name-only sighting stays pending_probabilistic. Customer matching is deterministic
+      only and does not enter the investment domain's tier-2 scorer.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_system, source_id, source_record_id]
+    columns:
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: res_product
+    description: >
+      Product resolution map for the e-commerce domain across CARTIVO and
+      MERCARO. Tier-1 deterministic merge on a shared product code (GTIN-like cross-vendor
+      identifier), so the same physical product sold on both feeds carries one
+      golden_product_key and an order line from either feed maps to it.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [source_system, source_id, source_record_id]
+    columns:
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: res_pending_probabilistic
+    description: Input surface for probabilistic ER tier-2 across investment funds, managers, portfolio companies, and deals. Tier-0/1 leftovers are widened with the string, sector, date, and value comparison proxies used by the composite score.
+    columns:
+      - name: entity_type
+        data_tests: [not_null]
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+  - name: int_entity_resolution_candidate_pairs
+    description: One row per tier-0/1 leftover naming its single best-scoring cross-source counterpart, with the four sub-scores and the weighted composite score.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [entity_type, source_system, source_id]
+    columns:
+      - name: entity_type
+        data_tests: [not_null]
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: composite_score
+        data_tests: [not_null]
+  - name: res_entity_resolution_tier2
+    description: Tier-2 3-way threshold routing over investment fund, manager, portfolio-company, and deal leftovers -- auto (>0.85, golden_entity_key populated) / review (0.65-0.85, surfaced via review_queue, not merged) / reject (<0.65, stays unresolved).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [entity_type, source_system, source_id]
+    columns:
+      - name: entity_type
+        data_tests: [not_null]
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: tier2_disposition
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [auto, review, reject]
+      - name: pending_probabilistic
+        data_tests: [not_null]
+  - name: int_entity_resolution_latest_decision
+    description: Latest-wins dedup over entity_resolution_decisions_log's append-only history -- one row per unordered (entity_type, source pair), the most recently reviewed_at row wins, so a re-adjudicated pair can never fan out downstream.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [entity_type, source_system_a, source_id_a, source_system_b, source_id_b]
+    columns:
+      - name: entity_type
+        data_tests: [not_null]
+      - name: source_system_a
+        data_tests: [not_null]
+      - name: source_id_a
+        data_tests: [not_null]
+      - name: decision
+        data_tests: [not_null]
+      - name: reviewed_at
+        data_tests: [not_null]
+  - name: review_queue
+    description: Human-review surface -- the 0.65-0.85 tier-2 band, left-joined against int_entity_resolution_latest_decision.sql's latest-wins view over the entity_resolution_decisions_log feedback loop so an already-adjudicated pair carries its decision instead of reappearing as open work.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [entity_type, source_system, source_id]
+    columns:
+      - name: entity_type
+        data_tests: [not_null]
+      - name: source_system
+        data_tests: [not_null]
+      - name: source_id
+        data_tests: [not_null]
+      - name: queue_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [pending_review, reviewed]

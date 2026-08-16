@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: cf_fund_hurdle
+    description: Query-time hurdle comparison. Joins fund/strategy hurdle config from seeds/hurdle_config.csv at read time and evaluates hurdle_cleared against the configured return metric (net IRR by default) -- never pre-materialised against a stale hurdle. The fund_hurdle_config join keys on performance.shared_external_id (business id), not the survivorship-collapsed golden_fund_key, so fund-scope overrides actually resolve.
+    columns:
+      - name: fund_performance_key
+        data_tests: [not_null]
+      - name: hurdle_config_scope
+        data_tests:
+          - accepted_values:
+              values: ['fund', 'strategy', 'unconfigured']
+          - accepted_values:
+              values: ['fund']
+              config:
+                where: "shared_external_id = 'OPENIM-FUND-APEX-II'"
+      - name: hurdle_rate
+        data_tests:
+          - dbt_utils.expression_is_true:
+              expression: "= 1.30"
+              config:
+                where: "shared_external_id = 'OPENIM-FUND-APEX-II'"
+
+  - name: cf_fund_multiples
+    description: Declarative fund-performance multiples. Single spec definition of tvpi/dpi/rvpi/moic, computed from fact_fund_performance_base's already-materialised paid_in_usd/distributions_usd/latest_nav_usd/invested_capital_usd; fact_fund_performance.sql joins this output back in. moic divides total value by invested capital, not paid-in, so it is >= tvpi and no longer byte-identical to it; funds with no seeded invested basis have invested = paid-in and moic = tvpi.
+    columns:
+      - name: fund_performance_key
+        data_tests: [not_null, unique]
+      - name: tvpi
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: dpi
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+  - name: cf_fund_dpi_gap
+    description: Declarative DPI-to-1.0 gap. Distance of realised DPI from a full return of paid-in capital.
+    columns:
+      - name: fund_performance_key
+        data_tests: [not_null]
+
+  - name: cf_fund_metric_reconciliation
+    description: Declarative conservation reconciliation across the 12-metric catalogue. Each residual output is asserted ~0 by the expected-value tests below, enforcing the metric identities tvpi = dpi + rvpi, moic * (invested / paid_in) = tvpi (basis consistency), and called_pct * committed = paid_in. net_irr and gross_irr pass through for downstream visibility. This model defines no gross-vs-net spread assertion because the declared cash-flow schema gives both fields the same flow basis, which would make that check vacuous.
+    data_tests:
+      # 2-ULP tolerance: tvpi and moic are reconciled from terms each already
+      # rounded to 6 decimal places, so the two rounded terms can differ from the 6dp-rounded
+      # total by up to 2 units in the last place (2e-6). A residual of -0.000001 is
+      # rounding drift rather than a modelling error, so the
+      # tolerance is widened from 1e-6 to 2e-6 to accommodate it.
+      - dbt_utils.expression_is_true:
+          expression: "tvpi_identity_residual is null or abs(tvpi_identity_residual) < 0.000002"
+      # moic_basis_residual = moic * (invested / paid_in) - tvpi. Both bases must
+      # reconstruct the same total value, so the residual is 0 up to warehouse rounding. moic
+      # and tvpi are each rounded to 6 decimal places, and multiplying moic by the
+      # invested/paid-in ratio carries that last-place error through, so the residual can land
+      # up to ~2 units in the last place (2e-6) off zero -- the same 2-ULP tolerance the tvpi
+      # identity uses. Confirmed live on the RESEED build: the largest observed
+      # residual was Orion at 1e-6 (invested 3.15M vs paid-in 3.5M), comfortably inside 2e-6.
+      # 2e-6 stays orders of magnitude below the ~0.1-0.2 residual a regression to the paid-in
+      # basis would produce, so the check keeps full teeth while absorbing rounding.
+      - dbt_utils.expression_is_true:
+          expression: "moic_basis_residual is null or abs(moic_basis_residual) < 0.000002"
+      - dbt_utils.expression_is_true:
+          expression: "called_identity_residual is null or abs(called_identity_residual) < 1"
+    columns:
+      - name: fund_performance_key
+        data_tests: [not_null, unique]

@@ -1,0 +1,12 @@
+cash_flow_id,meridex_fund_id,cash_flow_date,cash_flow_type,direction,amount_usd,currency
+SIT-CF-001,SS-F-77,2021-09-30,capital_call,outflow,5000000,USD
+SIT-CF-002,SS-F-77,2023-09-30,distribution,inflow,1800000,USD
+SIT-CF-003,SS-F-77,2022-09-30,capital_call,outflow,2500000,USD
+SIT-CF-004,SS-F-77,2024-09-30,distribution,inflow,2200000,USD
+SIT-CF-005,SS-F-88,2025-03-31,distribution,inflow,3600000,USD
+SIT-CF-006,SS-F-88,2025-06-30,capital_call,outflow,1200000,USD
+SIT-CF-007,SS-F-88,2025-09-30,distribution,inflow,4100000,USD
+SIT-CF-008,SS-F-99,2025-06-30,capital_call,outflow,3000000,USD
+SIT-CF-009,SS-F-99,2025-09-30,distribution,inflow,900000,USD
+SIT-CF-010,SS-F-101,2025-06-30,capital_call,outflow,3500000,USD
+SIT-CF-011,SS-F-101,2025-09-30,distribution,inflow,600000,USD

@@ -1,0 +1,369 @@
+# Domain model config for the E-COMMERCE / customer-360 example domain.
+#
+# This fully synthetic e-commerce customer-360 example shows that the engine is
+# domain-agnostic. It is defined by this file, the CARTIVO, MERCARO, and RELATIO
+# declarations, and their seeds, with no domain vocabulary in the engine. All domain
+# files are merged at emit time; this domain shares
+# NO section key with domains/investment.yml (customer/product/order vs fund/gp/...),
+# so the loud-on-collision merge in load_domains() never fires.
+#
+# Everyone here is synthetic: invented customers, emails on the reserved example.com
+# domain (RFC 2606), invented addresses, coined product/brand names -- nothing
+# resolvable to a real person or brand. The three feed names are coinages too
+# (CARTIVO web storefront / MERCARO marketplace / RELATIO CRM). No canonical_mappings
+# in any declaration for this domain -- there is no model repo for e-commerce, which
+# deliberately exercises the OpenIM-binding skip path (a clone with no local OpenIM
+# checkout emits this domain fine, WARN-only) and is part of the agnosticism proof.
+#
+# Sections are identical in shape to domains/investment.yml (see its header for the
+# per-section contract). The hashdiff column list is DERIVED at load (payload minus the
+# entity's hashdiff_exclude set), never hand-listed here.
+
+# ODCS v3.1.0 boundary config for the contract adapter (ergasterion/emit_contracts.py). Same
+# shape as domains/investment.yml's odcs block. This domain carries NO
+# authoritative_definitions ON PURPOSE: the e-commerce customer-360 validates against no
+# external reference model, which is exactly the agnosticism proof -- the same emitter that
+# links investment contracts to the public OpenIM model emits fully-valid ODCS here with no
+# such link and no model repo.
+odcs:
+  domain: ecommerce
+  contract_version: "1.0.0"
+  status: active
+  server:
+    server: ergasterion_snowflake
+    type: snowflake
+    environment: production
+    account: ergasterion
+    database: ERGASTERION
+    schema: MARTS
+  products:
+    canonical_customer: {entity: customer}
+    canonical_product: {entity: product}
+    dim_customer: {entity: customer}
+    dim_product: {entity: product}
+    dim_customer_segment: {}
+    fact_order: {entity: order}
+
+# Relation vocabulary for the map lane (ergasterion/graph_model.py). Same schema as
+# domains/investment.yml's relations block (see its header for the per-field contract);
+# read ONLY by the graph emitter family. This domain deliberately carries NO self-edge and
+# NO polymorphic edge -- its two relationships are both plain link-backed edges. What it
+# proves instead is the name-divergent structure-join: the link that carries a product line
+# is named order_line_product, but its payload entity_config is named order_line (the names
+# diverge). The map lane joins the payload to the link by declared STRUCTURE (a shared
+# src_pk value + the entity's links: list), never by name -- so order_line's columns ride
+# the INCLUDES / LINE_OF edge as edge properties with no name-matching anywhere.
+relations:
+  verbs:
+    PLACED_BY:
+      alias: placed-by
+      direction: directed
+      kind: association
+      cardinality: many_to_one
+      inverse: PLACED
+    PLACED:
+      alias: placed
+      direction: directed
+      kind: association
+      cardinality: one_to_many
+      inverse: PLACED_BY
+    INCLUDES:
+      alias: includes
+      direction: directed
+      kind: composition
+      cardinality: many_to_many
+      inverse: LINE_OF
+    LINE_OF:
+      alias: line-of
+      direction: directed
+      kind: composition
+      cardinality: many_to_many
+      inverse: INCLUDES
+  bindings:
+    - verb: PLACED_BY
+      source: order
+      target: customer
+      link: order_customer
+      source_key: order_hk
+      target_key: customer_hk
+    # Name-divergent link-entity: link order_line_product, payload entity order_line.
+    - verb: INCLUDES
+      source: order
+      target: product
+      link: order_line_product
+      source_key: order_hk
+      target_key: product_hk
+
+entity_configs:
+  customer:
+    satellite_base: customer
+    src_pk: customer_hk
+    hashdiff: customer_hashdiff
+    payload:
+    - source_record_id
+    - source_customer_id
+    - loyalty_id
+    - email
+    - full_name
+    - phone
+    - address_line
+    - city
+    - postal_code
+    - country
+    - marketing_consent
+    - preferred_channel
+    - buyer_segment
+    - customer_status
+    - as_of_date
+    - customer_resolution_tier
+    - customer_resolution_confidence
+    hashed_columns:
+      customer_hk: golden_customer_key
+      customer_hashdiff:
+        is_hashdiff: true
+    links: []
+  product:
+    satellite_base: product
+    src_pk: product_hk
+    hashdiff: product_hashdiff
+    payload:
+    - source_record_id
+    - source_product_id
+    - shared_product_code
+    - product_name
+    - brand
+    - category
+    - list_price
+    - currency
+    - product_status
+    - as_of_date
+    - product_resolution_tier
+    - product_resolution_confidence
+    hashed_columns:
+      product_hk: golden_product_key
+      product_hashdiff:
+        is_hashdiff: true
+    links: []
+  order:
+    satellite_base: order
+    src_pk: order_hk
+    hashdiff: order_hashdiff
+    payload:
+    - source_record_id
+    - source_order_id
+    - source_customer_id
+    - order_date
+    - order_status
+    - currency
+    - order_total
+    - channel
+    - customer_resolution_tier
+    - customer_resolution_confidence
+    hashed_columns:
+      order_hk: golden_order_key
+      customer_hk: golden_customer_key
+      order_customer_lhk:
+      - golden_order_key
+      - golden_customer_key
+      order_hashdiff:
+        is_hashdiff: true
+    links:
+    - order_customer
+  order_line:
+    satellite_base: order_line
+    src_pk: order_line_lhk
+    hashdiff: order_line_hashdiff
+    payload:
+    - source_record_id
+    - source_order_id
+    - source_product_id
+    - line_number
+    - quantity
+    - unit_price
+    - line_revenue
+    - currency
+    hashed_columns:
+      order_hk: golden_order_key
+      product_hk: golden_product_key
+      order_line_lhk:
+      - golden_order_key
+      - golden_product_key
+      order_line_hashdiff:
+        is_hashdiff: true
+    links:
+    - order_line_product
+hashdiff_exclude: {}
+hub_configs:
+  customer:
+    path: models/raw_vault/hubs/hub_customer.sql
+    src_pk: customer_hk
+    src_nk: golden_customer_key
+  product:
+    path: models/raw_vault/hubs/hub_product.sql
+    src_pk: product_hk
+    src_nk: golden_product_key
+  order:
+    path: models/raw_vault/hubs/hub_order.sql
+    src_pk: order_hk
+    src_nk: golden_order_key
+link_configs:
+  order_customer:
+    path: models/raw_vault/links/link_order_customer.sql
+    src_pk: order_customer_lhk
+    src_fk:
+    - order_hk
+    - customer_hk
+  order_line_product:
+    path: models/raw_vault/links/link_order_line_product.sql
+    src_pk: order_line_lhk
+    src_fk:
+    - order_hk
+    - product_hk
+bv_configs:
+  customer:
+    path: models/business_vault/bv_customer_golden_record.sql
+    hub_model: hub_customer
+    hub_pk: customer_hk
+    hub_nk: golden_customer_key
+    # Differential survivorship across the three feeds, achieved by the source
+    # priority order (RELATIO 30 < CARTIVO 40 < MERCARO 50, set in each declaration's
+    # source.priority) plus disjoint attribute population:
+    #   * contact attributes (full_name/email/phone/address/city/postal/country) --
+    #     the CRM (RELATIO) is highest priority, so it WINS a first_non_null contest
+    #     when it and a storefront/marketplace row both carry the attribute;
+    #   * preferences (marketing_consent/preferred_channel) -- only the storefront
+    #     (CARTIVO) populates them, so it wins by being the only non-null;
+    #   * buyer_segment -- only the marketplace (MERCARO) populates it, so it wins.
+    # A customer the CRM does not cover (partial coverage) simply falls through the
+    # coalesce to the next non-null source -- survivorship never breaks on its absence.
+    rules:
+      source_record_id: first_non_null
+      source_customer_id: first_non_null
+      loyalty_id: first_non_null
+      email: first_non_null
+      full_name: first_non_null
+      phone: first_non_null
+      address_line: first_non_null
+      city: first_non_null
+      postal_code: first_non_null
+      country: first_non_null
+      marketing_consent: first_non_null
+      preferred_channel: first_non_null
+      buyer_segment: first_non_null
+      customer_status: most_recent
+      as_of_date: most_recent
+      customer_resolution_tier: first_non_null
+      customer_resolution_confidence: first_non_null
+  product:
+    path: models/business_vault/bv_product_golden_record.sql
+    hub_model: hub_product
+    hub_pk: product_hk
+    hub_nk: golden_product_key
+    rules:
+      source_record_id: first_non_null
+      source_product_id: first_non_null
+      shared_product_code: first_non_null
+      product_name: first_non_null
+      brand: first_non_null
+      category: first_non_null
+      list_price: most_recent
+      currency: first_non_null
+      product_status: most_recent
+      as_of_date: most_recent
+      product_resolution_tier: first_non_null
+      product_resolution_confidence: first_non_null
+  order:
+    path: models/business_vault/bv_order_golden_record.sql
+    hub_model: hub_order
+    hub_pk: order_hk
+    hub_nk: golden_order_key
+    # Orders are single-source (each order lives in exactly one feed; natural ids are
+    # feed-prefixed so golden_order_key values never collide). The golden record is a
+    # degenerate survivorship -- one non-null source per order -- but is emitted through
+    # the same machinery so fact_order has one clean row per order.
+    rules:
+      source_record_id: first_non_null
+      source_order_id: first_non_null
+      source_customer_id: first_non_null
+      order_date: most_recent
+      order_status: most_recent
+      currency: first_non_null
+      order_total: most_recent
+      channel: first_non_null
+res_configs:
+  customer:
+    path: models/entity_resolution/res_customer.sql
+    stable_key_entity: customer
+    golden_key_column: golden_customer_key
+    # Tier-1 deterministic identity: a shared loyalty-programme id (rank 1) or a
+    # normalised email (rank 2). No name match key -- customer names are too weak to
+    # merge on, so name-only sightings stay unresolved rather than risk a false merge.
+    # This uses the same deterministic resolution path as
+    # res_gp/res_portfolio_company/res_deal.
+    #
+    # The shared scoring configuration contains customer weights for schema consistency.
+    # Customer records do not enter the probabilistic branch; the deterministic loyalty-id
+    # and normalised-email keys above define the complete customer-resolution behavior.
+    columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - customer_name
+    - normalised_name
+    - email
+    - normalised_email
+    - loyalty_id
+    - city
+    match_keys:
+    - column: loyalty_id
+      expression: concat('loyalty:', upper(loyalty_id))
+      type: loyalty_id
+    - column: normalised_email
+      expression: concat('email:', normalised_email)
+      type: normalised_email
+    output_columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - customer_name
+    - normalised_name
+    - deterministic_match_key
+    - exact_key_type
+    trailing_columns:
+    - email
+    - normalised_email
+    - loyalty_id
+    - city
+    - match_row_count
+    - match_source_count
+  product:
+    path: models/entity_resolution/res_product.sql
+    stable_key_entity: product
+    golden_key_column: golden_product_key
+    # Products merge across the storefront and the marketplace on a shared product code
+    # (a GTIN-like cross-vendor identifier), tier-1 deterministic only. Every seeded
+    # product carries a shared_product_code so it always resolves -- an unresolved
+    # product would drop its order lines at the link inner-join.
+    columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - product_name
+    - normalised_name
+    - shared_product_code
+    match_keys:
+    - column: shared_product_code
+      expression: concat('sku:', upper(shared_product_code))
+      type: shared_product_code
+    output_columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - product_name
+    - normalised_name
+    - deterministic_match_key
+    - exact_key_type
+    trailing_columns:
+    - shared_product_code
+    - match_row_count
+    - match_source_count

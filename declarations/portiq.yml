@@ -1,0 +1,230 @@
+source:
+  name: portiq
+  display_name: PORTIQ
+  system: PORTIQ performance analytics database
+  priority: 30
+
+# DESCRIPTIVE-ONLY: documents intended attribute lineage to the OpenIM canonical
+# model for onboarding review. ergasterion/emit.py's validate_canonical_mappings checks
+# every business_keys/attributes value for spelling and schema drift against the
+# OpenIM canonical model (model_file below) on every emit. It does NOT generate or
+# drive the canonical layer -- models/canonical/*.sql is hand-authored, not
+# templated from this block.
+canonical_mappings:
+  fund:
+    model_file: model/entities/specialisations/private-markets/PM-01-fund-and-vehicle.md
+    business_keys: {source_fund_id: external_ids, lei: lei, shared_external_id: external_ids, fund_name: known_aliases}
+    attributes: {fund_name: fund_name, gp_id: gp_id, asset_class: asset_class, strategy: strategy, vintage_year: vintage_year, currency: currency}
+  gp:
+    model_file: model/entities/specialisations/private-markets/PM-02-gp-management-company.md
+    business_keys: {source_gp_id: external_ids, lei: lei, gp_name: known_aliases}
+    attributes: {gp_name: gp_name}
+  portfolio_company:
+    model_file: model/entities/specialisations/private-markets/PM-04-portfolio-company.md
+    business_keys: {source_company_id: external_ids, lei: lei, shared_external_id: external_ids, company_name: known_aliases}
+    attributes: {company_name: company_name, sector: sector, country: country}
+  cash_flow:
+    model_file: model/entities/core/E-06-cash-flow-event.md
+    business_keys: {cash_flow_id: cash_flow_id, source_fund_id: instrument_id}
+    attributes: {cash_flow_date: cash_flow_date, cash_flow_type: cash_flow_type, direction: direction, amount_usd: amount, currency: currency, source_system: source}
+
+tables:
+  funds:
+    raw_model: raw_portiq_funds
+    seed_tests:
+      - {name: portiq_fund_id, data_tests: [unique, not_null]}
+      - {name: fund_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_fund_id, data_tests: [unique, not_null]}
+      - {name: fund_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'portiq'"}
+      - {name: source_fund_id, expression: "cast(portiq_fund_id as string)"}
+      - {name: fund_name, expression: "cast(fund_name as string)"}
+      - {name: gp_name, expression: "cast(gp_name as string)"}
+      - {name: gp_lei, expression: "{{ blank_to_null('gp_lei') }}"}
+      - {name: lei, expression: "{{ blank_to_null('fund_lei') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('shared_external_id') }}"}
+      - {name: asset_class, expression: "cast(asset_class as string)"}
+      - {name: strategy, expression: "cast(strategy as string)"}
+      - {name: vintage_year, expression: "{{ dpf_safe_cast('vintage_year', 'int') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+    vault_entities:
+      - name: funds
+        entity: fund
+        record_source: "!PORTIQ_FUNDS"
+        bridge:
+          resolutions:
+            - {alias: fund_resolution, model: res_fund, join_type: inner, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id]}
+            - {alias: gp_resolution, model: res_gp, join_type: left, conditions: [gp_resolution.source_system = source.source_system, "gp_resolution.source_id = concat(source.source_fund_id, ':gp')"]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_fund_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: source_gp_id, expression: "concat(source.source_fund_id, ':gp')"}
+            - {name: fund_name, expression: source.fund_name}
+            - {name: fund_family_name, expression: "cast(null as string)"}
+            - {name: vehicle_type, expression: "cast(null as string)"}
+            - {name: gp_name, expression: source.gp_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: asset_class, expression: source.asset_class}
+            - {name: strategy, expression: source.strategy}
+            - {name: vintage_year, expression: source.vintage_year}
+            - {name: committed_capital_usd, expression: "cast(null as numeric)"}
+            - {name: currency, expression: source.currency}
+            - {name: domicile, expression: "cast(null as string)"}
+            - {name: fund_status, expression: "cast(null as string)"}
+            - {name: as_of_date, expression: "cast(null as date)"}
+            - {name: effective_from, expression: "cast(null as date)"}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+            - {name: golden_gp_key, expression: gp_resolution.golden_gp_key}
+            - {name: gp_resolution_tier, expression: gp_resolution.resolution_tier}
+            - {name: gp_resolution_confidence, expression: gp_resolution.confidence}
+          where: [fund_resolution.golden_fund_key is not null]
+      - name: gps
+        entity: gp
+        source_model: stg_portiq_funds
+        record_source: "!PORTIQ_GPS"
+        bridge:
+          resolutions:
+            - {alias: gp_resolution, model: res_gp, join_type: inner, conditions: [gp_resolution.source_system = source.source_system, "gp_resolution.source_id = concat(source.source_fund_id, ':gp')"]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_gp_id, expression: "concat(source.source_fund_id, ':gp')"}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: gp_name, expression: source.gp_name}
+            - {name: lei, expression: source.gp_lei}
+            - {name: shared_external_id, expression: "cast(null as string)"}
+            - {name: domicile, expression: "cast(null as string)"}
+            - {name: relationship_start_date, expression: "cast(null as date)"}
+            - {name: effective_from, expression: "cast(null as date)"}
+            - {name: golden_gp_key, expression: gp_resolution.golden_gp_key}
+            - {name: gp_resolution_tier, expression: gp_resolution.resolution_tier}
+            - {name: gp_resolution_confidence, expression: gp_resolution.confidence}
+          where: [gp_resolution.golden_gp_key is not null]
+
+  cash_flows:
+    raw_model: raw_portiq_cash_flows
+    seed_tests: [{name: cash_flow_id, data_tests: [unique, not_null]}]
+    model_tests:
+      - {name: cash_flow_id, data_tests: [unique, not_null]}
+      - {name: source_fund_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'portiq'"}
+      - {name: cash_flow_id, expression: "cast(cash_flow_id as string)"}
+      - {name: source_fund_id, expression: "cast(portiq_fund_id as string)"}
+      - {name: cash_flow_date, expression: "{{ dpf_safe_cast('cash_flow_date', 'date') }}"}
+      - {name: cash_flow_type, expression: "cast(cash_flow_type as string)"}
+      - {name: direction, expression: "cast(direction as string)"}
+      - {name: amount_usd, expression: "{{ dpf_safe_cast('amount_usd', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+    vault_entities:
+      - name: cash_flows
+        entity: fund_cash_flow
+        record_source: "!PORTIQ_CASH_FLOWS"
+        bridge:
+          resolutions:
+            - {alias: fund_resolution, model: res_fund, join_type: inner, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: cash_flow_id, expression: source.cash_flow_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: cash_flow_date, expression: source.cash_flow_date}
+            - {name: cash_flow_type, expression: source.cash_flow_type}
+            - {name: direction, expression: source.direction}
+            - {name: amount_usd, expression: source.amount_usd}
+            - {name: currency, expression: source.currency}
+            - {name: effective_from, expression: source.cash_flow_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+          where: [fund_resolution.golden_fund_key is not null]
+
+  portfolio_companies:
+    raw_model: raw_portiq_portfolio_companies
+    seed_tests:
+      - {name: portiq_company_id, data_tests: [unique, not_null]}
+      - {name: company_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_company_id, data_tests: [unique, not_null]}
+      - {name: company_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'portiq'"}
+      - {name: source_company_id, expression: "cast(portiq_company_id as string)"}
+      - {name: source_fund_id, expression: "cast(portiq_fund_id as string)"}
+      - {name: company_name, expression: "cast(company_name as string)"}
+      - {name: lei, expression: "{{ blank_to_null('company_lei') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('shared_external_id') }}"}
+      - {name: sector, expression: "cast(sector as string)"}
+      - {name: country, expression: "cast(country as string)"}
+    vault_entities:
+      - name: portfolio_companies
+        entity: portfolio_company
+        record_source: "!PORTIQ_PORTFOLIO_COMPANIES"
+        bridge:
+          resolutions:
+            - {alias: company_resolution, model: res_portfolio_company, join_type: inner, conditions: [company_resolution.source_system = source.source_system, company_resolution.source_id = source.source_company_id]}
+            - {alias: fund_resolution, model: res_fund, join_type: left, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_company_id, expression: source.source_company_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: company_name, expression: source.company_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: sector, expression: source.sector}
+            - {name: sub_sector, expression: "cast(null as string)"}
+            - {name: country, expression: source.country}
+            - {name: status, expression: "cast(null as string)"}
+            - {name: first_seen_at, expression: "cast(null as date)"}
+            - {name: effective_from, expression: "cast(null as date)"}
+            - {name: golden_portfolio_company_key, expression: company_resolution.golden_portfolio_company_key}
+            - {name: portfolio_company_resolution_tier, expression: company_resolution.resolution_tier}
+            - {name: portfolio_company_resolution_confidence, expression: company_resolution.confidence}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+          where: [company_resolution.golden_portfolio_company_key is not null]
+
+entity_resolution:
+  fund:
+    model: stg_portiq_funds
+    columns:
+      source_system: source_system
+      source_id: source_fund_id
+      source_record_id: source_fund_id
+      fund_name: fund_name
+      normalised_name: "{{ normalise_name('fund_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      canonical_vantora_fund_id: "cast(null as string)"
+      asset_class: asset_class
+      strategy: strategy
+      vintage_year: vintage_year
+      currency: currency
+  gp:
+    model: stg_portiq_funds
+    columns:
+      source_system: source_system
+      source_id: "concat(source_fund_id, ':gp')"
+      gp_name: gp_name
+      normalised_name: "{{ normalise_name('gp_name') }}"
+      lei: gp_lei
+      shared_external_id: "cast(null as string)"
+      domicile: "cast(null as string)"
+      relationship_start_date: "cast(null as date)"
+  portfolio_company:
+    model: stg_portiq_portfolio_companies
+    columns:
+      source_system: source_system
+      source_id: source_company_id
+      source_fund_id: source_fund_id
+      company_name: company_name
+      normalised_name: "{{ normalise_name('company_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      sector: sector
+      country: country

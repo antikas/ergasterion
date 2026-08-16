@@ -1,0 +1,4 @@
+event_uid,vehicle_code,event_date,event_kind,investor_direction,usd_amount,currency_code
+CHR-CF-001,CHR-AG2-A,2025-10-15,capital_call,outflow,5000000,USD
+CHR-CF-002,CHR-NB4-M,2025-11-20,distribution,inflow,1750000,USD
+CHR-CF-003,CHR-HELIO-CLIMATE-I,2025-12-05,capital_call,outflow,4200000,USD

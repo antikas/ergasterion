@@ -1,0 +1,14 @@
+cash_flow_id,vantora_fund_id,cash_flow_date,cash_flow_type,direction,amount_usd,currency
+CEP-CF-001,CPS-1001,2021-09-30,capital_call,outflow,5000000,USD
+CEP-CF-002,CPS-1001-A,2023-09-30,distribution,inflow,1800000,USD
+CEP-CF-003,CPS1001,2022-09-30,capital_call,outflow,2500000,USD
+CEP-CF-004,CPS-1001,2024-09-30,distribution,inflow,2200000,USD
+CEP-CF-005,CPS-2002,2025-03-31,distribution,inflow,3600000,USD
+CEP-CF-006,CPS-2002,2025-06-30,capital_call,outflow,1200000,USD
+CEP-CF-007,CPS-2002,2025-09-30,distribution,inflow,4100000,USD
+CEP-CF-008,CPS-3003,2025-03-31,capital_call,outflow,4500000,USD
+CEP-CF-009,CPS3003,2025-06-30,capital_call,outflow,3000000,USD
+CEP-CF-010,CPS-3003,2025-09-30,distribution,inflow,900000,USD
+CEP-CF-011,CPS-4004,2025-06-30,capital_call,outflow,3500000,USD
+CEP-CF-012,CPS-4004,2025-09-30,distribution,inflow,600000,USD
+CEP-CF-013,CPS-5005,2025-09-30,capital_call,outflow,2000000,USD

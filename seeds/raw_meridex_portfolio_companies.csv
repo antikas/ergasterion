@@ -1,0 +1,6 @@
+meridex_company_id,meridex_fund_id,company_name,company_lei,shared_external_id,sector,country
+SS-PC-501,SS-F-77,Lumina Health Inc,549300LUMINAHEALTH01,OPENIM-PC-LUMINA,healthcare,US
+SS-PC-502,SS-F-77,GridForge Energy,,OPENIM-PC-GRIDFORGE,energy,US
+SS-PC-503,SS-F-88,Nova Foods,549300NOVAFOODS0001,OPENIM-PC-NOVA,consumer,GB
+SS-PC-504,SS-F-99,Atlas Robotics Ltd,,,industrials,DE
+SS-PC-505,SS-F-101,ClearPath Data,549300CLEARPATH001,OPENIM-PC-CLEARPATH,technology,US

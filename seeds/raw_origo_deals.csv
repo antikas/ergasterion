@@ -1,0 +1,11 @@
+deal_id,external_deal_id,deal_name,target_entity_id,strategy,originating_team,source_channel,sourced_date,structure,converted_record_type,converted_record_id
+D-001,ORIGO-EXT-001,Project Atlas,OPENIM-PC-LUMINA,buyout,deal_desk_alpha,proprietary,2025-01-10,spv,,
+D-002,ORIGO-EXT-002,Orion Credit Facility,,direct_lending,deal_desk_credit,proprietary,2025-02-20,direct,fund_investment,OPENIM-FUND-ORION-I
+D-003,ORIGO-EXT-003,Vertex Buyout,,buyout,deal_desk_alpha,gp_syndicated,2025-03-05,co_invest,,
+D-004,ORIGO-EXT-004,Helios Growth,,growth,deal_desk_beta,intermediated,2025-03-12,direct,,
+D-005,ORIGO-EXT-DUP-A,Blackpine Logistics,,buyout,deal_desk_alpha,proprietary,2025-03-15,spv,,
+D-006,ORIGO-EXT-DUP-A,Blackpine Logistics Group,,buyout,deal_desk_alpha,intermediated,2025-03-16,spv,,
+D-007,ORIGO-EXT-DUP-B,Cedar Renewables,,growth,deal_desk_beta,proprietary,2025-04-01,direct,,
+D-008,ORIGO-EXT-DUP-B,Cedar Renewables LLC,,growth,deal_desk_beta,proprietary,2025-04-02,direct,,
+D-009,,Riverstone Logistics,,buyout,deal_desk_gamma,proprietary,2025-04-15,spv,,
+D-010,,Riverstone Logistix,,growth,deal_desk_gamma,intermediated,2025-04-15,direct,,

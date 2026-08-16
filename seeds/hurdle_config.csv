@@ -1,0 +1,7 @@
+config_scope,fund_id,strategy,hurdle_type,return_metric,hurdle_rate,effective_from,config_source
+strategy,,growth,preferred_return,tvpi,1.25,2025-01-01,synthetic_strategy_default
+strategy,,buyout,moic_hurdle,moic,1.60,2025-01-01,synthetic_strategy_default
+strategy,,core_plus,preferred_return,tvpi,1.15,2025-01-01,synthetic_strategy_default
+strategy,,direct_lending,irr_hurdle,irr,0.08,2025-01-01,synthetic_strategy_default
+strategy,,early_stage,moic_hurdle,moic,1.80,2025-01-01,synthetic_strategy_default
+fund,OPENIM-FUND-APEX-II,,preferred_return,tvpi,1.30,2025-01-01,synthetic_fund_override

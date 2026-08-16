@@ -1,0 +1,9 @@
+# Declared interface boundaries: the model paths whose artefacts may
+# materialise as views. A view here is a one-deep interface artefact over
+# materialised relations; the per-target budget declarations beside this file
+# bind the depth. Every other layer is computation and materialises as a table
+# (the models block in dbt_project.yml). A lane target may add its own
+# view exceptions in its <adapter>.yml, each with the lane tooling that
+# depends on the view stated as the reason.
+view_layers:
+  - models/canonical

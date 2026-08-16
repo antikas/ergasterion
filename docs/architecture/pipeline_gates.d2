@@ -1,0 +1,42 @@
+# docs/architecture/pipeline_gates.d2
+#
+# Focused view of the verification gates shown in pipeline.d2.
+
+canvas: {
+  label: ""
+  style.fill: "#0d1117"
+  style.stroke: "#0d1117"
+  near: top-left
+
+  gates: {
+    label: "what keeps it honest"
+    class: container
+    grid-columns: 2
+    byte_stable: "emit.py --check\n(byte-stable re-emit)"
+    dialect_lint: "ergasterion/dialect_lint.py"
+    target_parse: "dbt parse\nSnowflake · BigQuery · DuckDB"
+    duckdb_build: "dbt build -t duckdb\n(complete local estate)"
+  }
+}
+
+classes: {
+  container: {
+    style.fill: "#111820"
+    style.stroke: "#21262d"
+    style.font-color: "#8b949e"
+    style.border-radius: 6
+    style.font-size: 24
+  }
+  gate-lit: {
+    style.fill: "#3fb950"
+    style.stroke: "#56d364"
+    style.font-color: "#0d1117"
+    style.stroke-width: 2
+    style.font-size: 28
+  }
+}
+
+canvas.gates.byte_stable.class: gate-lit
+canvas.gates.dialect_lint.class: gate-lit
+canvas.gates.target_parse.class: gate-lit
+canvas.gates.duckdb_build.class: gate-lit

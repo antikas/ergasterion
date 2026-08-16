@@ -1,0 +1,247 @@
+source:
+  name: cartivo
+  display_name: CARTIVO
+  system: CARTIVO web storefront (e-commerce domain)
+  priority: 40
+
+# NO canonical_mappings: the e-commerce domain has no OpenIM model repo. This
+# deliberately exercises the optional-canonical-validation skip path (delta 2) and is
+# part of the agnosticism proof -- not an omission to fix.
+
+tables:
+  customers:
+    raw_model: raw_cartivo_customers
+    description: Synthetic CARTIVO storefront customer feed; storefront authority for marketing preferences, overlaps MERCARO/RELATIO on shared loyalty id and email.
+    seed_tests:
+      - {name: cartivo_record_id, data_tests: [unique, not_null]}
+      - {name: cartivo_customer_id, data_tests: [not_null]}
+      - {name: email, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_customer_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'cartivo'"}
+      - {name: source_record_id, expression: "cast(cartivo_record_id as string)"}
+      - {name: source_customer_id, expression: "cast(cartivo_customer_id as string)"}
+      - {name: loyalty_id, expression: "{{ blank_to_null('loyalty_id') }}"}
+      - {name: email, expression: "cast(email as string)"}
+      - {name: full_name, expression: "cast(full_name as string)"}
+      - {name: phone, expression: "{{ blank_to_null('phone') }}"}
+      - {name: address_line, expression: "{{ blank_to_null('address_line') }}"}
+      - {name: city, expression: "{{ blank_to_null('city') }}"}
+      - {name: postal_code, expression: "{{ blank_to_null('postal_code') }}"}
+      - {name: country, expression: "{{ blank_to_null('country') }}"}
+      - {name: marketing_consent, expression: "{{ blank_to_null('marketing_consent') }}"}
+      - {name: preferred_channel, expression: "{{ blank_to_null('preferred_channel') }}"}
+      - {name: buyer_segment, expression: "cast(null as string)"}
+      - {name: customer_status, expression: "cast(customer_status as string)"}
+      - {name: as_of_date, expression: "{{ dpf_safe_cast('as_of_date', 'date') }}"}
+    vault_entities:
+      - name: customers
+        entity: customer
+        record_source: "!CARTIVO_CUSTOMERS"
+        bridge:
+          resolutions:
+            - alias: customer_resolution
+              model: res_customer
+              join_type: inner
+              conditions:
+                - customer_resolution.source_system = source.source_system
+                - customer_resolution.source_id = source.source_customer_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_customer_id, expression: source.source_customer_id}
+            - {name: loyalty_id, expression: source.loyalty_id}
+            - {name: email, expression: source.email}
+            - {name: full_name, expression: source.full_name}
+            - {name: phone, expression: source.phone}
+            - {name: address_line, expression: source.address_line}
+            - {name: city, expression: source.city}
+            - {name: postal_code, expression: source.postal_code}
+            - {name: country, expression: source.country}
+            - {name: marketing_consent, expression: source.marketing_consent}
+            - {name: preferred_channel, expression: source.preferred_channel}
+            - {name: buyer_segment, expression: source.buyer_segment}
+            - {name: customer_status, expression: source.customer_status}
+            - {name: as_of_date, expression: source.as_of_date}
+            - {name: effective_from, expression: source.as_of_date}
+            - {name: golden_customer_key, expression: customer_resolution.golden_customer_key}
+            - {name: customer_resolution_tier, expression: customer_resolution.resolution_tier}
+            - {name: customer_resolution_confidence, expression: customer_resolution.confidence}
+          where:
+            - customer_resolution.golden_customer_key is not null
+
+  products:
+    raw_model: raw_cartivo_products
+    description: Synthetic CARTIVO storefront product catalogue; overlaps MERCARO on shared product code.
+    seed_tests:
+      - {name: cartivo_record_id, data_tests: [unique, not_null]}
+      - {name: cartivo_product_id, data_tests: [not_null]}
+      - {name: shared_product_code, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_product_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'cartivo'"}
+      - {name: source_record_id, expression: "cast(cartivo_record_id as string)"}
+      - {name: source_product_id, expression: "cast(cartivo_product_id as string)"}
+      - {name: shared_product_code, expression: "cast(shared_product_code as string)"}
+      - {name: product_name, expression: "cast(product_name as string)"}
+      - {name: brand, expression: "cast(brand as string)"}
+      - {name: category, expression: "cast(category as string)"}
+      - {name: list_price, expression: "{{ dpf_safe_cast('list_price', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+      - {name: product_status, expression: "cast(product_status as string)"}
+      - {name: as_of_date, expression: "{{ dpf_safe_cast('as_of_date', 'date') }}"}
+    vault_entities:
+      - name: products
+        entity: product
+        record_source: "!CARTIVO_PRODUCTS"
+        bridge:
+          resolutions:
+            - alias: product_resolution
+              model: res_product
+              join_type: inner
+              conditions:
+                - product_resolution.source_system = source.source_system
+                - product_resolution.source_id = source.source_product_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_product_id, expression: source.source_product_id}
+            - {name: shared_product_code, expression: source.shared_product_code}
+            - {name: product_name, expression: source.product_name}
+            - {name: brand, expression: source.brand}
+            - {name: category, expression: source.category}
+            - {name: list_price, expression: source.list_price}
+            - {name: currency, expression: source.currency}
+            - {name: product_status, expression: source.product_status}
+            - {name: as_of_date, expression: source.as_of_date}
+            - {name: effective_from, expression: source.as_of_date}
+            - {name: golden_product_key, expression: product_resolution.golden_product_key}
+            - {name: product_resolution_tier, expression: product_resolution.resolution_tier}
+            - {name: product_resolution_confidence, expression: product_resolution.confidence}
+          where:
+            - product_resolution.golden_product_key is not null
+
+  orders:
+    raw_model: raw_cartivo_orders
+    description: Synthetic CARTIVO storefront order headers; each order links one customer, order-line revenue conserves to order_total.
+    seed_tests:
+      - {name: cartivo_record_id, data_tests: [unique, not_null]}
+      - {name: cartivo_order_id, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_order_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'cartivo'"}
+      - {name: source_record_id, expression: "cast(cartivo_record_id as string)"}
+      - {name: source_order_id, expression: "cast(cartivo_order_id as string)"}
+      - {name: source_customer_id, expression: "cast(cartivo_customer_id as string)"}
+      - {name: order_date, expression: "{{ dpf_safe_cast('order_date', 'date') }}"}
+      - {name: order_status, expression: "cast(order_status as string)"}
+      - {name: currency, expression: "cast(currency as string)"}
+      - {name: order_total, expression: "{{ dpf_safe_cast('order_total', 'numeric') }}"}
+      - {name: channel, expression: "cast(channel as string)"}
+    vault_entities:
+      - name: orders
+        entity: order
+        record_source: "!CARTIVO_ORDERS"
+        bridge:
+          resolutions:
+            - alias: customer_resolution
+              model: res_customer
+              join_type: inner
+              conditions:
+                - customer_resolution.source_system = source.source_system
+                - customer_resolution.source_id = source.source_customer_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_order_id, expression: source.source_order_id}
+            - {name: source_customer_id, expression: source.source_customer_id}
+            - {name: order_date, expression: source.order_date}
+            - {name: order_status, expression: source.order_status}
+            - {name: currency, expression: source.currency}
+            - {name: order_total, expression: source.order_total}
+            - {name: channel, expression: source.channel}
+            - {name: customer_resolution_tier, expression: customer_resolution.resolution_tier}
+            - {name: customer_resolution_confidence, expression: customer_resolution.confidence}
+            - {name: effective_from, expression: source.order_date}
+            - {name: golden_order_key, expression: "{{ stable_golden_key('order', 'source.source_order_id') }}"}
+            - {name: golden_customer_key, expression: customer_resolution.golden_customer_key}
+          where:
+            - customer_resolution.golden_customer_key is not null
+
+  order_lines:
+    raw_model: raw_cartivo_order_lines
+    description: Synthetic CARTIVO order lines; each line links one product, line_revenue sums to the header order_total.
+    seed_tests:
+      - {name: cartivo_record_id, data_tests: [unique, not_null]}
+      - {name: cartivo_order_id, data_tests: [not_null]}
+      - {name: cartivo_product_id, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_order_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'cartivo'"}
+      - {name: source_record_id, expression: "cast(cartivo_record_id as string)"}
+      - {name: source_order_id, expression: "cast(cartivo_order_id as string)"}
+      - {name: source_product_id, expression: "cast(cartivo_product_id as string)"}
+      - {name: line_number, expression: "{{ dpf_safe_cast('line_number', 'int') }}"}
+      - {name: quantity, expression: "{{ dpf_safe_cast('quantity', 'int') }}"}
+      - {name: unit_price, expression: "{{ dpf_safe_cast('unit_price', 'numeric') }}"}
+      - {name: line_revenue, expression: "{{ dpf_safe_cast('line_revenue', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+      - {name: order_date, expression: "{{ dpf_safe_cast('order_date', 'date') }}"}
+    vault_entities:
+      - name: order_lines
+        entity: order_line
+        record_source: "!CARTIVO_ORDER_LINES"
+        bridge:
+          resolutions:
+            - alias: product_resolution
+              model: res_product
+              join_type: inner
+              conditions:
+                - product_resolution.source_system = source.source_system
+                - product_resolution.source_id = source.source_product_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_order_id, expression: source.source_order_id}
+            - {name: source_product_id, expression: source.source_product_id}
+            - {name: line_number, expression: source.line_number}
+            - {name: quantity, expression: source.quantity}
+            - {name: unit_price, expression: source.unit_price}
+            - {name: line_revenue, expression: source.line_revenue}
+            - {name: currency, expression: source.currency}
+            - {name: effective_from, expression: source.order_date}
+            - {name: golden_order_key, expression: "{{ stable_golden_key('order', 'source.source_order_id') }}"}
+            - {name: golden_product_key, expression: product_resolution.golden_product_key}
+          where:
+            - product_resolution.golden_product_key is not null
+
+entity_resolution:
+  customer:
+    model: stg_cartivo_customers
+    columns:
+      source_system: source_system
+      source_id: source_customer_id
+      source_record_id: source_record_id
+      customer_name: full_name
+      normalised_name: "{{ normalise_name('full_name') }}"
+      email: email
+      normalised_email: "nullif(lower(trim(cast(email as string))), '')"
+      loyalty_id: loyalty_id
+      city: city
+  product:
+    model: stg_cartivo_products
+    columns:
+      source_system: source_system
+      source_id: source_product_id
+      source_record_id: source_record_id
+      product_name: product_name
+      normalised_name: "{{ normalise_name('product_name') }}"
+      shared_product_code: shared_product_code

@@ -1,0 +1,2 @@
+succession_event_id,predecessor_gp_id,successor_gp_id,event_type,effective_date
+SUC-001,CEP-GP-03,CEP-GP-06,rebrand,2025-01-01

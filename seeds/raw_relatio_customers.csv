@@ -1,0 +1,3 @@
+relatio_record_id,relatio_customer_id,loyalty_id,email,full_name,phone,address_line,city,postal_code,country,customer_status,as_of_date
+RELA-CR-001,RELA-CUST-001,LOY-1001,ava.thompson@example.com,Ava Thompson,+44-16-1000-0001,88 Deansgate,Manchester,M3 2ER,GB,active,2025-06-01
+RELA-CR-002,RELA-CUST-002,LOY-1005,elena.petrova@example.com,Elena Petrova,+44-13-1000-0002,4 Royal Mile,Edinburgh,EH1 1RE,GB,active,2025-06-15

@@ -1,0 +1,19 @@
+{{ generated_header }}
+{{ dbt_set('source_model', vault.stage_model) }}
+{{ dbt_set('src_pk', entity.src_pk) }}
+{{ dbt_set('src_hashdiff', entity.hashdiff) }}
+{{ dbt_set('src_payload', entity.payload) }}
+{{ dbt_set('src_eff', 'effective_from') }}
+{{ dbt_set('src_ldts', 'load_datetime') }}
+{{ dbt_set('src_source', 'record_source') }}
+
+{{ "{{ automate_dv.sat(" }}
+    src_pk=src_pk,
+    src_hashdiff=src_hashdiff,
+    src_payload=src_payload,
+    src_extra_columns=none,
+    src_eff=src_eff,
+    src_ldts=src_ldts,
+    src_source=src_source,
+    source_model=source_model
+{{ ") }}" }}

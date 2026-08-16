@@ -1,0 +1,4 @@
+decision_id,external_deal_id,decision,conditions,actor,decided_at
+DEC-ORIGO-EXT-DUP-B-01,ORIGO-EXT-DUP-B,defer,,ic_committee_seeded,2025-05-10 00:00:00
+DEC-ORIGO-EXT-DUP-B-02,ORIGO-EXT-DUP-B,approve_with_conditions,Subject to satisfactory final reference calls on the management team,ic_committee_seeded,2025-05-20 00:00:00
+DEC-ORIGO-EXT-001-01,ORIGO-EXT-001,defer,,ic_committee_seeded,2025-03-20 00:00:00

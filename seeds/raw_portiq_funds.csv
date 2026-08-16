@@ -1,0 +1,5 @@
+portiq_fund_id,fund_name,gp_name,gp_lei,fund_lei,shared_external_id,asset_class,strategy,vintage_year,currency
+PORTIQ-33,Apex Growth Fund II,Apex Partners Management,549300APEXPARTNERS0001,549300APEXGROWTH20001,OPENIM-FUND-APEX-II,private_equity,growth,2021,USD
+PORTIQ-44,Northstar Buyout IV,Northstar Capital,549300NORTHSTARCAP01,,OPENIM-FUND-NORTHSTAR-IV,private_equity,buyout,2020,USD
+PORTIQ-55,Harbor Infrastructure 3,Harbor Infrastructure Partners,,,,infrastructure,core_plus,2022,USD
+PORTIQ-66,Summit Bridge Ventures,Summit Bridge Capital,,,,venture,early_stage,2024,USD

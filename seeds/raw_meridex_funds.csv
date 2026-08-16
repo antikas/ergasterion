@@ -1,0 +1,6 @@
+meridex_fund_id,fund_name,gp_name,gp_lei,fund_lei,shared_external_id,asset_class,strategy,vintage_year,currency,domicile
+SS-F-77,"Apex Growth II, LP",Apex Partners,549300APEXPARTNERS0001,549300APEXGROWTH20001,OPENIM-FUND-APEX-II,private_equity,growth,2021,USD,US
+SS-F-88,Northstar Buyout 4,Northstar Capital,549300NORTHSTARCAP01,549300NORTHSTAR40001,OPENIM-FUND-NORTHSTAR-IV,private_equity,buyout,2020,USD,GB
+SS-F-99,Harbor Infra Fund III,Harbor Infra Partners,,,,infrastructure,core_plus,2022,USD,LU
+SS-F-101,Orion Credit Opportunities I,Orion Credit Management,549300ORIONCREDITGP1,549300ORIONCREDIT001,OPENIM-FUND-ORION-I,private_credit,direct_lending,2023,USD,IE
+SS-F-102,Meridian Infra Fund I,Meridian Infrastructure Advisors LLC,549300MERIDIANINFRA01,549300MERIDIANFUND10001,OPENIM-FUND-MERIDIAN-I,infrastructure,core_plus,2025,USD,LU

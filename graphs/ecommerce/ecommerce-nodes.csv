@@ -1,0 +1,4 @@
+id,name,domain,hash_key,golden_key
+customer,customer,ecommerce,customer_hk,golden_customer_key
+order,order,ecommerce,order_hk,golden_order_key
+product,product,ecommerce,product_hk,golden_product_key

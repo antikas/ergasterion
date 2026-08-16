@@ -1,0 +1,56 @@
+# Template profile for parsing and execution on BigQuery, Snowflake, and DuckDB.
+# BigQuery is the default target; see RUNBOOK.md section 3 for each lane.
+# The real BigQuery project and dataset should be supplied at run time through
+# DPF_BQ_PROJECT and DPF_BQ_DATASET or an operator-specific profile.
+# Snowflake secrets come from environment variables. DuckDB writes to a local file.
+# No live credentials are hardcoded here.
+ergasterion:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DPF_BQ_PROJECT', 'your-bq-project') }}"
+      dataset: "{{ env_var('DPF_BQ_DATASET', 'ergasterion_dev') }}"
+      location: "{{ env_var('DPF_BQ_LOCATION', 'US') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+    # Named alias of `dev` so explicit BigQuery commands can use `-t bigquery`.
+    # `dev` is the default target.
+    bigquery:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DPF_BQ_PROJECT', 'your-bq-project') }}"
+      dataset: "{{ env_var('DPF_BQ_DATASET', 'ergasterion_dev') }}"
+      location: "{{ env_var('DPF_BQ_LOCATION', 'US') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+    snowflake:
+      type: snowflake
+      # Placeholder defaults fail clearly at connection time. Set both environment
+      # variables explicitly for an authorised account.
+      account: "{{ env_var('DPF_SF_ACCOUNT', 'YOUR_SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('DPF_SF_USER', 'YOUR_SNOWFLAKE_USER') }}"
+      # Ongoing builds use the least-privilege DPF_BUILDER role. Reserve an explicit
+      # DPF_SF_ROLE override for one-time interactive bootstrap; see
+      # snowflake/setup.sql section 5.
+      role: "{{ env_var('DPF_SF_ROLE', 'DPF_BUILDER') }}"
+      database: "{{ env_var('DPF_SF_DB', 'ERGASTERION') }}"
+      warehouse: "{{ env_var('DPF_SF_WH', 'DPF_WH') }}"
+      schema: "{{ env_var('DPF_SF_SCHEMA', 'DEV') }}"
+      threads: 8
+      # DPF_SF_KEY_PATH MUST be an absolute path -- the dbt-snowflake key-pair
+      # loader does not expand `~`. A relative-looking default here would silently fail
+      # with "No such file or directory: '~/.ssh/...'" on connect. Verified-as-written
+      # example (Git Bash path syntax): DPF_SF_KEY_PATH="/c/Users/<you>/.ssh/dpf_snowflake.p8"
+      private_key_path: "{{ env_var('DPF_SF_KEY_PATH', '/absolute/path/to/dpf_snowflake.p8') }}"
+      private_key_passphrase: "{{ env_var('DPF_SF_KEY_PASSPHRASE', '') }}"
+
+    duckdb:
+      type: duckdb
+      path: "{{ env_var('DPF_DUCKDB_PATH', 'target/ergasterion.duckdb') }}"
+      threads: 4

@@ -1,0 +1,22 @@
+source_system,source_record_id,true_fund_external_id,overlap_note
+vantora,CEP-FUND-001,OPENIM-FUND-APEX-II,apex-ii cross-source overlap (vantora snapshot 2025-03-31)
+vantora,CEP-FUND-002,OPENIM-FUND-APEX-II,apex-ii cross-source overlap (vantora snapshot 2025-06-30)
+vantora,CEP-FUND-003,OPENIM-FUND-APEX-II,apex-ii cross-source overlap (vantora snapshot 2025-09-30)
+vantora,CEP-FUND-004,OPENIM-FUND-NORTHSTAR-IV,northstar-iv cross-source overlap
+vantora,CEP-FUND-005,OPENIM-FUND-HARBOR-III,harbor-iii intra-vantora duplicate (no lei/external id)
+vantora,CEP-FUND-006,OPENIM-FUND-HARBOR-III,harbor-iii intra-vantora duplicate (no lei/external id)
+vantora,CEP-FUND-007,OPENIM-FUND-ORION-I,orion-i cross-source overlap
+vantora,CEP-FUND-008,OPENIM-FUND-SUMMITBRIDGE-I,summitbridge single-source (no lei/external id)
+meridex,SS-F-77,OPENIM-FUND-APEX-II,apex-ii cross-source overlap
+meridex,SS-F-88,OPENIM-FUND-NORTHSTAR-IV,northstar-iv cross-source overlap
+meridex,SS-F-99,OPENIM-FUND-HARBOR-III,harbor-iii name-only (no lei/external id)
+meridex,SS-F-101,OPENIM-FUND-ORION-I,orion-i cross-source overlap
+portiq,PORTIQ-33,OPENIM-FUND-APEX-II,apex-ii cross-source overlap
+portiq,PORTIQ-44,OPENIM-FUND-NORTHSTAR-IV,northstar-iv overlap via external id (lei absent in portiq)
+portiq,PORTIQ-55,OPENIM-FUND-HARBOR-III,harbor-iii name-only (no lei/external id)
+portiq,PORTIQ-66,OPENIM-FUND-SUMMITBRIDGE-I,summitbridge name-only (no lei/external id)
+chrono,CHR-FUND-001,OPENIM-FUND-APEX-II,apex-ii cross-source overlap (feeder vehicle)
+chrono,CHR-FUND-002,OPENIM-FUND-NORTHSTAR-IV,northstar-iv cross-source overlap
+chrono,CHR-FUND-003,OPENIM-FUND-HARBOR-III,harbor-iii name-only (no lei/external id)
+chrono,CHR-FUND-004,OPENIM-FUND-HELIO-I,helio-i chrono-only fund
+meridex,SS-F-102,OPENIM-FUND-MERIDIAN-I,meridian-i single-source (successor-GP fund seeded for manager-succession scenario)

@@ -1,0 +1,211 @@
+{{ generated_header }}
+with candidates as (
+{%- for branch in branches %}
+    select
+{%- for column in res.columns %}
+        {{ branch.columns[column.name] }} as {{ column.name }}{{ "," if not loop.last }}
+{%- endfor %}
+    from {{ "{{ ref('" }}{{ branch.model }}{{ "') }}" }} as source
+{% if not loop.last %}
+
+    union all
+
+{% endif %}
+{%- endfor %}
+),
+{% if res.transitive_merge | default(false) %}
+-- TRANSITIVE ENTITY RESOLUTION. A record must join a cluster if it
+-- shares ANY ranked identifier value with the cluster, transitively -- not on its
+-- single highest-ranked key alone. Worked example: a Northstar source record that
+-- carries only the shared external id (no LEI) still merges with the LEI-keyed
+-- Northstar records, because they all carry that same external id. We therefore
+-- compute CONNECTED COMPONENTS over the record<->identifier-value graph, then key
+-- each cluster on its highest-ranked identifier hash (unchanged golden-key rule).
+--
+-- Construction: bounded MIN-LABEL propagation, deterministic pure ANSI SQL. Each
+-- record's label starts as its own unique key; every round pulls the minimum label
+-- across all records sharing an identifier value, so labels flow along identifier
+-- edges and every record in a component converges to that component's minimum key.
+-- A recursive CTE is deliberately NOT used: both target engines forbid aggregates
+-- in the recursive clause and the per-round label pull is an aggregate (min), the
+-- same vendor limitation macros/xirr.sql documents and works around with a bounded
+-- unrolled chain. The iteration count is FIXED at {{ res.merge_iterations }}: min-label
+-- propagation converges in as many rounds as the component diameter, and the seeded
+-- population's components are diameter <= 3 (<= 3 identifier hops), so {{ res.merge_iterations }}
+-- rounds carry a safety margin. Silent under-convergence is caught by
+-- {{ res.convergence_test }} (two records sharing an identifier
+-- but landing on different golden keys => propagation stopped early).
+keyed as (
+    select
+        *,
+        {{ res.record_key_expression }} as record_key
+    from candidates
+),
+
+identifier_edges as (
+{%- for key in res.match_keys %}
+    select
+        record_key,
+        {{ loop.index }} as id_rank,
+        '{{ key.type }}' as id_type,
+        {{ key.expression }} as id_value
+    from keyed
+    where {{ key.column }} is not null
+{%- if not loop.last %}
+
+    union all
+{% endif %}
+{%- endfor %}
+),
+
+merge_labels_0 as (
+    select distinct
+        record_key,
+        record_key as label
+    from identifier_edges
+),
+{% for round in range(1, res.merge_iterations + 1) %}
+merge_values_{{ round }} as (
+    select
+        edges.id_value,
+        min(prev.label) as value_label
+    from identifier_edges as edges
+    inner join merge_labels_{{ round - 1 }} as prev
+        on prev.record_key = edges.record_key
+    group by edges.id_value
+),
+
+merge_labels_{{ round }} as (
+    select
+        edges.record_key,
+        min(vals.value_label) as label
+    from identifier_edges as edges
+    inner join merge_values_{{ round }} as vals
+        on vals.id_value = edges.id_value
+    group by edges.record_key
+),
+{% endfor %}
+components as (
+    select
+        record_key,
+        label as component_id
+    from merge_labels_{{ res.merge_iterations }}
+),
+
+component_edges as (
+    select
+        components.component_id,
+        identifier_edges.id_rank,
+        identifier_edges.id_type,
+        identifier_edges.id_value
+    from components
+    inner join identifier_edges
+        on identifier_edges.record_key = components.record_key
+),
+
+component_best_rank as (
+    select
+        component_id,
+        min(id_rank) as best_rank
+    from component_edges
+    group by component_id
+),
+
+component_key as (
+    select
+        component_edges.component_id,
+        min(component_edges.id_value) as cluster_match_key,
+        min(component_edges.id_type) as cluster_key_type
+    from component_edges
+    inner join component_best_rank
+        on component_best_rank.component_id = component_edges.component_id
+        and component_edges.id_rank = component_best_rank.best_rank
+    group by component_edges.component_id
+),
+
+component_stats as (
+    select
+        components.component_id,
+        count(distinct keyed.record_key) as cluster_row_count,
+        count(distinct keyed.source_system) as cluster_source_count
+    from components
+    inner join keyed
+        on keyed.record_key = components.record_key
+    group by components.component_id
+),
+
+scored as (
+    select
+        keyed.*,
+        component_key.cluster_match_key as deterministic_match_key,
+        component_key.cluster_key_type as exact_key_type,
+        component_stats.cluster_row_count as match_row_count,
+        component_stats.cluster_source_count as match_source_count
+    from keyed
+    left join components
+        on components.record_key = keyed.record_key
+    left join component_key
+        on component_key.component_id = components.component_id
+    left join component_stats
+        on component_stats.component_id = components.component_id
+)
+{% else %}
+keyed as (
+    select
+        *,
+        case
+{%- for key in res.match_keys %}
+            when {{ key.column }} is not null then {{ key.expression }}
+{%- endfor %}
+        end as deterministic_match_key,
+        case
+{%- for key in res.match_keys %}
+            when {{ key.column }} is not null then '{{ key.type }}'
+{%- endfor %}
+        end as exact_key_type
+    from candidates
+),
+
+scored as (
+    select
+        *,
+        count(*) over (partition by deterministic_match_key) as match_row_count,
+        count(distinct source_system) over (partition by deterministic_match_key) as match_source_count
+    from keyed
+)
+{% endif %}
+select
+{%- for column in res.output_columns %}
+    {{ column.expression }} as {{ column.name }},
+{%- endfor %}
+    case
+        when deterministic_match_key is not null
+             and (exact_key_type != 'normalised_name' or match_row_count > 1)
+            then {{ "{{ stable_golden_key('" }}{{ res.stable_key_entity }}{{ "', 'deterministic_match_key') }}" }}
+    end as {{ res.golden_key_column }},
+    case
+{%- if res.tier0 | default(none) %}
+        when exact_key_type = '{{ res.tier0.key_type }}' then '{{ res.tier0.tier_label }}'
+{%- endif %}
+        when deterministic_match_key is not null
+             and (exact_key_type != 'normalised_name' or match_row_count > 1)
+            then 'tier_1_deterministic_exact_id'
+    end as resolution_tier,
+    case
+        when deterministic_match_key is not null
+             and (exact_key_type != 'normalised_name' or match_row_count > 1)
+             and exact_key_type = 'normalised_name'
+            then 0.95
+        when deterministic_match_key is not null
+             and (exact_key_type != 'normalised_name' or match_row_count > 1)
+            then 1.00
+        else 0.00
+    end as confidence,
+    not (
+        deterministic_match_key is not null
+        and (exact_key_type != 'normalised_name' or match_row_count > 1)
+    ) as pending_probabilistic,
+{%- for column in res.trailing_columns %}
+    {{ column }}{{ "," if not loop.last }}
+{%- endfor %}
+from scored

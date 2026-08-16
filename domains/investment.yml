@@ -1,0 +1,836 @@
+# Domain model config for the INVESTMENT / private-markets example domain.
+#
+# This file is the per-domain vocabulary the factory emitter (ergasterion/emit.py) reads
+# to build the warehouse pipeline. The engine (ergasterion/emit.py + ergasterion/templates/)
+# carries ZERO domain nouns; every entity, hub, link, golden-record rule and
+# entity-resolution config lives here as data. A second domain is onboarded by dropping
+# a sibling domains/<name>.yml beside this file plus its declarations -- no engine edit
+# (proven by the fixture-domain test in tests/python/test_emit.py). All domains/*.yml are
+# merged at emit time; two domains must not share a key in any section (a collision
+# fails the load loudly).
+#
+# Sections:
+#   entity_configs   - per-entity payload / hashed keys / hashdiff / links. The
+#                      hashdiff column list is DERIVED at load (payload minus the
+#                      entity's hashdiff_exclude set), never hand-listed here.
+#   hashdiff_exclude - per-entity payload columns kept OUT of that entity's hashdiff.
+#   hub_configs      - per-entity raw-vault hub model + its pk/nk.
+#   link_configs     - per-relationship raw-vault link model + its pk/fks.
+#   bv_configs       - per-entity business-vault golden-record model + survivorship rules.
+#   res_configs      - per-entity entity-resolution model. Optional tier0 block
+#                      (key_type + tier_label) drives the tier-0 exact-id normalisation
+#                      branch in ergasterion/templates/res_entity.sql.j2; optional
+#                      convergence_test names the transitive-merge convergence assert.
+#
+# CAVEAT for any canonical-mapping model-schema files this domain points at via a
+# declaration's canonical_mappings (the optional --openim-root hook): the emitter's
+# parse_model_attribute_schema binds only the FIRST '## Attribute schema' table per
+# file -- author exactly one attribute-schema table per model-schema file.
+
+# ODCS v3.1.0 boundary config for the contract adapter (ergasterion/emit_contracts.py). This
+# block is READ ONLY by the contract emitter; emit.py ignores it. It declares, for this
+# domain: the ODCS `domain` name, the contract version/status, the target-warehouse
+# `server`, the optional `authoritative_definitions` link (the investment domain cites the
+# public OpenIM reference model -- e-commerce deliberately carries none, the agnosticism
+# story), and the `products` map: every served table (models/canonical|marts, minus
+# int_*/*_base) this domain owns, each optionally bound to a survivorship `entity` whose
+# golden-record rules ride the contract as customProperties. A served table missing from
+# every domain's products map fails the emitter's completeness gate.
+odcs:
+  domain: investment
+  contract_version: "1.0.0"
+  status: active
+  server:
+    server: ergasterion_snowflake
+    type: snowflake
+    environment: production
+    account: ergasterion
+    database: ERGASTERION
+    schema: MARTS
+  authoritative_definitions:
+    - url: https://openinvestmentmodel.org
+      type: businessDefinition
+  products:
+    canonical_fund: {entity: fund}
+    canonical_gp: {entity: gp}
+    canonical_portfolio_company: {entity: portfolio_company}
+    canonical_fund_cash_flow: {}
+    canonical_fund_valuation: {}
+    canonical_legal_vehicle: {entity: legal_vehicle}
+    canonical_legal_vehicle_cash_flow: {}
+    canonical_deal: {entity: deal}
+    canonical_manager_succession: {}
+    dim_fund: {entity: fund}
+    dim_gp: {entity: gp}
+    dim_portfolio_company: {entity: portfolio_company}
+    dim_legal_vehicle: {entity: legal_vehicle}
+    dim_deal: {entity: deal}
+    dim_deal_stage: {}
+    dim_date: {}
+    dim_investment_classification: {}
+    dim_fund_gp_attribution: {}
+    bridge_vehicle_fund_cash_flow: {}
+    fact_fund_cash_flow: {}
+    fact_fund_valuation: {}
+    fact_fund_performance: {}
+    fact_investment_classification: {}
+    fact_committed_capital_decomposition: {}
+    fact_portfolio_exposure: {}
+    fact_benchmark_comparison: {}
+    fact_deal_pipeline: {}
+
+# Relation vocabulary for the map lane (ergasterion/graph_model.py). Read ONLY by the graph
+# emitter family; emit.py / emit_contracts.py / emit_odps.py ignore this block. It names
+# each relationship as a typed verb (UPPER_SNAKE + kebab alias, with direction, kind,
+# cardinality and an inverse) and binds it to a physical link or a payload column. Endpoints
+# are DECLARED here, never inferred from key or column names -- role-named self-edge keys
+# (predecessor_gp_hk / successor_gp_hk) and a discriminated polymorphic column both depend on
+# that. Verbs carry an open, additive field set: the four fields above are required; unknown
+# keys are tolerated so a verb can be enriched with no schema change.
+#
+# This domain exercises every hard edge shape on real data:
+#   * a link-backed self-edge with role-named keys (SUCCEEDED_BY over link gp_succession);
+#   * a column-level self-edge (SUBSIDIARY_OF over legal_vehicle.parent_vehicle_id);
+#   * a discriminated polymorphic column-level edge (CONVERTED_TO over
+#     deal.converted_record_id, keyed by deal.converted_record_type) plus a plain
+#     column-level judgment edge (CONCERNS_COMPANY over deal.target_entity_id).
+relations:
+  verbs:
+    MANAGED_BY:
+      alias: managed-by
+      direction: directed
+      kind: association
+      cardinality: many_to_one
+      inverse: MANAGES
+    MANAGES:
+      alias: manages
+      direction: directed
+      kind: association
+      cardinality: one_to_many
+      inverse: MANAGED_BY
+    HOLDS_POSITION_IN:
+      alias: holds-position-in
+      direction: directed
+      kind: association
+      cardinality: many_to_many
+      inverse: POSITION_HELD_BY
+    POSITION_HELD_BY:
+      alias: position-held-by
+      direction: directed
+      kind: association
+      cardinality: many_to_many
+      inverse: HOLDS_POSITION_IN
+    INVESTS_THROUGH:
+      alias: invests-through
+      direction: directed
+      kind: association
+      cardinality: many_to_many
+      inverse: VEHICLE_OF
+    VEHICLE_OF:
+      alias: vehicle-of
+      direction: directed
+      kind: association
+      cardinality: many_to_many
+      inverse: INVESTS_THROUGH
+    SUCCEEDED_BY:
+      alias: succeeded-by
+      direction: directed
+      kind: association
+      cardinality: one_to_one
+      inverse: SUCCEEDS
+    SUCCEEDS:
+      alias: succeeds
+      direction: directed
+      kind: association
+      cardinality: one_to_one
+      inverse: SUCCEEDED_BY
+    TARGETS_COMPANY:
+      alias: targets-company
+      direction: directed
+      kind: association
+      cardinality: many_to_one
+      inverse: TARGET_OF_DEAL
+    TARGET_OF_DEAL:
+      alias: target-of-deal
+      direction: directed
+      kind: association
+      cardinality: one_to_many
+      inverse: TARGETS_COMPANY
+    CONVERTED_TO_FUND:
+      alias: converted-to-fund
+      direction: directed
+      kind: association
+      cardinality: one_to_one
+      inverse: CONVERTED_FROM_DEAL
+    CONVERTED_FROM_DEAL:
+      alias: converted-from-deal
+      direction: directed
+      kind: association
+      cardinality: one_to_one
+      inverse: CONVERTED_TO_FUND
+    SUBSIDIARY_OF:
+      alias: subsidiary-of
+      direction: directed
+      kind: aggregation
+      cardinality: many_to_one
+      inverse: PARENT_OF
+    PARENT_OF:
+      alias: parent-of
+      direction: directed
+      kind: aggregation
+      cardinality: one_to_many
+      inverse: SUBSIDIARY_OF
+    CONVERTED_TO:
+      alias: converted-to
+      direction: directed
+      kind: reference
+      cardinality: many_to_one
+      inverse: CONVERSION_OF
+    CONVERSION_OF:
+      alias: conversion-of
+      direction: directed
+      kind: reference
+      cardinality: one_to_many
+      inverse: CONVERTED_TO
+    CONCERNS_COMPANY:
+      alias: concerns-company
+      direction: directed
+      kind: reference
+      cardinality: many_to_one
+      inverse: SUBJECT_OF_DEAL
+    SUBJECT_OF_DEAL:
+      alias: subject-of-deal
+      direction: directed
+      kind: reference
+      cardinality: one_to_many
+      inverse: CONCERNS_COMPANY
+  bindings:
+    # Link-backed edges (physical link tables). source_key/target_key equal the link's src_fk.
+    - verb: MANAGED_BY
+      source: fund
+      target: gp
+      link: fund_gp
+      source_key: fund_hk
+      target_key: gp_hk
+    - verb: HOLDS_POSITION_IN
+      source: fund
+      target: portfolio_company
+      link: fund_portfolio_company
+      source_key: fund_hk
+      target_key: portfolio_company_hk
+    - verb: INVESTS_THROUGH
+      source: fund
+      target: legal_vehicle
+      link: investment_vehicle
+      source_key: fund_hk
+      target_key: legal_vehicle_hk
+    # Link-backed self-edge: both role keys resolve to the gp hub; the declared keys order
+    # predecessor before successor -- endpoint ordering that no key-name inference could do.
+    - verb: SUCCEEDED_BY
+      source: gp
+      target: gp
+      link: gp_succession
+      source_key: predecessor_gp_hk
+      target_key: successor_gp_hk
+    - verb: TARGETS_COMPANY
+      source: deal
+      target: portfolio_company
+      link: deal_target_company
+      source_key: deal_hk
+      target_key: portfolio_company_hk
+    - verb: CONVERTED_TO_FUND
+      source: deal
+      target: fund
+      link: deal_fund_conversion
+      source_key: deal_hk
+      target_key: fund_hk
+    # Column-level self-edge over a payload column: legal_vehicle references its parent.
+    - verb: SUBSIDIARY_OF
+      source: legal_vehicle
+      target: legal_vehicle
+      column: parent_vehicle_id
+    # Column-level discriminated polymorphic edge: a deal converts to a fund or a portfolio
+    # company; the target is selected by converted_record_type. Type-graph knowledge only.
+    - verb: CONVERTED_TO
+      source: deal
+      column: converted_record_id
+      discriminator:
+        column: converted_record_type
+        map:
+          fund: fund
+          portfolio_company: portfolio_company
+    # Column-level judgment edge: the deal's target_entity_id is declared to name a
+    # portfolio company (a pinned modelling judgment, not inferred).
+    - verb: CONCERNS_COMPANY
+      source: deal
+      target: portfolio_company
+      column: target_entity_id
+
+entity_configs:
+  fund:
+    satellite_base: fund
+    src_pk: fund_hk
+    hashdiff: fund_hashdiff
+    payload:
+    - source_record_id
+    - source_fund_id
+    - source_gp_id
+    - fund_name
+    - fund_family_name
+    - vehicle_type
+    - gp_name
+    - lei
+    - shared_external_id
+    - asset_class
+    - strategy
+    - vintage_year
+    - committed_capital_usd
+    - currency
+    - domicile
+    - fund_status
+    - as_of_date
+    - fund_resolution_tier
+    - fund_resolution_confidence
+    hashed_columns:
+      fund_hk: golden_fund_key
+      gp_hk: golden_gp_key
+      fund_gp_lhk:
+      - golden_fund_key
+      - golden_gp_key
+      fund_hashdiff:
+        is_hashdiff: true
+    links:
+    - fund_gp
+  gp:
+    satellite_base: gp
+    src_pk: gp_hk
+    hashdiff: gp_hashdiff
+    payload:
+    - source_gp_id
+    - source_fund_id
+    - gp_name
+    - lei
+    - shared_external_id
+    - domicile
+    - relationship_start_date
+    - gp_resolution_tier
+    - gp_resolution_confidence
+    hashed_columns:
+      gp_hk: golden_gp_key
+      gp_hashdiff:
+        is_hashdiff: true
+    links: []
+  portfolio_company:
+    satellite_base: portfolio_company
+    src_pk: portfolio_company_hk
+    hashdiff: portfolio_company_hashdiff
+    payload:
+    - source_company_id
+    - source_fund_id
+    - company_name
+    - lei
+    - shared_external_id
+    - sector
+    - sub_sector
+    - country
+    - status
+    - first_seen_at
+    - portfolio_company_resolution_tier
+    - portfolio_company_resolution_confidence
+    hashed_columns:
+      portfolio_company_hk: golden_portfolio_company_key
+      fund_hk: golden_fund_key
+      fund_portfolio_company_lhk:
+      - golden_fund_key
+      - golden_portfolio_company_key
+      portfolio_company_hashdiff:
+        is_hashdiff: true
+    links:
+    - fund_portfolio_company
+  fund_cash_flow:
+    satellite_base: fund_cash_flow
+    src_pk: fund_hk
+    hashdiff: fund_cash_flow_hashdiff
+    payload:
+    - cash_flow_id
+    - source_fund_id
+    - cash_flow_date
+    - cash_flow_type
+    - direction
+    - amount_usd
+    - currency
+    - fund_resolution_tier
+    - fund_resolution_confidence
+    hashed_columns:
+      fund_hk: golden_fund_key
+      fund_cash_flow_hashdiff:
+        is_hashdiff: true
+    links: []
+  fund_valuation:
+    satellite_base: fund_valuation
+    src_pk: fund_hk
+    hashdiff: fund_valuation_hashdiff
+    payload:
+    - valuation_id
+    - source_fund_id
+    - source_company_id
+    - valuation_date
+    - value_usd
+    - method
+    - valuation_level
+    - confidence_score
+    - golden_portfolio_company_key
+    - fund_resolution_tier
+    - fund_resolution_confidence
+    - portfolio_company_resolution_tier
+    - portfolio_company_resolution_confidence
+    hashed_columns:
+      fund_hk: golden_fund_key
+      portfolio_company_hk: golden_portfolio_company_key
+      fund_portfolio_company_lhk:
+      - golden_fund_key
+      - golden_portfolio_company_key
+      fund_valuation_hashdiff:
+        is_hashdiff: true
+    links:
+    - fund_portfolio_company
+  legal_vehicle:
+    satellite_base: legal_vehicle
+    src_pk: legal_vehicle_hk
+    hashdiff: legal_vehicle_hashdiff
+    payload:
+    - vehicle_natural_id
+    - source_fund_id
+    - parent_vehicle_id
+    - vehicle_name
+    - vehicle_type
+    - jurisdiction
+    - incorporation_date
+    - lei
+    hashed_columns:
+      legal_vehicle_hk: golden_legal_vehicle_key
+      fund_hk: golden_fund_key
+      investment_vehicle_lhk:
+      - golden_fund_key
+      - golden_legal_vehicle_key
+      legal_vehicle_hashdiff:
+        is_hashdiff: true
+    links:
+    - investment_vehicle
+  legal_vehicle_cash_flow:
+    satellite_base: legal_vehicle_cash_flow
+    src_pk: legal_vehicle_hk
+    hashdiff: legal_vehicle_cash_flow_hashdiff
+    payload:
+    - cash_flow_id
+    - vehicle_natural_id
+    - cash_flow_date
+    - cash_flow_type
+    - direction
+    - amount_usd
+    - currency
+    hashed_columns:
+      legal_vehicle_hk: golden_legal_vehicle_key
+      legal_vehicle_cash_flow_hashdiff:
+        is_hashdiff: true
+    links: []
+  gp_succession:
+    satellite_base: gp_succession
+    src_pk: gp_succession_lhk
+    hashdiff: gp_succession_hashdiff
+    payload:
+    - succession_event_id
+    - predecessor_source_gp_id
+    - successor_source_gp_id
+    - event_type
+    - effective_date
+    hashed_columns:
+      predecessor_gp_hk: golden_predecessor_gp_key
+      successor_gp_hk: golden_successor_gp_key
+      gp_succession_lhk:
+      - golden_predecessor_gp_key
+      - golden_successor_gp_key
+      gp_succession_hashdiff:
+        is_hashdiff: true
+    links:
+    - gp_succession
+  deal:
+    satellite_base: deal
+    src_pk: deal_hk
+    hashdiff: deal_hashdiff
+    payload:
+    - source_record_id
+    - source_deal_id
+    - external_deal_id
+    - deal_name
+    - target_entity_id
+    - strategy
+    - originating_team
+    - source_channel
+    - sourced_date
+    - structure
+    - converted_record_type
+    - converted_record_id
+    - deal_resolution_tier
+    - deal_resolution_confidence
+    hashed_columns:
+      deal_hk: golden_deal_key
+      deal_hashdiff:
+        is_hashdiff: true
+    links: []
+  deal_target_company:
+    satellite_base: deal_target_company
+    src_pk: deal_target_company_lhk
+    hashdiff: deal_target_company_hashdiff
+    payload:
+    - source_deal_id
+    - target_entity_id
+    - target_company_external_id
+    hashed_columns:
+      deal_hk: golden_deal_key
+      portfolio_company_hk: golden_portfolio_company_key
+      deal_target_company_lhk:
+      - golden_deal_key
+      - golden_portfolio_company_key
+      deal_target_company_hashdiff:
+        is_hashdiff: true
+    links:
+    - deal_target_company
+  deal_fund_conversion:
+    satellite_base: deal_fund_conversion
+    src_pk: deal_fund_conversion_lhk
+    hashdiff: deal_fund_conversion_hashdiff
+    payload:
+    - source_deal_id
+    - converted_record_type
+    - converted_record_id
+    hashed_columns:
+      deal_hk: golden_deal_key
+      fund_hk: golden_fund_key
+      deal_fund_conversion_lhk:
+      - golden_deal_key
+      - golden_fund_key
+      deal_fund_conversion_hashdiff:
+        is_hashdiff: true
+    links:
+    - deal_fund_conversion
+hashdiff_exclude:
+  fund_valuation:
+  - golden_portfolio_company_key
+hub_configs:
+  fund:
+    path: models/raw_vault/hubs/hub_fund.sql
+    src_pk: fund_hk
+    src_nk: golden_fund_key
+  gp:
+    path: models/raw_vault/hubs/hub_gp.sql
+    src_pk: gp_hk
+    src_nk: golden_gp_key
+  portfolio_company:
+    path: models/raw_vault/hubs/hub_portfolio_company.sql
+    src_pk: portfolio_company_hk
+    src_nk: golden_portfolio_company_key
+  legal_vehicle:
+    path: models/raw_vault/hubs/hub_legal_vehicle.sql
+    src_pk: legal_vehicle_hk
+    src_nk: golden_legal_vehicle_key
+  deal:
+    path: models/raw_vault/hubs/hub_deal.sql
+    src_pk: deal_hk
+    src_nk: golden_deal_key
+link_configs:
+  fund_gp:
+    path: models/raw_vault/links/link_fund_gp.sql
+    src_pk: fund_gp_lhk
+    src_fk:
+    - fund_hk
+    - gp_hk
+  fund_portfolio_company:
+    path: models/raw_vault/links/link_fund_portfolio_company.sql
+    src_pk: fund_portfolio_company_lhk
+    src_fk:
+    - fund_hk
+    - portfolio_company_hk
+  investment_vehicle:
+    path: models/raw_vault/links/link_investment_vehicle.sql
+    src_pk: investment_vehicle_lhk
+    src_fk:
+    - fund_hk
+    - legal_vehicle_hk
+  gp_succession:
+    path: models/raw_vault/links/link_gp_succession.sql
+    src_pk: gp_succession_lhk
+    src_fk:
+    - predecessor_gp_hk
+    - successor_gp_hk
+  deal_target_company:
+    path: models/raw_vault/links/link_deal_target_company.sql
+    src_pk: deal_target_company_lhk
+    src_fk:
+    - deal_hk
+    - portfolio_company_hk
+  deal_fund_conversion:
+    path: models/raw_vault/links/link_deal_fund_conversion.sql
+    src_pk: deal_fund_conversion_lhk
+    src_fk:
+    - deal_hk
+    - fund_hk
+bv_configs:
+  fund:
+    path: models/business_vault/bv_fund_golden_record.sql
+    hub_model: hub_fund
+    hub_pk: fund_hk
+    hub_nk: golden_fund_key
+    rules:
+      source_record_id: first_non_null
+      source_fund_id: first_non_null
+      source_gp_id: first_non_null
+      fund_name: first_non_null
+      fund_family_name: first_non_null
+      vehicle_type: first_non_null
+      gp_name: first_non_null
+      lei: first_non_null
+      shared_external_id: first_non_null
+      asset_class: first_non_null
+      strategy: first_non_null
+      vintage_year: first_non_null
+      committed_capital_usd: most_recent
+      currency: first_non_null
+      domicile: first_non_null
+      fund_status: most_recent
+      as_of_date: most_recent
+      fund_resolution_tier: first_non_null
+      fund_resolution_confidence: first_non_null
+  gp:
+    path: models/business_vault/bv_gp_golden_record.sql
+    hub_model: hub_gp
+    hub_pk: gp_hk
+    hub_nk: golden_gp_key
+    rules:
+      source_gp_id: first_non_null
+      source_fund_id: first_non_null
+      gp_name: first_non_null
+      lei: first_non_null
+      shared_external_id: first_non_null
+      domicile: first_non_null
+      relationship_start_date: most_recent
+      gp_resolution_tier: first_non_null
+      gp_resolution_confidence: first_non_null
+  portfolio_company:
+    path: models/business_vault/bv_portfolio_company_golden_record.sql
+    hub_model: hub_portfolio_company
+    hub_pk: portfolio_company_hk
+    hub_nk: golden_portfolio_company_key
+    rules:
+      source_company_id: first_non_null
+      source_fund_id: first_non_null
+      company_name: first_non_null
+      lei: first_non_null
+      shared_external_id: first_non_null
+      sector: first_non_null
+      sub_sector: first_non_null
+      country: first_non_null
+      status: most_recent
+      first_seen_at: most_recent
+      portfolio_company_resolution_tier: first_non_null
+      portfolio_company_resolution_confidence: first_non_null
+  legal_vehicle:
+    path: models/business_vault/bv_legal_vehicle_golden_record.sql
+    hub_model: hub_legal_vehicle
+    hub_pk: legal_vehicle_hk
+    hub_nk: golden_legal_vehicle_key
+    rules:
+      vehicle_natural_id: first_non_null
+      source_fund_id: first_non_null
+      parent_vehicle_id: first_non_null
+      vehicle_name: first_non_null
+      vehicle_type: first_non_null
+      jurisdiction: first_non_null
+      incorporation_date: first_non_null
+      lei: first_non_null
+  deal:
+    path: models/business_vault/bv_deal_golden_record.sql
+    hub_model: hub_deal
+    hub_pk: deal_hk
+    hub_nk: golden_deal_key
+    rules:
+      source_record_id: first_non_null
+      source_deal_id: first_non_null
+      external_deal_id: first_non_null
+      deal_name: first_non_null
+      target_entity_id: first_non_null
+      strategy: first_non_null
+      originating_team: first_non_null
+      source_channel: first_non_null
+      sourced_date: first_non_null
+      structure: first_non_null
+      converted_record_type: first_non_null
+      converted_record_id: first_non_null
+      deal_resolution_tier: first_non_null
+      deal_resolution_confidence: first_non_null
+res_configs:
+  fund:
+    path: models/entity_resolution/res_fund.sql
+    stable_key_entity: fund
+    golden_key_column: golden_fund_key
+    transitive_merge: true
+    record_key_expression: concat(source_system, '|', source_record_id)
+    merge_iterations: 5
+    columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - fund_name
+    - normalised_name
+    - lei
+    - shared_external_id
+    - canonical_vantora_fund_id
+    - asset_class
+    - strategy
+    - vintage_year
+    - currency
+    match_keys:
+    - column: lei
+      expression: concat('lei:', upper(lei))
+      type: lei
+    - column: shared_external_id
+      expression: concat('external:', upper(shared_external_id))
+      type: shared_external_id
+    - column: canonical_vantora_fund_id
+      expression: concat('vantora:', canonical_vantora_fund_id)
+      type: normalised_vantora_fund_id
+    - column: normalised_name
+      expression: concat('name:', normalised_name)
+      type: normalised_name
+    output_columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - fund_name
+    - normalised_name
+    - deterministic_match_key
+    - exact_key_type
+    trailing_columns:
+    - lei
+    - shared_external_id
+    - canonical_vantora_fund_id
+    - asset_class
+    - strategy
+    - vintage_year
+    - currency
+    - match_row_count
+    - match_source_count
+    tier0:
+      key_type: normalised_vantora_fund_id
+      tier_label: tier_0_vantora_id_normalisation
+    convergence_test: tests/assert_res_fund_er_merge_convergence.sql
+  gp:
+    path: models/entity_resolution/res_gp.sql
+    stable_key_entity: gp
+    golden_key_column: golden_gp_key
+    columns:
+    - source_system
+    - source_id
+    - gp_name
+    - normalised_name
+    - lei
+    - shared_external_id
+    - domicile
+    - relationship_start_date
+    match_keys:
+    - column: lei
+      expression: concat('lei:', upper(lei))
+      type: lei
+    - column: shared_external_id
+      expression: concat('external:', upper(shared_external_id))
+      type: shared_external_id
+    - column: normalised_name
+      expression: concat('name:', normalised_name)
+      type: normalised_name
+    output_columns:
+    - source_system
+    - source_id
+    - gp_name
+    - normalised_name
+    - deterministic_match_key
+    - exact_key_type
+    trailing_columns:
+    - lei
+    - shared_external_id
+    - domicile
+    - relationship_start_date
+    - match_row_count
+    - match_source_count
+  portfolio_company:
+    path: models/entity_resolution/res_portfolio_company.sql
+    stable_key_entity: portfolio_company
+    golden_key_column: golden_portfolio_company_key
+    columns:
+    - source_system
+    - source_id
+    - source_fund_id
+    - company_name
+    - normalised_name
+    - lei
+    - shared_external_id
+    - sector
+    - country
+    match_keys:
+    - column: lei
+      expression: concat('lei:', upper(lei))
+      type: lei
+    - column: shared_external_id
+      expression: concat('external:', upper(shared_external_id))
+      type: shared_external_id
+    - column: normalised_name
+      expression: concat('name:', normalised_name)
+      type: normalised_name
+    output_columns:
+    - source_system
+    - source_id
+    - source_fund_id
+    - company_name
+    - normalised_name
+    - deterministic_match_key
+    - exact_key_type
+    trailing_columns:
+    - lei
+    - shared_external_id
+    - sector
+    - country
+    - match_row_count
+    - match_source_count
+  deal:
+    path: models/entity_resolution/res_deal.sql
+    stable_key_entity: deal
+    golden_key_column: golden_deal_key
+    columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - deal_name
+    - normalised_name
+    - external_deal_id
+    - strategy
+    - sourced_date
+    match_keys:
+    - column: external_deal_id
+      expression: concat('deal_ext:', upper(external_deal_id))
+      type: external_deal_id
+    - column: normalised_name
+      expression: concat('name:', normalised_name)
+      type: normalised_name
+    output_columns:
+    - source_system
+    - source_id
+    - source_record_id
+    - deal_name
+    - normalised_name
+    - deterministic_match_key
+    - exact_key_type
+    trailing_columns:
+    - external_deal_id
+    - strategy
+    - sourced_date
+    - match_row_count
+    - match_source_count

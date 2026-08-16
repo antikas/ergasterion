@@ -1,0 +1,3 @@
+edge_id,src,dst,rel_type,cardinality,kind,inverse,source_key,target_key,source_column,discriminator_value,link,properties
+e00001,order,product,INCLUDES,many_to_many,link_backed,LINE_OF,order_hk,product_hk,,,order_line_product,source_record_id;source_order_id;source_product_id;line_number;quantity;unit_price;line_revenue;currency
+e00002,order,customer,PLACED_BY,many_to_one,link_backed,PLACED,order_hk,customer_hk,,,order_customer,

@@ -1,0 +1,53 @@
+{{ generated_header }}
+version: 2
+
+{% if seed_tables -%}
+seeds:
+{%- for table in seed_tables %}
+  - name: {{ table.raw_model }}
+{%- if table.description %}
+    description: {{ table.description | tojson }}
+{%- endif %}
+{%- if table.seed_tests %}
+    columns:
+{%- for column in table.seed_tests %}
+      - name: {{ column.name }}
+        data_tests: {{ column.data_tests }}
+{%- endfor %}
+{%- endif %}
+{%- endfor %}
+{%- endif %}{% if source_groups %}{{ '\n\n' if seed_tables else '' }}sources:
+{%- for source in source_groups %}
+  - name: {{ source.name }}
+    tables:
+{%- for table in source.tables %}
+      - name: {{ table.landing.identifier }}
+{%- if table.description %}
+        description: {{ table.description | tojson }}
+{%- endif %}
+{%- if table.seed_tests %}
+        columns:
+{%- for column in table.seed_tests %}
+          - name: {{ column.name }}
+            data_tests: {{ column.data_tests }}
+{%- endfor %}
+{%- endif %}
+{%- endfor %}
+{%- endfor %}
+{%- endif %}
+
+models:
+{%- for table in staging_tables %}
+  - name: {{ table.staging_model }}
+{%- if table.description %}
+    description: {{ table.description | tojson }}
+{%- endif %}
+{%- if table.model_tests %}
+    columns:
+{%- for column in table.model_tests %}
+      - name: {{ column.name }}
+        data_tests: {{ column.data_tests }}
+{%- endfor %}
+{%- endif %}
+{%- endfor %}
+

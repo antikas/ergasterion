@@ -1,0 +1,567 @@
+source:
+  name: vantora
+  display_name: VANTORA
+  system: VANTORA direct GP feed
+  priority: 10
+
+# DESCRIPTIVE-ONLY: documents intended attribute lineage to the OpenIM canonical
+# model for onboarding review. ergasterion/emit.py's validate_canonical_mappings checks
+# every business_keys/attributes value for spelling and schema drift against the
+# OpenIM canonical model (model_file below) on every emit. It does NOT generate or
+# drive the canonical layer -- models/canonical/*.sql is hand-authored, not
+# templated from this block.
+canonical_mappings:
+  fund:
+    model_file: model/entities/specialisations/private-markets/PM-01-fund-and-vehicle.md
+    business_keys:
+      source_fund_id: external_ids
+      source_record_id: external_ids
+      lei: lei
+      shared_external_id: external_ids
+      fund_name: known_aliases
+    attributes:
+      fund_name: fund_name
+      vehicle_type: vehicle_type
+      gp_id: gp_id
+      asset_class: asset_class
+      strategy: strategy
+      vintage_year: vintage_year
+      committed_capital_usd: committed_capital_usd
+      currency: currency
+      domicile: domicile
+      fund_status: fund_status
+      as_of_date: last_reviewed_at
+  gp:
+    model_file: model/entities/specialisations/private-markets/PM-02-gp-management-company.md
+    business_keys:
+      source_gp_id: external_ids
+      lei: lei
+      shared_external_id: external_ids
+      gp_name: known_aliases
+    attributes:
+      gp_name: gp_name
+      domicile: domicile
+      relationship_start_date: relationship_start_date
+  portfolio_company:
+    model_file: model/entities/specialisations/private-markets/PM-04-portfolio-company.md
+    business_keys:
+      source_company_id: external_ids
+      lei: lei
+      shared_external_id: external_ids
+      company_name: known_aliases
+    attributes:
+      company_name: company_name
+      sector: sector
+      sub_sector: sub_sector
+      country: country
+      status: status
+      first_seen_at: first_seen_at
+  cash_flow:
+    model_file: model/entities/core/E-06-cash-flow-event.md
+    business_keys:
+      cash_flow_id: cash_flow_id
+      source_fund_id: instrument_id
+    attributes:
+      cash_flow_date: cash_flow_date
+      cash_flow_type: cash_flow_type
+      direction: direction
+      amount_usd: amount
+      currency: currency
+      source_system: source
+  valuation:
+    model_file: model/entities/core/E-07-valuation.md
+    business_keys:
+      valuation_id: valuation_id
+      source_fund_id: instrument_id
+    attributes:
+      valuation_date: valuation_date
+      value_usd: value_usd
+      method: method
+      valuation_level: valuation_level
+      confidence_score: confidence_score
+  legal_vehicle:
+    model_file: model/entities/specialisations/private-markets/PM-05-legal-vehicle.md
+    business_keys:
+      vehicle_natural_id: vehicle_id
+      source_fund_id: investment_id
+    attributes:
+      vehicle_name: vehicle_name
+      vehicle_type: vehicle_type
+      jurisdiction: jurisdiction
+      incorporation_date: incorporation_date
+      lei: lei
+  gp_succession:
+    model_file: model/entities/specialisations/private-markets/PM-11-manager-succession-event.md
+    business_keys:
+      succession_event_id: succession_id
+      predecessor_source_gp_id: predecessor_gp_id
+      successor_source_gp_id: successor_gp_id
+    attributes:
+      event_type: event_type
+      effective_date: effective_date
+
+tables:
+  funds:
+    raw_model: raw_vantora_funds
+    description: Synthetic VANTORA direct-from-GP fund feed with deliberate VANTORA fund ID variation.
+    seed_tests:
+      - {name: vantora_record_id, data_tests: [unique, not_null]}
+      - {name: vantora_fund_id, data_tests: [not_null]}
+      - {name: fund_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_fund_id, data_tests: [not_null]}
+      - {name: fund_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: source_record_id, expression: "cast(vantora_record_id as string)"}
+      - {name: source_fund_id, expression: "cast(vantora_fund_id as string)"}
+      - {name: fund_name, expression: "cast(fund_name as string)"}
+      - {name: fund_family_name, expression: "cast(fund_family_name as string)"}
+      - {name: vehicle_type, expression: "cast(vehicle_type as string)"}
+      - {name: source_gp_id, expression: "cast(gp_source_id as string)"}
+      - {name: gp_name, expression: "cast(gp_name as string)"}
+      - {name: lei, expression: "{{ blank_to_null('fund_lei') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('shared_external_id') }}"}
+      - {name: asset_class, expression: "cast(asset_class as string)"}
+      - {name: strategy, expression: "cast(strategy as string)"}
+      - {name: vintage_year, expression: "{{ dpf_safe_cast('vintage_year', 'int') }}"}
+      - {name: committed_capital_usd, expression: "{{ dpf_safe_cast('committed_capital_usd', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+      - {name: domicile, expression: "cast(domicile as string)"}
+      - {name: fund_status, expression: "cast(fund_status as string)"}
+      - {name: as_of_date, expression: "{{ dpf_safe_cast('as_of_date', 'date') }}"}
+    vault_entities:
+      - name: funds
+        entity: fund
+        record_source: "!VANTORA_FUNDS"
+        bridge:
+          resolutions:
+            - alias: fund_resolution
+              model: res_fund
+              join_type: inner
+              conditions:
+                - fund_resolution.source_system = source.source_system
+                - fund_resolution.source_id = source.source_fund_id
+                - fund_resolution.source_record_id = source.source_record_id
+            - alias: gp_resolution
+              model: res_gp
+              join_type: left
+              conditions:
+                - gp_resolution.source_system = source.source_system
+                - gp_resolution.source_id = source.source_gp_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: source_gp_id, expression: source.source_gp_id}
+            - {name: fund_name, expression: source.fund_name}
+            - {name: fund_family_name, expression: source.fund_family_name}
+            - {name: vehicle_type, expression: source.vehicle_type}
+            - {name: gp_name, expression: source.gp_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: asset_class, expression: source.asset_class}
+            - {name: strategy, expression: source.strategy}
+            - {name: vintage_year, expression: source.vintage_year}
+            - {name: committed_capital_usd, expression: source.committed_capital_usd}
+            - {name: currency, expression: source.currency}
+            - {name: domicile, expression: source.domicile}
+            - {name: fund_status, expression: source.fund_status}
+            - {name: as_of_date, expression: source.as_of_date}
+            - {name: effective_from, expression: source.as_of_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+            - {name: golden_gp_key, expression: gp_resolution.golden_gp_key}
+            - {name: gp_resolution_tier, expression: gp_resolution.resolution_tier}
+            - {name: gp_resolution_confidence, expression: gp_resolution.confidence}
+          where:
+            - fund_resolution.golden_fund_key is not null
+
+  gps:
+    raw_model: raw_vantora_gps
+    seed_tests:
+      - {name: vantora_gp_id, data_tests: [unique, not_null]}
+      - {name: gp_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_gp_id, data_tests: [unique, not_null]}
+      - {name: gp_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: source_gp_id, expression: "cast(vantora_gp_id as string)"}
+      - {name: gp_name, expression: "cast(gp_name as string)"}
+      - {name: lei, expression: "{{ blank_to_null('gp_lei') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('shared_external_id') }}"}
+      - {name: domicile, expression: "cast(domicile as string)"}
+      - {name: relationship_start_date, expression: "{{ dpf_safe_cast('relationship_start_date', 'date') }}"}
+    vault_entities:
+      - name: gps
+        entity: gp
+        record_source: "!VANTORA_GPS"
+        bridge:
+          resolutions:
+            - alias: gp_resolution
+              model: res_gp
+              join_type: inner
+              conditions:
+                - gp_resolution.source_system = source.source_system
+                - gp_resolution.source_id = source.source_gp_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_gp_id, expression: source.source_gp_id}
+            - {name: source_fund_id, expression: "cast(null as string)"}
+            - {name: gp_name, expression: source.gp_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: domicile, expression: source.domicile}
+            - {name: relationship_start_date, expression: source.relationship_start_date}
+            - {name: effective_from, expression: source.relationship_start_date}
+            - {name: golden_gp_key, expression: gp_resolution.golden_gp_key}
+            - {name: gp_resolution_tier, expression: gp_resolution.resolution_tier}
+            - {name: gp_resolution_confidence, expression: gp_resolution.confidence}
+          where:
+            - gp_resolution.golden_gp_key is not null
+
+  portfolio_companies:
+    raw_model: raw_vantora_portfolio_companies
+    seed_tests:
+      - {name: vantora_company_id, data_tests: [unique, not_null]}
+      - {name: company_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_company_id, data_tests: [unique, not_null]}
+      - {name: company_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: source_company_id, expression: "cast(vantora_company_id as string)"}
+      - {name: source_fund_id, expression: "cast(vantora_fund_id as string)"}
+      - {name: company_name, expression: "cast(company_name as string)"}
+      - {name: lei, expression: "{{ blank_to_null('company_lei') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('shared_external_id') }}"}
+      - {name: sector, expression: "cast(sector as string)"}
+      - {name: sub_sector, expression: "cast(sub_sector as string)"}
+      - {name: country, expression: "cast(country as string)"}
+      - {name: status, expression: "cast(status as string)"}
+      - {name: first_seen_at, expression: "{{ dpf_safe_cast('first_seen_at', 'date') }}"}
+    vault_entities:
+      - name: portfolio_companies
+        entity: portfolio_company
+        record_source: "!VANTORA_PORTFOLIO_COMPANIES"
+        bridge:
+          resolutions:
+            - alias: company_resolution
+              model: res_portfolio_company
+              join_type: inner
+              conditions:
+                - company_resolution.source_system = source.source_system
+                - company_resolution.source_id = source.source_company_id
+            - alias: fund_resolution
+              model: res_fund
+              join_type: left
+              conditions:
+                - fund_resolution.source_system = source.source_system
+                - fund_resolution.source_id = source.source_fund_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_company_id, expression: source.source_company_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: company_name, expression: source.company_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: sector, expression: source.sector}
+            - {name: sub_sector, expression: source.sub_sector}
+            - {name: country, expression: source.country}
+            - {name: status, expression: source.status}
+            - {name: first_seen_at, expression: source.first_seen_at}
+            - {name: effective_from, expression: source.first_seen_at}
+            - {name: golden_portfolio_company_key, expression: company_resolution.golden_portfolio_company_key}
+            - {name: portfolio_company_resolution_tier, expression: company_resolution.resolution_tier}
+            - {name: portfolio_company_resolution_confidence, expression: company_resolution.confidence}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+          where:
+            - company_resolution.golden_portfolio_company_key is not null
+
+  cash_flows:
+    raw_model: raw_vantora_cash_flows
+    seed_tests:
+      - {name: cash_flow_id, data_tests: [unique, not_null]}
+    model_tests:
+      - {name: cash_flow_id, data_tests: [unique, not_null]}
+      - {name: source_fund_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: cash_flow_id, expression: "cast(cash_flow_id as string)"}
+      - {name: source_fund_id, expression: "cast(vantora_fund_id as string)"}
+      - {name: cash_flow_date, expression: "{{ dpf_safe_cast('cash_flow_date', 'date') }}"}
+      - {name: cash_flow_type, expression: "cast(cash_flow_type as string)"}
+      - {name: direction, expression: "cast(direction as string)"}
+      - {name: amount_usd, expression: "{{ dpf_safe_cast('amount_usd', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+    vault_entities:
+      - name: cash_flows
+        entity: fund_cash_flow
+        record_source: "!VANTORA_CASH_FLOWS"
+        bridge:
+          resolutions:
+            - alias: fund_resolution
+              model: res_fund
+              join_type: inner
+              conditions:
+                - fund_resolution.source_system = source.source_system
+                - fund_resolution.source_id = source.source_fund_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: cash_flow_id, expression: source.cash_flow_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: cash_flow_date, expression: source.cash_flow_date}
+            - {name: cash_flow_type, expression: source.cash_flow_type}
+            - {name: direction, expression: source.direction}
+            - {name: amount_usd, expression: source.amount_usd}
+            - {name: currency, expression: source.currency}
+            - {name: effective_from, expression: source.cash_flow_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+          where:
+            - fund_resolution.golden_fund_key is not null
+
+  valuations:
+    raw_model: raw_vantora_valuations
+    seed_tests:
+      - {name: valuation_id, data_tests: [unique, not_null]}
+    model_tests:
+      - {name: valuation_id, data_tests: [unique, not_null]}
+      - {name: source_fund_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: valuation_id, expression: "cast(valuation_id as string)"}
+      - {name: source_fund_id, expression: "cast(vantora_fund_id as string)"}
+      - {name: source_company_id, expression: "cast(vantora_company_id as string)"}
+      - {name: valuation_date, expression: "{{ dpf_safe_cast('valuation_date', 'date') }}"}
+      - {name: value_usd, expression: "{{ dpf_safe_cast('value_usd', 'numeric') }}"}
+      - {name: method, expression: "cast(method as string)"}
+      - {name: valuation_level, expression: "cast(valuation_level as string)"}
+      - {name: confidence_score, expression: "{{ dpf_safe_cast('confidence_score', 'float') }}"}
+    vault_entities:
+      - name: valuations
+        entity: fund_valuation
+        record_source: "!VANTORA_VALUATIONS"
+        bridge:
+          resolutions:
+            - alias: fund_resolution
+              model: res_fund
+              join_type: inner
+              conditions:
+                - fund_resolution.source_system = source.source_system
+                - fund_resolution.source_id = source.source_fund_id
+            - alias: company_resolution
+              model: res_portfolio_company
+              join_type: inner
+              conditions:
+                - company_resolution.source_system = source.source_system
+                - company_resolution.source_id = source.source_company_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: valuation_id, expression: source.valuation_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: source_company_id, expression: source.source_company_id}
+            - {name: valuation_date, expression: source.valuation_date}
+            - {name: value_usd, expression: source.value_usd}
+            - {name: method, expression: source.method}
+            - {name: valuation_level, expression: source.valuation_level}
+            - {name: confidence_score, expression: source.confidence_score}
+            - {name: effective_from, expression: source.valuation_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+            - {name: golden_portfolio_company_key, expression: company_resolution.golden_portfolio_company_key}
+            - {name: portfolio_company_resolution_tier, expression: company_resolution.resolution_tier}
+            - {name: portfolio_company_resolution_confidence, expression: company_resolution.confidence}
+          where:
+            - fund_resolution.golden_fund_key is not null
+            - company_resolution.golden_portfolio_company_key is not null
+
+  # SPV / legal-vehicle layer. NO entity_resolution branch for vehicles by
+  # design: golden_legal_vehicle_key is a bridge-select hash of vehicle_natural_id, not
+  # the output of a res model. The bridge DOES join res_fund to resolve the vehicle's
+  # parent fund (fund ER, not vehicle ER) so link_investment_vehicle carries a real
+  # golden_fund_key.
+  legal_vehicles:
+    raw_model: raw_vantora_legal_vehicles
+    description: Synthetic VANTORA legal-vehicle (SPV) feed; two vehicles overlap MERIDEX with subtle discrepancies, one nests under another via parent_vehicle_id.
+    seed_tests:
+      - {name: vehicle_id, data_tests: [unique, not_null]}
+      - {name: vehicle_name, data_tests: [not_null]}
+    model_tests:
+      - {name: vehicle_natural_id, data_tests: [unique, not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: vehicle_natural_id, expression: "cast(vehicle_id as string)"}
+      - {name: source_fund_id, expression: "cast(vantora_fund_id as string)"}
+      - {name: parent_vehicle_id, expression: "{{ blank_to_null('parent_vehicle_id') }}"}
+      - {name: vehicle_name, expression: "cast(vehicle_name as string)"}
+      - {name: vehicle_type, expression: "cast(vehicle_type as string)"}
+      - {name: jurisdiction, expression: "cast(jurisdiction as string)"}
+      - {name: incorporation_date, expression: "{{ dpf_safe_cast('incorporation_date', 'date') }}"}
+      - {name: lei, expression: "{{ blank_to_null('vehicle_lei') }}"}
+    vault_entities:
+      - name: legal_vehicles
+        entity: legal_vehicle
+        record_source: "!VANTORA_LEGAL_VEHICLES"
+        bridge:
+          resolutions:
+            - alias: fund_resolution
+              model: res_fund
+              join_type: inner
+              conditions:
+                - fund_resolution.source_system = source.source_system
+                - fund_resolution.source_id = source.source_fund_id
+          select:
+            - {name: vehicle_natural_id, expression: source.vehicle_natural_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: parent_vehicle_id, expression: source.parent_vehicle_id}
+            - {name: vehicle_name, expression: source.vehicle_name}
+            - {name: vehicle_type, expression: source.vehicle_type}
+            - {name: jurisdiction, expression: source.jurisdiction}
+            - {name: incorporation_date, expression: source.incorporation_date}
+            - {name: lei, expression: source.lei}
+            - {name: effective_from, expression: source.incorporation_date}
+            - {name: golden_legal_vehicle_key, expression: "{{ stable_golden_key('legal_vehicle', 'source.vehicle_natural_id') }}"}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+          where:
+            - fund_resolution.golden_fund_key is not null
+
+  # Vehicle-grain cash flows: satellite-only rider on hub_legal_vehicle,
+  # borrowing golden_legal_vehicle_key (the same hash of vehicle_natural_id). No res
+  # join, no link -- the vehicle->fund roll-up happens in the hand-authored mart.
+  vehicle_cash_flows:
+    raw_model: raw_vantora_vehicle_cash_flows
+    description: Synthetic VANTORA vehicle-grain cash flows; roll up to the Orion fund total within the conservation epsilon.
+    seed_tests:
+      - {name: vehicle_cash_flow_id, data_tests: [unique, not_null]}
+    model_tests:
+      - {name: cash_flow_id, data_tests: [unique, not_null]}
+      - {name: vehicle_natural_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: cash_flow_id, expression: "cast(vehicle_cash_flow_id as string)"}
+      - {name: vehicle_natural_id, expression: "cast(vehicle_id as string)"}
+      - {name: cash_flow_date, expression: "{{ dpf_safe_cast('cash_flow_date', 'date') }}"}
+      - {name: cash_flow_type, expression: "cast(cash_flow_type as string)"}
+      - {name: direction, expression: "cast(direction as string)"}
+      - {name: amount_usd, expression: "{{ dpf_safe_cast('amount_usd', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency as string)"}
+    vault_entities:
+      - name: vehicle_cash_flows
+        entity: legal_vehicle_cash_flow
+        record_source: "!VANTORA_VEHICLE_CASH_FLOWS"
+        bridge:
+          resolutions: []
+          select:
+            - {name: cash_flow_id, expression: source.cash_flow_id}
+            - {name: vehicle_natural_id, expression: source.vehicle_natural_id}
+            - {name: cash_flow_date, expression: source.cash_flow_date}
+            - {name: cash_flow_type, expression: source.cash_flow_type}
+            - {name: direction, expression: source.direction}
+            - {name: amount_usd, expression: source.amount_usd}
+            - {name: currency, expression: source.currency}
+            - {name: effective_from, expression: source.cash_flow_date}
+            - {name: golden_legal_vehicle_key, expression: "{{ stable_golden_key('legal_vehicle', 'source.vehicle_natural_id') }}"}
+
+  # Manager succession event: PM-11 shape. ONE seeded rebrand --
+  # predecessor CEP-GP-03 (Harbor Infrastructure Partners, existing) retires and
+  # CEP-GP-06 (Meridian Infrastructure Advisors, new below) succeeds it. The
+  # successor is ALSO seeded in MERIDEX (raw_meridex_funds.csv, a new fund row) with a
+  # variant name spelling and the SAME lei, so entity resolution merges the two
+  # source rows into ONE golden_gp_key -- the known_aliases-continuity exercise.
+  # Predecessor carries no lei/shared_external_id (as already seeded) and the
+  # successor's lei is freshly minted, never reused elsewhere, so the two sides
+  # cannot accidentally merge into one golden key via a shared identifier.
+  succession_events:
+    raw_model: raw_vantora_succession_events
+    description: Synthetic manager-succession event feed; one rebrand (Harbor Infrastructure Partners -> Meridian Infrastructure Advisors).
+    seed_tests:
+      - {name: succession_event_id, data_tests: [unique, not_null]}
+      - {name: predecessor_gp_id, data_tests: [not_null]}
+      - {name: successor_gp_id, data_tests: [not_null]}
+    model_tests:
+      - {name: succession_event_id, data_tests: [unique, not_null]}
+    projection:
+      - {name: source_system, expression: "'vantora'"}
+      - {name: succession_event_id, expression: "cast(succession_event_id as string)"}
+      - {name: predecessor_source_gp_id, expression: "cast(predecessor_gp_id as string)"}
+      - {name: successor_source_gp_id, expression: "cast(successor_gp_id as string)"}
+      - {name: event_type, expression: "cast(event_type as string)"}
+      - {name: effective_date, expression: "{{ dpf_safe_cast('effective_date', 'date') }}"}
+    vault_entities:
+      - name: succession_events
+        entity: gp_succession
+        record_source: "!VANTORA_SUCCESSION_EVENTS"
+        bridge:
+          resolutions:
+            - alias: predecessor_gp_resolution
+              model: res_gp
+              join_type: inner
+              conditions:
+                - predecessor_gp_resolution.source_system = source.source_system
+                - predecessor_gp_resolution.source_id = source.predecessor_source_gp_id
+            - alias: successor_gp_resolution
+              model: res_gp
+              join_type: inner
+              conditions:
+                - successor_gp_resolution.source_system = source.source_system
+                - successor_gp_resolution.source_id = source.successor_source_gp_id
+          select:
+            - {name: succession_event_id, expression: source.succession_event_id}
+            - {name: predecessor_source_gp_id, expression: source.predecessor_source_gp_id}
+            - {name: successor_source_gp_id, expression: source.successor_source_gp_id}
+            - {name: event_type, expression: source.event_type}
+            - {name: effective_date, expression: source.effective_date}
+            - {name: effective_from, expression: source.effective_date}
+            - {name: golden_predecessor_gp_key, expression: predecessor_gp_resolution.golden_gp_key}
+            - {name: golden_successor_gp_key, expression: successor_gp_resolution.golden_gp_key}
+          where:
+            - predecessor_gp_resolution.golden_gp_key is not null
+            - successor_gp_resolution.golden_gp_key is not null
+
+entity_resolution:
+  fund:
+    model: int_vantora_fund_id_normalised
+    columns:
+      source_system: source_system
+      source_id: source_fund_id
+      source_record_id: source_record_id
+      fund_name: fund_name
+      normalised_name: "{{ normalise_name('fund_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      canonical_vantora_fund_id: canonical_vantora_fund_id
+      asset_class: asset_class
+      strategy: strategy
+      vintage_year: vintage_year
+      currency: currency
+  gp:
+    model: stg_vantora_gps
+    columns:
+      source_system: source_system
+      source_id: source_gp_id
+      gp_name: gp_name
+      normalised_name: "{{ normalise_name('gp_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      domicile: domicile
+      relationship_start_date: relationship_start_date
+  portfolio_company:
+    model: stg_vantora_portfolio_companies
+    columns:
+      source_system: source_system
+      source_id: source_company_id
+      source_fund_id: source_fund_id
+      company_name: company_name
+      normalised_name: "{{ normalise_name('company_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      sector: sector
+      country: country

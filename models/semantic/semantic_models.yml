@@ -1,0 +1,396 @@
+version: 2
+
+semantic_models:
+  - name: fund_performance
+    description: Fund-level performance semantic model over the private-markets mart.
+    model: ref('fact_fund_performance')
+    defaults:
+      agg_time_dimension: performance_as_of_date
+    entities:
+      - name: fund_performance
+        type: primary
+        expr: fund_performance_key
+      - name: fund
+        type: foreign
+        expr: fund_key
+    dimensions:
+      - name: performance_as_of_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: fund_id
+        type: categorical
+    measures:
+      - name: tvpi_value
+        description: Average fund TVPI across the query grain.
+        agg: average
+        expr: tvpi
+      - name: dpi_value
+        description: Average fund DPI across the query grain.
+        agg: average
+        expr: dpi
+      - name: rvpi_value
+        description: Average fund RVPI across the query grain.
+        agg: average
+        expr: rvpi
+      - name: moic_value
+        description: Average fund MOIC across the query grain.
+        agg: average
+        expr: moic
+      - name: latest_nav_usd
+        description: Latest NAV amount exposed from the performance mart.
+        agg: sum
+        expr: latest_nav_usd
+      - name: paid_in_usd
+        description: Paid-in capital from the performance mart.
+        agg: sum
+        expr: paid_in_usd
+      - name: distributions_usd
+        description: Distributions from the performance mart.
+        agg: sum
+        expr: distributions_usd
+
+  - name: fund_cash_flow
+    description: Fund cash-flow semantic model with calls and distributions by date.
+    model: ref('fact_fund_cash_flow')
+    defaults:
+      agg_time_dimension: cash_flow_date
+    entities:
+      - name: fund_cash_flow
+        type: primary
+        expr: fund_cash_flow_key
+      - name: fund
+        type: foreign
+        expr: fund_key
+    dimensions:
+      - name: cash_flow_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: cash_flow_type
+        type: categorical
+      - name: private_markets_event_type
+        type: categorical
+      - name: direction
+        type: categorical
+    measures:
+      - name: cash_flow_amount_usd
+        description: Signed cash-flow amount.
+        agg: sum
+        expr: amount_usd
+      - name: called_amount_usd
+        description: Capital called from investors.
+        agg: sum
+        expr: called_amount_usd
+      - name: distribution_amount_usd
+        description: Capital distributed back to investors.
+        agg: sum
+        expr: distribution_amount_usd
+
+  - name: fund_hurdle
+    description: Declarative calculated-field semantic model for hurdle outcomes.
+    model: ref('cf_fund_hurdle')
+    defaults:
+      agg_time_dimension: performance_as_of_date
+    entities:
+      - name: fund_hurdle
+        type: primary
+        expr: fund_performance_key
+      - name: fund
+        type: foreign
+        expr: fund_key
+    dimensions:
+      - name: performance_as_of_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: fund_id
+        type: categorical
+      - name: hurdle_type
+        type: categorical
+      - name: hurdle_return_metric
+        type: categorical
+      - name: hurdle_config_scope
+        type: categorical
+    measures:
+      - name: hurdle_cleared_count
+        description: Count of fund observations that cleared their configured hurdle.
+        agg: sum_boolean
+        expr: hurdle_cleared
+      - name: hurdle_observation_count
+        description: Count of fund observations with hurdle configuration.
+        agg: count_distinct
+        expr: fund_performance_key
+      - name: excess_over_hurdle
+        description: Average excess return metric over the applied hurdle threshold.
+        agg: average
+        expr: excess_over_hurdle
+
+  - name: investment_classification
+    description: Investment valuation/performance observations attributed to time-varying classifications.
+    model: ref('fact_investment_classification')
+    defaults:
+      agg_time_dimension: performance_as_of_date
+    entities:
+      - name: investment_classification
+        type: primary
+        expr: investment_classification_fact_key
+      - name: fund
+        type: foreign
+        expr: fund_key
+      - name: department_classification
+        type: foreign
+        expr: department_classification_key
+      - name: sector_classification
+        type: foreign
+        expr: sector_classification_key
+    dimensions:
+      - name: performance_as_of_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: fund_id
+        type: categorical
+      - name: department_code
+        type: categorical
+      - name: department_name
+        type: categorical
+      - name: sector_code
+        type: categorical
+      - name: sector_name
+        type: categorical
+    measures:
+      - name: classified_nav_usd
+        description: NAV attributed to the classification rows in force on the observation date.
+        agg: sum
+        expr: nav_usd
+      - name: classified_observation_count
+        description: Count of classified valuation/performance observations.
+        agg: count_distinct
+        expr: investment_classification_fact_key
+
+  - name: deal_pipeline
+    description: >
+      Deal-pipeline funnel snapshot: current stage, cycle-time, and conversion
+      linkage per PM-15 deal.
+    model: ref('fact_deal_pipeline')
+    defaults:
+      agg_time_dimension: sourced_date
+    entities:
+      - name: deal_pipeline
+        type: primary
+        expr: deal_pipeline_key
+      - name: deal
+        type: foreign
+        expr: deal_key
+    dimensions:
+      - name: sourced_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: deal_id
+        type: categorical
+      - name: current_stage_code
+        type: categorical
+      - name: current_stage_name
+        type: categorical
+      - name: strategy
+        type: categorical
+    measures:
+      - name: deal_pipeline_count
+        description: Count of deals currently in the pipeline (one row per deal).
+        agg: count_distinct
+        expr: deal_pipeline_key
+      - name: committed_deal_count
+        description: Count of deals currently at the COMMITTED stage.
+        agg: sum_boolean
+        expr: is_committed
+      - name: declined_deal_count
+        description: Count of deals currently at the DECLINED stage.
+        agg: sum_boolean
+        expr: is_declined
+      - name: converted_deal_count
+        description: Count of deals with a resolved fund-conversion edge -- the stage-conversion measure.
+        agg: sum_boolean
+        expr: is_converted
+      - name: days_in_current_stage_value
+        description: >
+          Average days spent in the current stage, live-pipeline deals only
+          (excludes COMMITTED/DECLINED terminal stages, whose duration only ever
+          grows and would otherwise be mixed in with in-flight deals). The
+          live-pipeline-only filter is applied at the days_in_stage metric.
+        agg: average
+        expr: days_in_current_stage
+      - name: total_cycle_time_value
+        description: Average sourced-to-decision cycle time for deals that reached a terminal stage.
+        agg: average
+        expr: total_cycle_time_days
+
+  - name: order_header
+    description: >
+      E-commerce order-header semantic model, over the
+      point-in-time customer-segment revenue-attribution rollup (int_order_header).
+    model: ref('int_order_header')
+    defaults:
+      agg_time_dimension: order_date
+    entities:
+      - name: order_header
+        type: primary
+        expr: order_id
+      - name: customer
+        type: foreign
+        expr: customer_id
+    dimensions:
+      - name: order_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: customer_segment_at_order_date
+        type: categorical
+      - name: channel
+        type: categorical
+    measures:
+      - name: order_revenue_usd
+        description: >
+          Order-header revenue, sliceable by customer_segment_at_order_date and
+          order_date (month grain) -- the point-in-time revenue-by-segment measure.
+        agg: sum
+        expr: order_total
+      - name: order_value
+        description: Average order value across the query grain (one row per order).
+        agg: average
+        expr: order_total
+
+  - name: customer_order_summary
+    description: >
+      Customer-grain order-summary semantic model, one row per
+      customer who placed at least one order.
+    model: ref('int_customer_order_summary')
+    defaults:
+      agg_time_dimension: first_order_date
+    entities:
+      - name: customer_order_summary
+        type: primary
+        expr: customer_id
+    dimensions:
+      - name: first_order_date
+        type: time
+        type_params:
+          time_granularity: day
+    measures:
+      - name: repeat_purchase_flag_value
+        description: >
+          1.0/0.0 flag averaged across customers -- the repeat-purchase rate
+          (fraction of purchasing customers with more than one order).
+        agg: average
+        expr: repeat_purchase_flag
+
+metrics:
+  - name: revenue_by_customer_segment
+    label: "Revenue (by segment / month)"
+    description: >
+      Order revenue attributed to the customer segment in force at order date
+      (SCD2 point-in-time join, int_order_header), sliceable by
+      customer_segment_at_order_date and order_date (month grain) at query time.
+    type: simple
+    type_params:
+      measure: order_revenue_usd
+  - name: average_order_value
+    label: Average Order Value
+    description: Average order value across the e-commerce order-header mart.
+    type: simple
+    type_params:
+      measure: order_value
+  - name: repeat_purchase_rate
+    label: Repeat Purchase Rate
+    description: >
+      Fraction of purchasing customers with more than one order (int_customer_order_summary).
+    type: simple
+    type_params:
+      measure: repeat_purchase_flag_value
+
+  - name: tvpi
+    label: TVPI
+    description: Total value to paid-in capital from the fund performance mart.
+    type: simple
+    type_params:
+      measure: tvpi_value
+  - name: dpi
+    label: DPI
+    description: Distributions to paid-in capital from the fund performance mart.
+    type: simple
+    type_params:
+      measure: dpi_value
+  - name: rvpi
+    label: RVPI
+    description: Residual value to paid-in capital from the fund performance mart.
+    type: simple
+    type_params:
+      measure: rvpi_value
+  - name: moic
+    label: MOIC
+    description: Multiple on invested capital from the fund performance mart.
+    type: simple
+    type_params:
+      measure: moic_value
+  - name: nav
+    label: NAV
+    description: Latest NAV in USD from the fund performance mart.
+    type: simple
+    type_params:
+      measure: latest_nav_usd
+  - name: called_capital
+    label: Called Capital
+    description: Capital called in USD from fund cash flows.
+    type: simple
+    type_params:
+      measure: called_amount_usd
+  - name: distributions
+    label: Distributions
+    description: Capital distributed in USD from fund cash flows.
+    type: simple
+    type_params:
+      measure: distribution_amount_usd
+  - name: hurdle_cleared_count
+    label: Hurdle Cleared Count
+    description: Fund observations clearing the configured declarative hurdle.
+    type: simple
+    type_params:
+      measure: hurdle_cleared_count
+  - name: excess_over_hurdle
+    label: Excess Over Hurdle
+    description: Average excess over the applied hurdle threshold.
+    type: simple
+    type_params:
+      measure: excess_over_hurdle
+  - name: classified_nav
+    label: Classified NAV
+    description: NAV attributed by time-varying investment classifications.
+    type: simple
+    type_params:
+      measure: classified_nav_usd
+  - name: deal_pipeline_count
+    label: Deal Pipeline Count
+    description: Count of deals currently in the pipeline.
+    type: simple
+    type_params:
+      measure: deal_pipeline_count
+  - name: converted_deal_count
+    label: "Converted Deal Count (deal-to-fund)"
+    description: >
+      Count of pipeline deals carrying a resolved deal-to-fund conversion edge --
+      not a stage-transition rate.
+    type: simple
+    type_params:
+      measure: converted_deal_count
+  - name: days_in_stage
+    label: Days In Stage (live pipeline only)
+    description: >
+      Average days spent in the current stage, live-pipeline deals only
+      (excludes COMMITTED/DECLINED terminal stages, whose duration only ever
+      grows and would otherwise be mixed in with in-flight deals).
+    type: simple
+    type_params:
+      measure: days_in_current_stage_value
+    filter: |
+      {{ Dimension('deal_pipeline__current_stage_code') }} not in ('COMMITTED', 'DECLINED')

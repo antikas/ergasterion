@@ -1,0 +1,9 @@
+vantora_record_id,vantora_fund_id,fund_name,fund_family_name,vehicle_type,gp_source_id,gp_name,fund_lei,shared_external_id,asset_class,strategy,vintage_year,committed_capital_usd,currency,domicile,fund_status,as_of_date
+CEP-FUND-001,CPS-1001,Apex Growth Fund II,Apex Growth,main,CEP-GP-01,Apex Partners Management,549300APEXGROWTH20001,OPENIM-FUND-APEX-II,private_equity,growth,2021,124400000,USD,US,active,2025-03-31
+CEP-FUND-002,CPS-1001-A,Apex Growth Fund II,Apex Growth,main,CEP-GP-01,Apex Partners Management,549300APEXGROWTH20001,OPENIM-FUND-APEX-II,private_equity,growth,2021,124400000,USD,US,active,2025-06-30
+CEP-FUND-003,CPS1001,Apex Growth Fund II,Apex Growth,main,CEP-GP-01,Apex Partners Management,549300APEXGROWTH20001,OPENIM-FUND-APEX-II,private_equity,growth,2021,124400000,USD,US,active,2025-09-30
+CEP-FUND-004,CPS-2002,Northstar Buyout IV,Northstar Buyout,main,CEP-GP-02,Northstar Capital,549300NORTHSTAR40001,OPENIM-FUND-NORTHSTAR-IV,private_equity,buyout,2020,65000,USD,GB,harvesting,2025-09-30
+CEP-FUND-005,CPS-3003,Harbor Infrastructure III,Harbor Infrastructure,main,CEP-GP-03,Harbor Infrastructure Partners,,,infrastructure,core_plus,2022,30000000,USD,LU,active,2025-06-30
+CEP-FUND-006,CPS3003,Harbor Infrastructure III,Harbor Infrastructure,parallel,CEP-GP-03,Harbor Infrastructure Partners,,,infrastructure,core_plus,2022,30120000,USD,LU,active,2025-09-30
+CEP-FUND-007,CPS-4004,Orion Credit Opportunities I,Orion Credit Opportunities,main,CEP-GP-04,Orion Credit Management,549300ORIONCREDIT001,OPENIM-FUND-ORION-I,private_credit,direct_lending,2023,80000000,USD,IE,active,2025-09-30
+CEP-FUND-008,CPS-5005,SummitBridge Venture Fund,SummitBridge Venture,main,CEP-GP-05,SummitBridge Capital,,,venture,early_stage,2024,60000000,USD,US,active,2025-09-30

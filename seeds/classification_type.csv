@@ -1,0 +1,4 @@
+classification_type_code,classification_type_name,description
+DEPT,Department,Operating department responsible for an investment over time
+SECTOR,Sector,Investment sector classification over time
+DEAL_STAGE,Deal Stage,Deal-pipeline funnel-stage classification history for PM-15 deals

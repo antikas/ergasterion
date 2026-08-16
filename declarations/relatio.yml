@@ -1,0 +1,95 @@
+source:
+  name: relatio
+  display_name: RELATIO
+  system: RELATIO CRM (e-commerce domain; deliberately partial coverage)
+  priority: 30
+
+# RELATIO is the CRM and the CONTACT authority (highest source priority, so it wins the
+# first_non_null survivorship contest for name/email/phone/address/city over the
+# storefront and marketplace). It is DELIBERATELY PARTIAL: it declares customers only --
+# no products, no orders. It covers only SOME customers (it holds Ava, whom it overrides
+# on city, and Elena, a CRM-only contact with no orders; it does NOT hold Ben/Chloe/
+# Diego). This exercises acceptance #5: survivorship must not break for the customers the
+# CRM does not cover -- their golden record simply falls through the coalesce to the next
+# non-null source.
+#
+# NO canonical_mappings: the e-commerce domain has no OpenIM model repo (delta 2 skip
+# path -- part of the agnosticism proof).
+
+tables:
+  customers:
+    raw_model: raw_relatio_customers
+    description: Synthetic RELATIO CRM customer feed; contact authority, partial coverage (holds only some customers).
+    seed_tests:
+      - {name: relatio_record_id, data_tests: [unique, not_null]}
+      - {name: relatio_customer_id, data_tests: [not_null]}
+      - {name: email, data_tests: [not_null]}
+    model_tests:
+      - {name: source_record_id, data_tests: [unique, not_null]}
+      - {name: source_customer_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'relatio'"}
+      - {name: source_record_id, expression: "cast(relatio_record_id as string)"}
+      - {name: source_customer_id, expression: "cast(relatio_customer_id as string)"}
+      - {name: loyalty_id, expression: "{{ blank_to_null('loyalty_id') }}"}
+      - {name: email, expression: "cast(email as string)"}
+      - {name: full_name, expression: "cast(full_name as string)"}
+      - {name: phone, expression: "{{ blank_to_null('phone') }}"}
+      - {name: address_line, expression: "{{ blank_to_null('address_line') }}"}
+      - {name: city, expression: "{{ blank_to_null('city') }}"}
+      - {name: postal_code, expression: "{{ blank_to_null('postal_code') }}"}
+      - {name: country, expression: "{{ blank_to_null('country') }}"}
+      - {name: marketing_consent, expression: "cast(null as string)"}
+      - {name: preferred_channel, expression: "cast(null as string)"}
+      - {name: buyer_segment, expression: "cast(null as string)"}
+      - {name: customer_status, expression: "cast(customer_status as string)"}
+      - {name: as_of_date, expression: "{{ dpf_safe_cast('as_of_date', 'date') }}"}
+    vault_entities:
+      - name: customers
+        entity: customer
+        record_source: "!RELATIO_CUSTOMERS"
+        bridge:
+          resolutions:
+            - alias: customer_resolution
+              model: res_customer
+              join_type: inner
+              conditions:
+                - customer_resolution.source_system = source.source_system
+                - customer_resolution.source_id = source.source_customer_id
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_customer_id, expression: source.source_customer_id}
+            - {name: loyalty_id, expression: source.loyalty_id}
+            - {name: email, expression: source.email}
+            - {name: full_name, expression: source.full_name}
+            - {name: phone, expression: source.phone}
+            - {name: address_line, expression: source.address_line}
+            - {name: city, expression: source.city}
+            - {name: postal_code, expression: source.postal_code}
+            - {name: country, expression: source.country}
+            - {name: marketing_consent, expression: source.marketing_consent}
+            - {name: preferred_channel, expression: source.preferred_channel}
+            - {name: buyer_segment, expression: source.buyer_segment}
+            - {name: customer_status, expression: source.customer_status}
+            - {name: as_of_date, expression: source.as_of_date}
+            - {name: effective_from, expression: source.as_of_date}
+            - {name: golden_customer_key, expression: customer_resolution.golden_customer_key}
+            - {name: customer_resolution_tier, expression: customer_resolution.resolution_tier}
+            - {name: customer_resolution_confidence, expression: customer_resolution.confidence}
+          where:
+            - customer_resolution.golden_customer_key is not null
+
+entity_resolution:
+  customer:
+    model: stg_relatio_customers
+    columns:
+      source_system: source_system
+      source_id: source_customer_id
+      source_record_id: source_record_id
+      customer_name: full_name
+      normalised_name: "{{ normalise_name('full_name') }}"
+      email: email
+      normalised_email: "nullif(lower(trim(cast(email as string))), '')"
+      loyalty_id: loyalty_id
+      city: city

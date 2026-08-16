@@ -1,0 +1,11 @@
+source_system,source_record_id,true_deal_external_id,overlap_note
+origo,D-001,ORIGO-DEAL-ATLAS,single deal (targets golden company OPENIM-PC-LUMINA)
+origo,D-002,ORIGO-DEAL-ORION,single deal (converts to golden fund OPENIM-FUND-ORION-I)
+origo,D-003,ORIGO-DEAL-VERTEX,single deal
+origo,D-004,ORIGO-DEAL-HELIOS,single deal
+origo,D-005,ORIGO-DEAL-BLACKPINE,intra-source duplicate pair A (shared deal external id)
+origo,D-006,ORIGO-DEAL-BLACKPINE,intra-source duplicate pair A (shared deal external id)
+origo,D-007,ORIGO-DEAL-CEDAR,intra-source duplicate pair B (shared deal external id)
+origo,D-008,ORIGO-DEAL-CEDAR,intra-source duplicate pair B (shared deal external id)
+origo,D-009,ORIGO-DEAL-RIVERSTONE-A,middle-band pair (no external id; distinct true deal correctly left for review)
+origo,D-010,ORIGO-DEAL-RIVERSTONE-B,middle-band pair (no external id; distinct true deal correctly left for review)

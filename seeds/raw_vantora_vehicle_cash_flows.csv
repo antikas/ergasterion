@@ -1,0 +1,6 @@
+vehicle_cash_flow_id,vehicle_id,cash_flow_date,cash_flow_type,direction,amount_usd,currency
+VCF-ORION-001,VEH-ORION-SPV-A,2023-06-30,capital_call,outflow,2000000,USD
+VCF-ORION-002,VEH-ORION-SPV-A,2025-03-31,distribution,inflow,400000,USD
+VCF-ORION-003,VEH-ORION-SPV-B,2023-06-30,capital_call,outflow,1400000,USD
+VCF-ORION-004,VEH-ORION-SPV-B,2025-03-31,distribution,inflow,200000,USD
+VCF-ORION-005,VEH-ORION-FEEDER-A1,2023-09-30,capital_call,outflow,115000,USD

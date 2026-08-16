@@ -1,0 +1,164 @@
+version: 2
+
+models:
+  - name: canonical_fund
+    description: OpenIM PM-01 Fund & Vehicle canonical view over the business-vault golden fund record.
+    columns:
+      - name: fund_id
+        tests:
+          - not_null
+          - unique
+
+  - name: canonical_gp
+    description: OpenIM PM-02 GP / Management Company canonical view over the business-vault golden GP record.
+    columns:
+      - name: gp_id
+        tests:
+          - not_null
+          - unique
+
+  - name: canonical_portfolio_company
+    description: OpenIM PM-04 Portfolio Company canonical view over the business-vault golden company record.
+    columns:
+      - name: company_id
+        tests:
+          - not_null
+          - unique
+
+  - name: canonical_fund_cash_flow
+    description: OpenIM E-06 cash-flow events conformed from per-source fund cash-flow satellites.
+    columns:
+      - name: cash_flow_id
+        tests:
+          - not_null
+          - unique
+      - name: fund_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('canonical_fund')
+              field: fund_id
+
+  - name: canonical_fund_valuation
+    description: OpenIM E-07 fund valuation events conformed from raw-vault valuation satellites.
+    columns:
+      - name: valuation_id
+        tests:
+          - not_null
+          - unique
+      - name: fund_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('canonical_fund')
+              field: fund_id
+
+  - name: canonical_legal_vehicle
+    description: >
+      OpenIM PM-05 Legal Vehicle canonical view over the business-vault golden vehicle
+      record. No entity resolution for vehicles (golden_legal_vehicle_key is a hash of
+      the declared natural id); fund_id is the vehicle's parent fund resolved via the
+      link. parent_vehicle_id re-expresses SPV nesting on the same golden key space.
+    columns:
+      - name: vehicle_id
+        tests:
+          - not_null
+          - unique
+      - name: fund_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('canonical_fund')
+              field: fund_id
+
+  - name: canonical_legal_vehicle_cash_flow
+    description: >
+      Vehicle-grain cash-flow events conformed from the vehicle cash-flow satellite,
+      signed consistently with canonical_fund_cash_flow for the conservation roll-up.
+    columns:
+      - name: vehicle_cash_flow_id
+        tests:
+          - not_null
+          - unique
+      - name: vehicle_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('canonical_legal_vehicle')
+              field: vehicle_id
+
+  - name: canonical_deal
+    description: >
+      OpenIM PM-15 Deal / Investment Opportunity canonical view over the business-vault
+      golden deal record. deal_id is the golden_deal_key from res_deal's
+      intra-source resolution, which deduplicates records within the single ORIGO CRM
+      feed. Fund resolution is a separate cross-source process. target_company_id and
+      converted_fund_id are the resolved conversion edges off the two deal links.
+      assert_res_deal_er_precision_manifest.sql is the named test.
+    columns:
+      - name: deal_id
+        tests:
+          - not_null
+          - unique
+
+  - name: canonical_customer
+    description: >
+      E-commerce customer-360 canonical view over the business-vault
+      golden customer record. Built directly off the raw-vault golden key
+      (hub_customer.golden_customer_key) with no canonical_mappings / OpenIM
+      model-repo dependency -- this domain has no OpenIM PM entity to validate
+      against. customer_id is the golden_customer_key from
+      res_customer's tier-1 deterministic resolution (shared loyalty id or
+      normalised email). assert_customer_survivorship_crm_wins_contact.sql pins the
+      CRM-wins-contact-attribute survivorship rule against a seeded conflict.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+
+  - name: canonical_product
+    description: >
+      E-commerce customer-360 canonical view over the business-vault
+      golden product record. Built directly off the raw-vault golden key
+      (hub_product.golden_product_key), same no-model-repo skip path as
+      canonical_customer. product_id is the golden_product_key from res_product's
+      tier-1 deterministic resolution (shared_product_code).
+    columns:
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+
+  - name: canonical_manager_succession
+    description: >
+      OpenIM PM-11 Manager Succession Event canonical view over the gp_succession
+      link + event satellite. Self-referencing GP-to-GP relationship: predecessor
+      and successor are distinct golden GP keys by design (never merged by a
+      shared identifier). assert_gp_succession_continuity.sql is the named test.
+    columns:
+      - name: succession_id
+        tests:
+          - not_null
+          - unique
+      - name: predecessor_gp_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('canonical_gp')
+              field: gp_id
+          - dbt_utils.expression_is_true:
+              expression: "!= successor_gp_id"
+      - name: successor_gp_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('canonical_gp')
+              field: gp_id
+      - name: event_type
+        tests:
+          - accepted_values:
+              values: ['merger', 'rebrand', 'acquisition']
+      - name: effective_date
+        tests:
+          - not_null

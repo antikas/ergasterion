@@ -1,0 +1,24 @@
+{{ generated_header }}
+with source as (
+    select * from {{ "{{ ref('" }}{{ vault.source_model }}{{ "') }}" }}
+)
+{%- for resolution in vault.bridge.resolutions %},
+
+{{ resolution.alias }} as (
+    select * from {{ "{{ ref('" }}{{ resolution.model }}{{ "') }}" }}
+)
+{%- endfor %}
+
+select
+{%- for column in vault.bridge.select %}
+    {{ column.expression }} as {{ column.name }}{{ "," if not loop.last }}
+{%- endfor %}
+from source
+{%- for resolution in vault.bridge.resolutions %}
+{{ resolution.join_type }} join {{ resolution.alias }}
+    on {{ resolution.conditions | join('\n    and ') }}
+{%- endfor %}
+{%- if vault.bridge.where | default([]) %}
+where {{ vault.bridge.where | join('\n    and ') }}
+{%- endif %}
+

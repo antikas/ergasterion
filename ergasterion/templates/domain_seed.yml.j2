@@ -1,0 +1,69 @@
+{{ header }}
+entity_configs:
+{%- for entity in entities %}
+  {{ entity.name }}:
+    satellite_base: {{ entity.name }}
+    src_pk: {{ entity.src_pk }}
+    hashdiff: {{ entity.hashdiff }}
+    payload:
+{%- for col in entity.payload %}
+    - {{ col }}
+{%- endfor %}
+    hashed_columns:
+{%- for hc in entity.hashed_columns %}
+{%- if hc.is_composite %}
+      {{ hc.key }}:
+{%- for v in hc.value_list %}
+      - {{ v }}
+{%- endfor %}
+{%- else %}
+      {{ hc.key }}: {{ hc.value }}{% if hc.external %}  # TODO: {{ entity.name }} references a table not present in this DDL batch -- confirm this key/name matches that domain's actual naming{% endif %}
+{%- endif %}
+{%- endfor %}
+      {{ entity.hashdiff }}:
+        is_hashdiff: true
+{%- if entity.links %}
+    links:
+{%- for l in entity.links %}
+    - {{ l }}
+{%- endfor %}
+{%- else %}
+    links: []
+{%- endif %}
+{% endfor %}
+hashdiff_exclude: {}
+hub_configs:
+{%- for entity in hub_entities %}
+  {{ entity.name }}:
+    path: models/raw_vault/hubs/hub_{{ entity.name }}.sql
+    src_pk: {{ entity.src_pk }}
+    src_nk: golden_{{ entity.name }}_key  # TODO: confirm this matches the domain's actual natural/business-key naming convention
+{%- endfor %}
+{%- if links %}
+link_configs:
+{%- for link in links %}
+  {{ link.name }}:
+    path: {{ link.path }}
+    src_pk: {{ link.src_pk }}
+    src_fk:
+{%- for fk in link.src_fk %}
+    - {{ fk }}
+{%- endfor %}
+{%- endfor %}
+{%- endif %}
+# TODO bv_configs -- survivorship rules (first_non_null / most_recent per payload column)
+# are authored judgment; no DDL carries them. Add a bv_configs: block once decided -- see
+# domains/ecommerce.yml bv_configs for the worked shape.
+#
+# TODO res_configs -- entity-resolution match-key strategy (which columns compose a
+# deterministic match key, tier-0/tier-1/tier-2 branches) is authored judgment; no DDL
+# carries it. Add a res_configs: block once decided -- see domains/ecommerce.yml
+# res_configs for the worked shape.
+#
+# TODO relations -- the property-graph map-lane's relation vocabulary (verbs/bindings) is
+# authored judgment; no DDL carries it. Add a relations: block once decided -- see
+# domains/ecommerce.yml relations for the worked shape.
+#
+# TODO odcs -- the ODCS contract-adapter boundary config (domain/server/products) is
+# authored judgment; no DDL carries it. Add an odcs: block once decided -- see
+# domains/ecommerce.yml odcs for the worked shape.

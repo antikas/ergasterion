@@ -1,0 +1,291 @@
+source:
+  name: chrono
+  display_name: CHRONO
+  system: Chronograph-shaped GP data provider
+  priority: 40
+
+# DESCRIPTIVE-ONLY: documents intended attribute lineage to the OpenIM canonical
+# model for onboarding review. ergasterion/emit.py's validate_canonical_mappings checks
+# every business_keys/attributes value for spelling and schema drift against the
+# OpenIM canonical model (model_file below) on every emit. It does NOT generate or
+# drive the canonical layer -- models/canonical/*.sql is hand-authored, not
+# templated from this block.
+canonical_mappings:
+  fund:
+    model_file: model/entities/specialisations/private-markets/PM-01-fund-and-vehicle.md
+    business_keys: {chrono_vehicle_code: external_ids, legal_entity_identifier: lei, vendor_crosswalk_id: external_ids, vehicle_display_name: known_aliases}
+    attributes: {vehicle_display_name: fund_name, manager_master_code: gp_id, private_market_bucket: asset_class, investment_style: strategy, launch_year: vintage_year, commitment_amount_usd: committed_capital_usd, reporting_ccy: currency, domicile_iso2: domicile, lifecycle_state: fund_status, snapshot_date: last_reviewed_at}
+  gp:
+    model_file: model/entities/specialisations/private-markets/PM-02-gp-management-company.md
+    business_keys: {manager_master_code: external_ids, manager_lei: lei, manager_name_text: known_aliases}
+    attributes: {manager_name_text: gp_name, domicile_iso2: domicile}
+  portfolio_company:
+    model_file: model/entities/specialisations/private-markets/PM-04-portfolio-company.md
+    business_keys: {asset_uid: external_ids, issuer_lei: lei, vendor_company_id: external_ids, issuer_name_text: known_aliases}
+    attributes: {issuer_name_text: company_name, industry_group: sector, industry_detail: sub_sector, country_iso2: country, holding_status: status, first_reported_on: first_seen_at}
+  cash_flow:
+    model_file: model/entities/core/E-06-cash-flow-event.md
+    business_keys: {event_uid: cash_flow_id, vehicle_code: instrument_id}
+    attributes: {event_date: cash_flow_date, event_kind: cash_flow_type, investor_direction: direction, usd_amount: amount, currency_code: currency, source_system: source}
+  valuation:
+    model_file: model/entities/core/E-07-valuation.md
+    business_keys: {mark_uid: valuation_id, vehicle_code: instrument_id}
+    attributes: {mark_date: valuation_date, usd_fair_value: value_usd, mark_method: method, fair_value_bucket: valuation_level, extraction_confidence: confidence_score}
+
+tables:
+  funds:
+    raw_model: raw_chrono_funds
+    description: Synthetic CHRONO GP-provider fund feed with Chronograph-style column names.
+    seed_tests:
+      - {name: chrono_vehicle_code, data_tests: [unique, not_null]}
+      - {name: vehicle_display_name, data_tests: [not_null]}
+    model_tests:
+      - {name: source_fund_id, data_tests: [unique, not_null]}
+      - {name: fund_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'chrono'"}
+      - {name: source_record_id, expression: "cast(chrono_row_uid as string)"}
+      - {name: source_fund_id, expression: "cast(chrono_vehicle_code as string)"}
+      - {name: fund_name, expression: "cast(vehicle_display_name as string)"}
+      - {name: fund_family_name, expression: "cast(vehicle_group_name as string)"}
+      - {name: vehicle_type, expression: "cast(vehicle_form as string)"}
+      - {name: source_gp_id, expression: "cast(manager_master_code as string)"}
+      - {name: gp_name, expression: "cast(manager_name_text as string)"}
+      - {name: gp_lei, expression: "{{ blank_to_null('manager_lei') }}"}
+      - {name: lei, expression: "{{ blank_to_null('legal_entity_identifier') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('vendor_crosswalk_id') }}"}
+      - {name: asset_class, expression: "cast(private_market_bucket as string)"}
+      - {name: strategy, expression: "cast(investment_style as string)"}
+      - {name: vintage_year, expression: "{{ dpf_safe_cast('launch_year', 'int') }}"}
+      - {name: committed_capital_usd, expression: "{{ dpf_safe_cast('commitment_amount_usd', 'numeric') }}"}
+      - {name: currency, expression: "cast(reporting_ccy as string)"}
+      - {name: domicile, expression: "cast(domicile_iso2 as string)"}
+      - {name: fund_status, expression: "cast(lifecycle_state as string)"}
+      - {name: as_of_date, expression: "{{ dpf_safe_cast('snapshot_date', 'date') }}"}
+    vault_entities:
+      - name: funds
+        entity: fund
+        record_source: "!CHRONO_FUNDS"
+        bridge:
+          resolutions:
+            - {alias: fund_resolution, model: res_fund, join_type: inner, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id, fund_resolution.source_record_id = source.source_record_id]}
+            - {alias: gp_resolution, model: res_gp, join_type: left, conditions: [gp_resolution.source_system = source.source_system, gp_resolution.source_id = source.source_gp_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_record_id, expression: source.source_record_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: source_gp_id, expression: source.source_gp_id}
+            - {name: fund_name, expression: source.fund_name}
+            - {name: fund_family_name, expression: source.fund_family_name}
+            - {name: vehicle_type, expression: source.vehicle_type}
+            - {name: gp_name, expression: source.gp_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: asset_class, expression: source.asset_class}
+            - {name: strategy, expression: source.strategy}
+            - {name: vintage_year, expression: source.vintage_year}
+            - {name: committed_capital_usd, expression: source.committed_capital_usd}
+            - {name: currency, expression: source.currency}
+            - {name: domicile, expression: source.domicile}
+            - {name: fund_status, expression: source.fund_status}
+            - {name: as_of_date, expression: source.as_of_date}
+            - {name: effective_from, expression: source.as_of_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+            - {name: golden_gp_key, expression: gp_resolution.golden_gp_key}
+            - {name: gp_resolution_tier, expression: gp_resolution.resolution_tier}
+            - {name: gp_resolution_confidence, expression: gp_resolution.confidence}
+          where: [fund_resolution.golden_fund_key is not null]
+      - name: gps
+        entity: gp
+        source_model: stg_chrono_funds
+        record_source: "!CHRONO_GPS"
+        bridge:
+          resolutions:
+            - {alias: gp_resolution, model: res_gp, join_type: inner, conditions: [gp_resolution.source_system = source.source_system, gp_resolution.source_id = source.source_gp_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_gp_id, expression: source.source_gp_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: gp_name, expression: source.gp_name}
+            - {name: lei, expression: source.gp_lei}
+            - {name: shared_external_id, expression: "cast(null as string)"}
+            - {name: domicile, expression: source.domicile}
+            - {name: relationship_start_date, expression: "cast(null as date)"}
+            - {name: effective_from, expression: source.as_of_date}
+            - {name: golden_gp_key, expression: gp_resolution.golden_gp_key}
+            - {name: gp_resolution_tier, expression: gp_resolution.resolution_tier}
+            - {name: gp_resolution_confidence, expression: gp_resolution.confidence}
+          where: [gp_resolution.golden_gp_key is not null]
+
+  portfolio_companies:
+    raw_model: raw_chrono_portfolio_companies
+    seed_tests:
+      - {name: asset_uid, data_tests: [unique, not_null]}
+      - {name: issuer_name_text, data_tests: [not_null]}
+    model_tests:
+      - {name: source_company_id, data_tests: [unique, not_null]}
+      - {name: company_name, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'chrono'"}
+      - {name: source_company_id, expression: "cast(asset_uid as string)"}
+      - {name: source_fund_id, expression: "cast(vehicle_code as string)"}
+      - {name: company_name, expression: "cast(issuer_name_text as string)"}
+      - {name: lei, expression: "{{ blank_to_null('issuer_lei') }}"}
+      - {name: shared_external_id, expression: "{{ blank_to_null('vendor_company_id') }}"}
+      - {name: sector, expression: "cast(industry_group as string)"}
+      - {name: sub_sector, expression: "cast(industry_detail as string)"}
+      - {name: country, expression: "cast(country_iso2 as string)"}
+      - {name: status, expression: "cast(holding_status as string)"}
+      - {name: first_seen_at, expression: "{{ dpf_safe_cast('first_reported_on', 'date') }}"}
+    vault_entities:
+      - name: portfolio_companies
+        entity: portfolio_company
+        record_source: "!CHRONO_PORTFOLIO_COMPANIES"
+        bridge:
+          resolutions:
+            - {alias: company_resolution, model: res_portfolio_company, join_type: inner, conditions: [company_resolution.source_system = source.source_system, company_resolution.source_id = source.source_company_id]}
+            - {alias: fund_resolution, model: res_fund, join_type: left, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: source_company_id, expression: source.source_company_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: company_name, expression: source.company_name}
+            - {name: lei, expression: source.lei}
+            - {name: shared_external_id, expression: source.shared_external_id}
+            - {name: sector, expression: source.sector}
+            - {name: sub_sector, expression: source.sub_sector}
+            - {name: country, expression: source.country}
+            - {name: status, expression: source.status}
+            - {name: first_seen_at, expression: source.first_seen_at}
+            - {name: effective_from, expression: source.first_seen_at}
+            - {name: golden_portfolio_company_key, expression: company_resolution.golden_portfolio_company_key}
+            - {name: portfolio_company_resolution_tier, expression: company_resolution.resolution_tier}
+            - {name: portfolio_company_resolution_confidence, expression: company_resolution.confidence}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+          where: [company_resolution.golden_portfolio_company_key is not null]
+
+  cash_flows:
+    raw_model: raw_chrono_cash_flows
+    seed_tests: [{name: event_uid, data_tests: [unique, not_null]}]
+    model_tests:
+      - {name: cash_flow_id, data_tests: [unique, not_null]}
+      - {name: source_fund_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'chrono'"}
+      - {name: cash_flow_id, expression: "cast(event_uid as string)"}
+      - {name: source_fund_id, expression: "cast(vehicle_code as string)"}
+      - {name: cash_flow_date, expression: "{{ dpf_safe_cast('event_date', 'date') }}"}
+      - {name: cash_flow_type, expression: "cast(event_kind as string)"}
+      - {name: direction, expression: "cast(investor_direction as string)"}
+      - {name: amount_usd, expression: "{{ dpf_safe_cast('usd_amount', 'numeric') }}"}
+      - {name: currency, expression: "cast(currency_code as string)"}
+    vault_entities:
+      - name: cash_flows
+        entity: fund_cash_flow
+        record_source: "!CHRONO_CASH_FLOWS"
+        bridge:
+          resolutions:
+            - {alias: fund_resolution, model: res_fund, join_type: inner, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: cash_flow_id, expression: source.cash_flow_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: cash_flow_date, expression: source.cash_flow_date}
+            - {name: cash_flow_type, expression: source.cash_flow_type}
+            - {name: direction, expression: source.direction}
+            - {name: amount_usd, expression: source.amount_usd}
+            - {name: currency, expression: source.currency}
+            - {name: effective_from, expression: source.cash_flow_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+          where: [fund_resolution.golden_fund_key is not null]
+
+  valuations:
+    raw_model: raw_chrono_valuations
+    seed_tests: [{name: mark_uid, data_tests: [unique, not_null]}]
+    model_tests:
+      - {name: valuation_id, data_tests: [unique, not_null]}
+      - {name: source_fund_id, data_tests: [not_null]}
+    projection:
+      - {name: source_system, expression: "'chrono'"}
+      - {name: valuation_id, expression: "cast(mark_uid as string)"}
+      - {name: source_fund_id, expression: "cast(vehicle_code as string)"}
+      - {name: source_company_id, expression: "cast(asset_uid as string)"}
+      - {name: valuation_date, expression: "{{ dpf_safe_cast('mark_date', 'date') }}"}
+      - {name: value_usd, expression: "{{ dpf_safe_cast('usd_fair_value', 'numeric') }}"}
+      - {name: method, expression: "cast(mark_method as string)"}
+      - {name: valuation_level, expression: "cast(fair_value_bucket as string)"}
+      - {name: confidence_score, expression: "{{ dpf_safe_cast('extraction_confidence', 'float') }}"}
+    vault_entities:
+      - name: valuations
+        entity: fund_valuation
+        record_source: "!CHRONO_VALUATIONS"
+        bridge:
+          resolutions:
+            - {alias: fund_resolution, model: res_fund, join_type: inner, conditions: [fund_resolution.source_system = source.source_system, fund_resolution.source_id = source.source_fund_id]}
+            - {alias: company_resolution, model: res_portfolio_company, join_type: inner, conditions: [company_resolution.source_system = source.source_system, company_resolution.source_id = source.source_company_id]}
+          select:
+            - {name: source_system, expression: source.source_system}
+            - {name: valuation_id, expression: source.valuation_id}
+            - {name: source_fund_id, expression: source.source_fund_id}
+            - {name: source_company_id, expression: source.source_company_id}
+            - {name: valuation_date, expression: source.valuation_date}
+            - {name: value_usd, expression: source.value_usd}
+            - {name: method, expression: source.method}
+            - {name: valuation_level, expression: source.valuation_level}
+            - {name: confidence_score, expression: source.confidence_score}
+            - {name: effective_from, expression: source.valuation_date}
+            - {name: golden_fund_key, expression: fund_resolution.golden_fund_key}
+            - {name: fund_resolution_tier, expression: fund_resolution.resolution_tier}
+            - {name: fund_resolution_confidence, expression: fund_resolution.confidence}
+            - {name: golden_portfolio_company_key, expression: company_resolution.golden_portfolio_company_key}
+            - {name: portfolio_company_resolution_tier, expression: company_resolution.resolution_tier}
+            - {name: portfolio_company_resolution_confidence, expression: company_resolution.confidence}
+          where:
+            - fund_resolution.golden_fund_key is not null
+            - company_resolution.golden_portfolio_company_key is not null
+
+entity_resolution:
+  fund:
+    model: stg_chrono_funds
+    columns:
+      source_system: source_system
+      source_id: source_fund_id
+      source_record_id: source_record_id
+      fund_name: fund_name
+      normalised_name: "{{ normalise_name('fund_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      canonical_vantora_fund_id: "cast(null as string)"
+      asset_class: asset_class
+      strategy: strategy
+      vintage_year: vintage_year
+      currency: currency
+  gp:
+    model: stg_chrono_funds
+    columns:
+      source_system: source_system
+      source_id: source_gp_id
+      gp_name: gp_name
+      normalised_name: "{{ normalise_name('gp_name') }}"
+      lei: gp_lei
+      shared_external_id: "cast(null as string)"
+      domicile: domicile
+      relationship_start_date: "cast(null as date)"
+  portfolio_company:
+    model: stg_chrono_portfolio_companies
+    columns:
+      source_system: source_system
+      source_id: source_company_id
+      source_fund_id: source_fund_id
+      company_name: company_name
+      normalised_name: "{{ normalise_name('company_name') }}"
+      lei: lei
+      shared_external_id: shared_external_id
+      sector: sector
+      country: country

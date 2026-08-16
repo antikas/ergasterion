@@ -1,0 +1,663 @@
+version: 2
+
+models:
+  - name: dim_fund
+    description: Fund dimension keyed by OpenIM golden fund ID.
+    columns:
+      - name: fund_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_id
+        tests:
+          - not_null
+          - unique
+      - name: gp_id
+        tests:
+          - relationships:
+              to: ref('dim_gp')
+              field: gp_id
+
+  - name: dim_gp
+    description: >
+      GP / management-company dimension keyed by OpenIM golden GP ID. Extended
+      with manager-succession lineage columns: predecessor_gp_key /
+      successor_gp_key are self-references into this same dimension;
+      lineage_status distinguishes a succession predecessor ('superseded'), a
+      succession successor ('current'), and every other GP ('active').
+    columns:
+      - name: gp_key
+        tests:
+          - not_null
+          - unique
+      - name: gp_id
+        tests:
+          - not_null
+          - unique
+      - name: predecessor_gp_key
+        tests:
+          - relationships:
+              to: ref('dim_gp')
+              field: gp_key
+      - name: successor_gp_key
+        tests:
+          - relationships:
+              to: ref('dim_gp')
+              field: gp_key
+      - name: lineage_status
+        tests:
+          - accepted_values:
+              values: ['active', 'superseded', 'current']
+
+  - name: dim_portfolio_company
+    description: Portfolio-company dimension keyed by OpenIM golden company ID.
+    columns:
+      - name: portfolio_company_key
+        tests:
+          - not_null
+          - unique
+      - name: company_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_legal_vehicle
+    description: >
+      Legal-vehicle (SPV) dimension keyed by the OpenIM golden vehicle id. fund_id is
+      the vehicle's parent fund; parent_legal_vehicle_key is a self-reference capturing
+      SPV nesting. Vehicles carry no entity resolution by design.
+    columns:
+      - name: legal_vehicle_key
+        tests:
+          - not_null
+          - unique
+      - name: vehicle_id
+        tests:
+          - not_null
+          - unique
+      - name: fund_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_id
+      - name: parent_legal_vehicle_key
+        tests:
+          - relationships:
+              to: ref('dim_legal_vehicle')
+              field: legal_vehicle_key
+
+  - name: bridge_vehicle_fund_cash_flow
+    description: >
+      Vehicle-to-fund cash-flow aggregation bridge: vehicle-grain cash flows rolled up
+      to fund grain beside the fund's own fund-grain total, with the reconciliation
+      delta. One row per fund that has vehicles. The named test
+      assert_vehicle_to_fund_cash_flow_conservation asserts the delta stays within epsilon.
+    columns:
+      - name: fund_id
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_id
+
+  - name: dim_date
+    description: Date spine covering canonical cash-flow and valuation dates.
+    time_spine:
+      standard_granularity_column: date_day
+    columns:
+      - name: date_key
+        tests:
+          - not_null
+          - unique
+      - name: date_day
+        granularity: day
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_investment_classification
+    description: >
+      SCD2 investment classification dimension for reusable time-varying
+      classifications such as department and sector. Ranges are half-open:
+      effective_from <= event date < effective_to.
+    columns:
+      - name: investment_classification_key
+        tests:
+          - not_null
+          - unique
+      - name: classification_type_code
+        tests:
+          - not_null
+      - name: classification_value_code
+        tests:
+          - not_null
+      - name: effective_from
+        tests:
+          - not_null
+      - name: effective_to
+        tests:
+          - not_null
+
+  - name: dim_fund_gp_attribution
+    description: >
+      Fund-to-GP attribution as of a date: joins link_gp_succession's
+      continuity claim into the dim_investment_classification half-open
+      date-range pattern, so "which GP does this fund attribute to on
+      date D" is a query against this model (fund_id + effective_from <= date <
+      effective_to) instead of a test-side recomputation. One row per fund per
+      attribution window; a fund untouched by any succession event carries
+      exactly one row spanning 1900-01-01 to 9999-12-31.
+    columns:
+      - name: fund_gp_attribution_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_id
+      - name: gp_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_gp')
+              field: gp_id
+      - name: attribution_source_type
+        tests:
+          - accepted_values:
+              values: ['fund_source_record', 'gp_succession_event']
+      - name: effective_from
+        tests:
+          - not_null
+      - name: effective_to
+        tests:
+          - not_null
+
+  - name: fact_fund_cash_flow
+    description: Fund cash-flow fact with calls and distributions by fund and date.
+    columns:
+      - name: fund_cash_flow_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+  - name: fact_fund_valuation
+    description: Fund valuation fact with NAV aggregated from canonical valuation events.
+    columns:
+      - name: fund_valuation_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+  - name: fact_fund_performance_base
+    description: >
+      Fund-performance BASE facts: every fund-intrinsic metric/input that is
+      NOT a derived multiple -- paid_in_usd, distributions_usd, latest_nav_usd, nav,
+      called_pct, unfunded_commitment, net_irr, gross_irr, irr. net_irr is a real
+      deterministic XIRR solve (macros/xirr.sql). gross_irr uses the same result because
+      the canonical cash-flow schema declares no separate fee/carry event subtype and
+      therefore no distinct gross flow basis. Only ER-confirmed golden funds
+      (dpf_is_er_confirmed) feed the calculation. Consumed by
+      cf_fund_multiples.sql (the declarative tvpi/dpi/rvpi/moic spec) and re-joined by
+      fact_fund_performance.sql; not intended for direct downstream consumption.
+    columns:
+      - name: fund_performance_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+
+  - name: fact_fund_performance
+    description: >
+      Fund performance fact: the nine fund-intrinsic metrics of the 12-metric
+      catalogue -- tvpi, dpi, rvpi, moic, nav, called_pct, unfunded_commitment,
+      net_irr, gross_irr. net_irr is a real deterministic XIRR solve (macros/xirr.sql),
+      and gross_irr uses the same declared flow basis. See the
+      fact_fund_performance_base description. Only ER-confirmed golden funds
+      (dpf_is_er_confirmed) feed the calculation. tvpi/dpi/rvpi/moic are declarative
+      calculated_field outputs (cf_fund_multiples.sql), joined back in from
+      fact_fund_performance_base -- this mart's public columns and grain are unchanged.
+    columns:
+      - name: fund_performance_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+      - name: tvpi
+        description: Total value to paid-in = (distributions + NAV) / paid-in. Reconciles to dpi + rvpi.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: dpi
+        description: Distributions to paid-in.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: rvpi
+        description: Residual value (NAV) to paid-in.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: moic
+        description: Multiple on invested capital = (distributions + NAV) / invested capital, where invested capital is paid-in less recallable distributions and fee offsets. Distinct from tvpi (which divides by paid-in) and >= tvpi because invested capital <= paid-in; equal to tvpi only for funds with no seeded invested basis.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: called_pct
+        description: Paid-in capital as a fraction of committed capital.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: net_irr
+        # No accepted_range test here: -1..100 was co-extensive with the solver's own
+        # bracket [-99.99%, +10,000%], so it could never fail. Real coverage
+        # is the hand-computed expected-value assertion in
+        # tests/assert_fund_net_irr_expected_value.sql (Apex ~16.89%, plus the Northstar
+        # bracket-guard NULL). NULL where the cash-flow stream is not bracketed by a root.
+        description: >
+          Net internal rate of return from a deterministic XIRR solve (macros/xirr.sql via
+          int_fund_xirr) over net LP cash flows plus terminal NAV. NULL where the stream is
+          not bracketed by a root (no NPV sign change across the solver bracket), rather
+          than a fabricated 0 or a ceiling-pinned rate.
+      - name: gross_irr
+        description: >
+          Uses the net_irr result because the canonical cash-flow schema declares no
+          separate fee/carry event subtype or distinct gross flow basis. Inherits
+          net_irr's NULL-when-unbracketed semantics.
+
+  - name: fact_investment_classification
+    description: >
+      Valuation/performance observations attributed to the department and sector
+      classification rows in force on the observation date by SCD2 date-range joins.
+    columns:
+      - name: investment_classification_fact_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: department_classification_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_investment_classification')
+              field: investment_classification_key
+      - name: sector_classification_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_investment_classification')
+              field: investment_classification_key
+
+  - name: fact_committed_capital_decomposition
+    description: >
+      Cross-source discrepancy DECOMPOSITION for committed_capital_usd.
+      Where two sources assert different committed capital for the same resolved
+      fund, this splits the gap into named explained components (unit_scale is
+      computed from the two values; fx_currency, as_of_timing, scope_universe and
+      methodology are 0-with-flag where the vault carries no basis to compute their
+      magnitude) plus an unexplained residual. The six components sum to total_delta
+      by construction -- that identity is asserted structurally by
+      tests/assert_committed_capital_decomposition_identity.sql. Sits beside the
+      survivorship winner (bv_fund_golden_record): the golden_source / golden value
+      columns show WHICH won, the components show WHY the sources differ. Grain: one
+      row per fund x disputed_attribute x ordered source pair (source_a < source_b)
+      that genuinely disagrees. residual_over_tolerance flags a residual that exceeds
+      committed_capital_residual_tolerance (default 1%) of the delta.
+    columns:
+      - name: committed_capital_decomposition_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_hk
+        tests:
+          - not_null
+      - name: residual_fraction_of_delta
+        description: Unexplained residual as a fraction of the total delta; NULL when the delta is 0 (which cannot occur given the disagreement filter).
+        tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+
+  - name: fact_portfolio_exposure
+    description: Look-through exposure fact rolling portfolio-company valuations up through funds by sector/geography, at fund x company x date grain.
+    columns:
+      - name: portfolio_exposure_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+      - name: portfolio_company_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_portfolio_company')
+              field: portfolio_company_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+
+  - name: fact_benchmark_comparison
+    description: >
+      Benchmark-relative metrics of the catalogue: pme (Kaplan-Schoar
+      public-market equivalent), alpha_bps (annualised net_irr excess over the benchmark,
+      in basis points), and quartile_rank (NTILE(4) within the vintage x strategy peer
+      cohort by net_irr). The benchmark index join is evaluated from the declared dbt
+      relations at query time. Every ER-confirmed fund gets a row here even when its performance_as_of_date
+      falls outside the seeded benchmark-index window (left join, not inner) -- coverage is
+      asserted by tests/assert_benchmark_comparison_confirmed_fund_coverage.sql.
+    columns:
+      - name: benchmark_comparison_key
+        tests:
+          - not_null
+          - unique
+      - name: fund_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: benchmark_id
+        description: >
+          : NULL when the fund's performance_as_of_date falls outside the seeded
+          benchmark-index window -- an honest absence-of-coverage signal, not an error, so
+          this column intentionally carries no not_null test. pme/alpha_bps are NULL for
+          the same rows; quartile_rank still populates (benchmark-independent).
+      - name: pme
+        description: Kaplan-Schoar PME; > 1 indicates outperformance of the public-market benchmark.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: true
+      - name: quartile_rank
+        description: Peer-cohort quartile (1 = top) within vintage_year x strategy by net_irr.
+        data_tests:
+          - dbt_utils.accepted_range:
+              min_value: 1
+              max_value: 4
+              inclusive: true
+
+  - name: dim_customer
+    description: >
+      E-commerce customer-360 dimension, current-state (type-1),
+      keyed by the domain's golden customer id. Time-varying segment/loyalty-tier is
+      the separate dim_customer_segment SCD2 dimension, not folded in here.
+    columns:
+      - name: customer_key
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_product
+    description: >
+      E-commerce customer-360 dimension, current-state (type-1),
+      keyed by the domain's golden product id.
+    columns:
+      - name: product_key
+        tests:
+          - not_null
+          - unique
+      - name: product_id
+        tests:
+          - not_null
+          - unique
+
+  - name: dim_customer_segment
+    description: >
+      SCD2 customer segment (loyalty-tier) dimension, the
+      e-commerce domain's instance of the reusable half-open-range SCD2 pattern
+      (docs/architecture/scd2-classification.md), over the seeded segment/loyalty-tier
+      history staged. Half-open ranges: effective_from <= event date <
+      effective_to. Named test: assert_customer_segment_point_in_time.sql (point-in-time
+      attribution, no gap, no overlap).
+    columns:
+      - name: customer_segment_key
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
+      - name: segment_code
+        tests:
+          - not_null
+      - name: effective_from
+        tests:
+          - not_null
+      - name: effective_to
+        tests:
+          - not_null
+      - name: segment_recorded_at
+        description: >
+          Intra-day ordering column (precedent, applied defensively): the
+          SCD2 window above orders on (effective_from, segment_recorded_at,
+          customer_segment_history_key) so a same-day segment transition would
+          resolve deterministically instead of falling back to the surrogate key --
+          see sat_customer_segment_history.sql's header.
+
+  - name: int_order_header
+    description: >
+      Order-header rollup: one row per golden order, survived
+      cross-source header attributes plus the point-in-time customer-segment join
+      (customer_segment_at_order_date) -- the SCD2 revenue-attribution join. Feeds
+      int_customer_order_summary and the average-order-value / revenue-by-segment
+      metrics; not intended for direct downstream consumption beyond those.
+    columns:
+      - name: order_id
+        tests:
+          - not_null
+          - unique
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
+
+  - name: int_customer_order_summary
+    description: >
+      Customer-grain order summary: one row per customer who placed
+      at least one order. repeat_purchase_flag (1.0/0.0) feeds the repeat-purchase-rate
+      metric via a MetricFlow average measure.
+    columns:
+      - name: customer_id
+        tests:
+          - not_null
+          - unique
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
+
+  - name: fact_order
+    description: >
+      E-commerce order-line fact, the domain's conserved-measure
+      grain: line_revenue summed per order reconciles to that order's header total
+      (int_order_header.order_total) within epsilon -- the assert_bridge_identity
+      pattern applied here as assert_order_line_revenue_conservation.sql. Every order
+      links to a real customer golden key, asserted by the customer_id relationships
+      test below (the "every order links to a real customer golden key" named test).
+    columns:
+      - name: order_line_key
+        tests:
+          - not_null
+          - unique
+      - name: order_id
+        tests:
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
+      - name: product_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_id
+
+  - name: dim_deal
+    description: >
+      Deal dimension keyed by the OpenIM PM-15 golden deal id. Intra-source
+      resolution only (res_deal dedup within the single ORIGO CRM feed);
+      target_company_id and converted_fund_id are the funnel's two exit edges, both
+      nullable by construction (a deal need not have resolved either).
+    columns:
+      - name: deal_key
+        tests:
+          - not_null
+          - unique
+      - name: deal_id
+        tests:
+          - not_null
+          - unique
+      - name: converted_fund_id
+        tests:
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_id
+
+  - name: dim_deal_stage
+    description: >
+      SCD2 deal-stage-history dimension using the reusable classification
+      pattern (classification_type_code = DEAL_STAGE) but keyed directly on
+      golden_deal_key -- deals are single-source ORIGO with their own golden keys, so
+      the fund satellite's known shared_external_id-orphan limitation
+      (docs/architecture/scd2-classification.md) does not apply. Half-open ranges:
+      effective_from <= event date < effective_to.
+    columns:
+      - name: deal_stage_key
+        tests:
+          - not_null
+          - unique
+      - name: deal_id
+        tests:
+          - not_null
+      - name: stage_code
+        tests:
+          - not_null
+      - name: effective_from
+        tests:
+          - not_null
+      - name: stage_recorded_at
+        description: >
+          Intra-day ordering column: midnight of effective_from for a
+          seed-sourced row, the approvals decision's own decided_at timestamp for a
+          decision-derived row. The SCD2 window above orders on
+          (effective_from, stage_recorded_at, deal_stage_history_key) so a same-day
+          stage transition resolves deterministically instead of falling back to the
+          surrogate key. Null only for the reserved UNKNOWN member.
+      - name: effective_to
+        tests:
+          - not_null
+
+  - name: fact_deal_pipeline
+    description: >
+      Deal-pipeline funnel snapshot: one row per resolved deal, its stage
+      as of today via a half-open date-range join against dim_deal_stage, conversion
+      linkage to a resolved fund golden key, and cycle-time measures (days in the
+      current stage; total sourced-to-decision cycle time for deals that reached a
+      terminal COMMITTED/DECLINED stage).
+    columns:
+      - name: deal_pipeline_key
+        tests:
+          - not_null
+          - unique
+      - name: deal_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_deal')
+              field: deal_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: current_deal_stage_key
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_deal_stage')
+              field: deal_stage_key
+      - name: converted_fund_id
+        tests:
+          - relationships:
+              to: ref('dim_fund')
+              field: fund_id

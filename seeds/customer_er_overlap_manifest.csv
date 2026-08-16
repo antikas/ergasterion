@@ -1,0 +1,9 @@
+source_system,source_record_id,true_customer_external_id,overlap_note
+cartivo,CART-CR-001,CUST-AVA,ava tri-source overlap (shared loyalty LOY-1001)
+mercaro,MERC-CR-001,CUST-AVA,ava tri-source overlap (shared loyalty LOY-1001)
+relatio,RELA-CR-001,CUST-AVA,ava tri-source overlap (crm wins city on conflict)
+cartivo,CART-CR-002,CUST-BEN,ben cross-feed overlap (shared email / no loyalty)
+mercaro,MERC-CR-002,CUST-BEN,ben cross-feed overlap (email case-variant normalised to same)
+cartivo,CART-CR-003,CUST-CHLOE,chloe storefront-only (loyalty LOY-1003)
+mercaro,MERC-CR-003,CUST-DIEGO,diego marketplace-only (loyalty LOY-1004)
+relatio,RELA-CR-002,CUST-ELENA,elena crm-only (no orders; partial coverage the other direction)

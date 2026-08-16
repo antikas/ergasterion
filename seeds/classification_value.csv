@@ -1,0 +1,20 @@
+classification_type_code,classification_value_code,classification_value_name,sort_order,is_unknown
+DEPT,UNKNOWN,Unknown,0,true
+DEPT,PRIVATE_EQUITY,Private Equity,10,false
+DEPT,INSTITUTIONAL_GROWTH,Institutional Growth,20,false
+DEPT,REAL_ASSETS,Real Assets,30,false
+DEPT,CREDIT,Credit,40,false
+DEPT,VENTURE,Venture,50,false
+SECTOR,UNKNOWN,Unknown,0,true
+SECTOR,GROWTH_EQUITY,Growth Equity,10,false
+SECTOR,BUYOUT,Buyout,20,false
+SECTOR,INFRASTRUCTURE,Infrastructure,30,false
+SECTOR,PRIVATE_CREDIT,Private Credit,40,false
+SECTOR,EARLY_STAGE,Early Stage,50,false
+DEAL_STAGE,UNKNOWN,Unknown,0,true
+DEAL_STAGE,SOURCED,Sourced,10,false
+DEAL_STAGE,SCREENING,Screening,20,false
+DEAL_STAGE,DILIGENCE,Diligence,30,false
+DEAL_STAGE,DECISION,Decision,40,false
+DEAL_STAGE,COMMITTED,Committed,50,false
+DEAL_STAGE,DECLINED,Declined,51,false

@@ -1,0 +1,11 @@
+cash_flow_id,portiq_fund_id,cash_flow_date,cash_flow_type,direction,amount_usd,currency
+PORTIQ-CF-001,PORTIQ-33,2021-09-30,capital_call,outflow,5000000,USD
+PORTIQ-CF-002,PORTIQ-33,2023-09-30,distribution,inflow,1800000,USD
+PORTIQ-CF-003,PORTIQ-33,2022-09-30,capital_call,outflow,2500000,USD
+PORTIQ-CF-004,PORTIQ-33,2024-09-30,distribution,inflow,2200000,USD
+PORTIQ-CF-005,PORTIQ-44,2025-03-31,distribution,inflow,3600000,USD
+PORTIQ-CF-006,PORTIQ-44,2025-06-30,capital_call,outflow,1200000,USD
+PORTIQ-CF-007,PORTIQ-44,2025-09-30,distribution,inflow,4100000,USD
+PORTIQ-CF-008,PORTIQ-55,2025-06-30,capital_call,outflow,3000000,USD
+PORTIQ-CF-009,PORTIQ-55,2025-09-30,distribution,inflow,900000,USD
+PORTIQ-CF-010,PORTIQ-66,2025-09-30,capital_call,outflow,2000000,USD

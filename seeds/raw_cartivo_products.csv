@@ -1,0 +1,4 @@
+cartivo_record_id,cartivo_product_id,shared_product_code,product_name,brand,category,list_price,currency,product_status,as_of_date
+CART-PR-001,CART-PROD-001,GTIN-1001,Wireless Earbuds,Aurio,audio,59.99,GBP,active,2025-01-01
+CART-PR-002,CART-PROD-002,GTIN-1002,Yoga Mat,Verdano,fitness,19.99,GBP,active,2025-01-01
+CART-PR-003,CART-PROD-003,GTIN-1004,Coffee Grinder,Zentra,kitchen,89.99,GBP,active,2025-01-01

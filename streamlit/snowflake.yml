@@ -1,0 +1,22 @@
+# Snow CLI project definition for the management console.
+# Deploy from the repository:
+#   snow streamlit deploy --project streamlit -c dpf --schema PUBLIC --database ERGASTERION --replace
+# See RUNBOOK.md for prerequisites and credential handling.
+definition_version: "2"
+
+entities:
+  dpf_review_queue_app:
+    type: streamlit
+    identifier: DPF_REVIEW_QUEUE
+    title: "Ergasterion: Entity Resolution Review Queue"
+    comment: >-
+      In-account Streamlit review queue over the tier-2 entity-resolution
+      middle band (models/entity_resolution/review_queue.sql). Analyst approve-merge
+      / reject actions write back to entity_resolution_decisions_log, an append-only
+      table dbt never truncates. No external dependencies; it uses the
+      warehouse-runtime Streamlit (streamlit + snowpark only).
+    query_warehouse: DPF_WH
+    main_file: streamlit_app.py
+    stage: streamlit_stage
+    artifacts:
+      - streamlit_app.py

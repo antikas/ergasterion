@@ -1,0 +1,4 @@
+mercaro_record_id,mercaro_order_id,mercaro_customer_id,order_date,order_status,currency,order_total,channel
+MERC-OR-001,MERC-O-001,MERC-CUST-001,2025-07-05,fulfilled,GBP,92.49,marketplace
+MERC-OR-002,MERC-O-002,MERC-CUST-003,2025-07-06,fulfilled,GBP,182.00,marketplace
+MERC-OR-003,MERC-O-003,MERC-CUST-002,2025-07-07,fulfilled,GBP,34.99,marketplace

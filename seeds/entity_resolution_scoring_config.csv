@@ -1,0 +1,6 @@
+entity_type,weight_string,weight_sector,weight_date,weight_value,threshold_auto,threshold_review,date_tolerance_days,value_tolerance_pct
+fund,0.4,0.2,0.2,0.2,0.85,0.65,548,0.10
+gp,0.4,0.2,0.2,0.2,0.85,0.65,365,0.10
+portfolio_company,0.4,0.2,0.2,0.2,0.85,0.65,365,0.10
+deal,0.4,0.2,0.2,0.2,0.85,0.65,365,0.10
+customer,0.4,0.2,0.2,0.2,0.85,0.65,365,0.10

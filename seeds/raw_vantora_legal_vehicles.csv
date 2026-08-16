@@ -1,0 +1,4 @@
+vehicle_id,vantora_fund_id,parent_vehicle_id,vehicle_name,vehicle_type,jurisdiction,incorporation_date,vehicle_lei
+VEH-ORION-SPV-A,CPS-4004,,Orion Credit SPV A,spv,KY,2023-02-15,549300ORIONVEHA0001
+VEH-ORION-SPV-B,CPS-4004,,Orion Credit SPV B,spv,LU,2023-05-20,
+VEH-ORION-FEEDER-A1,CPS-4004,VEH-ORION-SPV-A,Orion Credit Feeder A1,co_invest,KY,2023-06-10,

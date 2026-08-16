@@ -1,0 +1,11 @@
+{{ generated_header }}
+{{ dbt_set('source_model', vault.bridge_model) }}
+{{ dbt_set('derived_columns', {'load_datetime': 'current_timestamp', 'record_source': vault.record_source}) }}
+{{ dbt_set('hashed_columns', entity.hashed_columns) }}
+
+{{ "{{ automate_dv.stage(" }}
+    include_source_columns=true,
+    source_model=source_model,
+    derived_columns=derived_columns,
+    hashed_columns=hashed_columns
+{{ ") }}" }}

@@ -1,0 +1,552 @@
+name: ergasterion
+version: "0.1.0"
+config-version: 2
+
+profile: ergasterion
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+analysis-paths: ["analyses"]
+snapshot-paths: ["snapshots"]
+
+target-path: target
+clean-targets: ["target", "dbt_packages", "logs"]
+
+# Idempotent, Snowflake-only (no-op on every other target): creates the append-only
+# entity_resolution_decisions_log table ONCE, if it does not already exist, so the
+# Streamlit review-queue app has a relation to write analyst decisions into
+# that no `dbt build`/`dbt seed`/`dbt run` truncates.
+#
+# deal_decision_log is the SAME pattern applied to the deal pipeline's
+# investment-authorisation workflow, created through the SAME shared parameterised
+# ensure-macro the ER log uses. Its three fixture decision rows live in the dbt seed
+# seeds/deal_decision_log_fixtures.csv and are merged into the append-only log by the
+# generic dpf_merge_seed_into_append_only_log post-hook on that seed. The MERGE is
+# `when not matched then insert` only (keyed on decision_id), so it never duplicates or
+# truncates on rebuild; the seed's depends_on edge on int_deal_latest_decision keeps the
+# fixtures present before any consumer reads the log on a fresh build.
+#
+# See macros/entity_resolution_decisions.sql for the shared ensure-macro and the generic
+# fixture-merge mechanism.
+on-run-start:
+  - "{{ dpf_ensure_er_decisions_schema() }}"
+  - "{{ dpf_ensure_er_decisions_table() }}"
+  - "{{ dpf_ensure_deal_decision_log_table() }}"
+
+# Physical design rule (ergasterion/structure_gate.py enforces it): computation
+# layers materialise as tables on every deployment target; a view is a
+# one-deep interface artefact at a boundary declared in
+# declarations/targets/interfaces.yml. Per-target structural budgets live
+# beside that file, one declaration per adapter.
+models:
+  ergasterion:
+    staging:
+      +materialized: table
+      +schema: staging
+    entity_resolution:
+      +materialized: table
+      +schema: resolution
+    deal_approvals:
+      +materialized: table
+      +schema: deal_approvals
+    raw_vault:
+      +schema: raw_vault
+      stage:
+        +materialized: table
+        bridge:
+          +materialized: table
+      hubs:
+        +materialized: incremental
+      links:
+        +materialized: incremental
+      satellites:
+        +materialized: incremental
+
+seeds:
+  ergasterion:
+    +schema: raw
+    +quote_columns: false
+    raw_vantora_funds:
+      +column_types:
+        vantora_record_id: string
+        vantora_fund_id: string
+        fund_name: string
+        fund_family_name: string
+        vehicle_type: string
+        gp_source_id: string
+        gp_name: string
+        fund_lei: string
+        shared_external_id: string
+        asset_class: string
+        strategy: string
+        vintage_year: string
+        committed_capital_usd: string
+        currency: string
+        domicile: string
+        fund_status: string
+        as_of_date: string
+    raw_vantora_gps:
+      +column_types:
+        vantora_gp_id: string
+        gp_name: string
+        gp_lei: string
+        shared_external_id: string
+        domicile: string
+        relationship_start_date: string
+    raw_vantora_portfolio_companies:
+      +column_types:
+        vantora_company_id: string
+        vantora_fund_id: string
+        company_name: string
+        company_lei: string
+        shared_external_id: string
+        sector: string
+        sub_sector: string
+        country: string
+        status: string
+        first_seen_at: string
+    raw_vantora_cash_flows:
+      +column_types:
+        cash_flow_id: string
+        vantora_fund_id: string
+        cash_flow_date: string
+        cash_flow_type: string
+        direction: string
+        amount_usd: string
+        currency: string
+    raw_vantora_valuations:
+      +column_types:
+        valuation_id: string
+        vantora_fund_id: string
+        vantora_company_id: string
+        valuation_date: string
+        value_usd: string
+        method: string
+        valuation_level: string
+        confidence_score: string
+    # SPV / legal-vehicle layer seeds. Pinned to string (dates/amounts are
+    # cast at the staging projection) so ids like VEH-ORION-SPV-A and blank cells are
+    # never guessed by dbt's CSV type inference.
+    raw_vantora_legal_vehicles:
+      +column_types:
+        vehicle_id: string
+        vantora_fund_id: string
+        parent_vehicle_id: string
+        vehicle_name: string
+        vehicle_type: string
+        jurisdiction: string
+        incorporation_date: string
+        vehicle_lei: string
+    raw_vantora_vehicle_cash_flows:
+      +column_types:
+        vehicle_cash_flow_id: string
+        vehicle_id: string
+        cash_flow_date: string
+        cash_flow_type: string
+        direction: string
+        amount_usd: string
+        currency: string
+    # Manager succession event seed. Pinned to string (effective_date is
+    # cast at the staging projection) so ids like SUC-001/CEP-GP-06 are never
+    # guessed by dbt's CSV type inference.
+    raw_vantora_succession_events:
+      +column_types:
+        succession_event_id: string
+        predecessor_gp_id: string
+        successor_gp_id: string
+        event_type: string
+        effective_date: string
+    raw_meridex_legal_vehicles:
+      +column_types:
+        vehicle_id: string
+        meridex_fund_id: string
+        parent_vehicle_id: string
+        vehicle_name: string
+        vehicle_type: string
+        jurisdiction: string
+        incorporation_date: string
+        vehicle_lei: string
+    raw_meridex_funds:
+      +column_types:
+        meridex_fund_id: string
+        fund_name: string
+        gp_name: string
+        gp_lei: string
+        fund_lei: string
+        shared_external_id: string
+        asset_class: string
+        strategy: string
+        vintage_year: string
+        currency: string
+        domicile: string
+    raw_meridex_cash_flows:
+      +column_types:
+        cash_flow_id: string
+        meridex_fund_id: string
+        cash_flow_date: string
+        cash_flow_type: string
+        direction: string
+        amount_usd: string
+        currency: string
+    raw_meridex_fund_nav:
+      +column_types:
+        nav_id: string
+        meridex_fund_id: string
+        nav_date: string
+        nav_usd: string
+        called_capital_usd: string
+        distributed_capital_usd: string
+    raw_meridex_portfolio_companies:
+      +column_types:
+        meridex_company_id: string
+        meridex_fund_id: string
+        company_name: string
+        company_lei: string
+        shared_external_id: string
+        sector: string
+        country: string
+    raw_portiq_funds:
+      +column_types:
+        portiq_fund_id: string
+        fund_name: string
+        gp_name: string
+        gp_lei: string
+        fund_lei: string
+        shared_external_id: string
+        asset_class: string
+        strategy: string
+        vintage_year: string
+        currency: string
+    raw_portiq_cash_flows:
+      +column_types:
+        cash_flow_id: string
+        portiq_fund_id: string
+        cash_flow_date: string
+        cash_flow_type: string
+        direction: string
+        amount_usd: string
+        currency: string
+    raw_portiq_portfolio_companies:
+      +column_types:
+        portiq_company_id: string
+        portiq_fund_id: string
+        company_name: string
+        company_lei: string
+        shared_external_id: string
+        sector: string
+        country: string
+    raw_chrono_funds:
+      +column_types:
+        chrono_row_uid: string
+        chrono_vehicle_code: string
+        vehicle_display_name: string
+        vehicle_group_name: string
+        vehicle_form: string
+        manager_master_code: string
+        manager_name_text: string
+        manager_lei: string
+        legal_entity_identifier: string
+        vendor_crosswalk_id: string
+        private_market_bucket: string
+        investment_style: string
+        launch_year: string
+        commitment_amount_usd: string
+        reporting_ccy: string
+        domicile_iso2: string
+        lifecycle_state: string
+        snapshot_date: string
+    raw_chrono_portfolio_companies:
+      +column_types:
+        asset_uid: string
+        vehicle_code: string
+        issuer_name_text: string
+        issuer_lei: string
+        vendor_company_id: string
+        industry_group: string
+        industry_detail: string
+        country_iso2: string
+        holding_status: string
+        first_reported_on: string
+    raw_chrono_cash_flows:
+      +column_types:
+        event_uid: string
+        vehicle_code: string
+        event_date: string
+        event_kind: string
+        investor_direction: string
+        usd_amount: string
+        currency_code: string
+    raw_chrono_valuations:
+      +column_types:
+        mark_uid: string
+        vehicle_code: string
+        asset_uid: string
+        mark_date: string
+        usd_fair_value: string
+        mark_method: string
+        fair_value_bucket: string
+        extraction_confidence: string
+    # entity_resolution_overlap_manifest is the ground-truth overlap manifest
+    # The human-known TRUE fund identity per source fund record, used
+    # by tests/assert_res_fund_er_precision_overlap_manifest.sql (precision) and
+    # tests/assert_res_fund_er_recall_overlap_manifest.sql (recall) to
+    # assert ER correctness. Pinned to string so ids like SS-F-77 / PORTIQ-33 are
+    # never guessed numeric by dbt's CSV type inference.
+    entity_resolution_overlap_manifest:
+      +column_types:
+        source_system: string
+        source_record_id: string
+        true_fund_external_id: string
+        overlap_note: string
+    # ORIGO deal-origination CRM feed. Pinned to string (sourced_date is
+    # cast at the staging projection, empty external/target/converted cells map to
+    # null via blank_to_null) so ids like D-001 / ORIGO-EXT-DUP-A are never guessed by
+    # dbt's CSV type inference.
+    raw_origo_deals:
+      +column_types:
+        deal_id: string
+        external_deal_id: string
+        deal_name: string
+        target_entity_id: string
+        strategy: string
+        originating_team: string
+        source_channel: string
+        sourced_date: string
+        structure: string
+        converted_record_type: string
+        converted_record_id: string
+    # Ground-truth deal ER manifest: the human-known TRUE deal identity per
+    # ORIGO deal record, used by tests/assert_res_deal_er_precision_manifest.sql. A
+    # SEPARATE seed from entity_resolution_overlap_manifest (which is res_fund-scoped);
+    # the deal test is intra-source and must not overload the fund manifest.
+    deal_er_overlap_manifest:
+      +column_types:
+        source_system: string
+        source_record_id: string
+        true_deal_external_id: string
+        overlap_note: string
+    # fund_invested_capital_basis is the per-fund invested-capital basis: the
+    # recallable return-of-capital and fee-offset amounts that are subtracted from paid-in
+    # to give invested capital, so MOIC has a basis distinct from TVPI's paid-in. A
+    # read-time reference seed keyed by the fund business id, the same pattern as
+    # hurdle_config; funds with no row here default to invested = paid-in (MOIC = TVPI).
+    # Pinned to string (numerics cast in fact_fund_performance_base) so the amounts are
+    # never guessed by dbt's CSV type inference.
+    fund_invested_capital_basis:
+      +column_types:
+        fund_external_id: string
+        recallable_distributions_usd: string
+        fee_offset_usd: string
+        basis_note: string
+    classification_type:
+      +column_types:
+        classification_type_code: string
+        classification_type_name: string
+        description: string
+    classification_value:
+      +column_types:
+        classification_type_code: string
+        classification_value_code: string
+        classification_value_name: string
+        sort_order: string
+        is_unknown: string
+    investment_classification_history_seed:
+      +column_types:
+        entity_type: string
+        entity_external_id: string
+        classification_type_code: string
+        classification_value_code: string
+        effective_from: string
+        record_source: string
+        load_datetime: string
+    # Deal-stage history seed: reuses the classification_type/value
+    # reference pair as a third instance of the pattern (DEAL_STAGE alongside
+    # DEPT/SECTOR) but keys directly on the deal's own external_deal_id -- deals are
+    # single-source ORIGO with their own golden keys, so this does NOT go through
+    # canonical_fund.shared_external_id. Pinned to string so ids like
+    # ORIGO-EXT-DUP-A are never guessed by dbt's CSV type inference.
+    #
+    # stage_recorded_at orders same-day stage transitions. Rows without an authored
+    # intraday time use midnight of effective_from. The ORIGO-EXT-004 DILIGENCE and
+    # SCREENING rows exercise the tie. dim_deal_stage.sql and its point-in-time test
+    # order on (effective_from, stage_recorded_at, <surrogate key>).
+    deal_stage_history_seed:
+      +column_types:
+        entity_type: string
+        entity_external_id: string
+        classification_type_code: string
+        classification_value_code: string
+        effective_from: string
+        record_source: string
+        load_datetime: string
+        stage_recorded_at: string
+    # Deterministic investment-authorisation fixtures are merged from
+    # seeds/deal_decision_log_fixtures.csv into the
+    # append-only deal_decision_log by the generic dpf_merge_seed_into_append_only_log
+    # post-hook below (Snowflake-only; when-not-matched-insert, keyed on decision_id, so
+    # a rebuild never duplicates or truncates). The append-only log itself is created at
+    # on-run-start and is NEVER a dbt seed/model -- only this SEPARATE fixture-source seed
+    # is. It uses a different relation name, deal_decision_log_fixtures, so the survival
+    # test still forbids the log's own name from being dbt-materialised.
+    # Pinned to string so ids like DEC-ORIGO-EXT-DUP-B-01 and the timestamp/blank-conditions
+    # cells are never guessed; the merge casts each column to its declared log type and maps
+    # a blank cell to null with blank_to_null.
+    #
+    # Why these particular rows (the fixture stories they encode for the named tests):
+    #   ORIGO-EXT-DUP-B -- the deal deal_stage_history_seed leaves sitting at DECISION with
+    #     no terminal stage. The IC first deferred (2025-05-10), then reconvened and approved
+    #     with conditions (2025-05-20). Latest-wins (decided_at desc) picks the later
+    #     approve_with_conditions row over the earlier defer -- the dedup test
+    #     (tests/assert_deal_latest_decision_dedup.sql) asserts exactly this -- and derives
+    #     DUP-B's next stage (COMMITTED), so it drops OUT of deal_approval_queue once resolved.
+    #   ORIGO-EXT-001 -- carries a seeded DECISION row (2025-03-10). The IC deferred it
+    #     (2025-03-20) and has not reconvened; defer is non-terminal
+    #     (int_deal_stage_from_decision derives no row), so it stays visible in
+    #     deal_approval_queue, deferred and pending -- the positive queue-coverage row the
+    #     queue model's schema tests bite on.
+    deal_decision_log_fixtures:
+      +column_types:
+        decision_id: string
+        external_deal_id: string
+        decision: string
+        conditions: string
+        actor: string
+        decided_at: string
+      +post-hook: "{{ dpf_merge_seed_into_append_only_log('deal_decision_log', this, 'decision_id', dpf_deal_decision_log_columns()) }}"
+    # E-commerce customer-360 domain seeds. Every column is pinned to
+    # string; dates/amounts/quantities are cast at each source's staging projection, and
+    # blank cells (e.g. Ben's absent loyalty_id) map to null via blank_to_null, so
+    # dbt's CSV type inference never guesses ids like
+    # CART-CUST-001 / GTIN-1001 or a loyalty-blank column's type. All people are
+    # synthetic, emails ride the reserved example.com domain (RFC 2606), addresses and
+    # product/brand names are invented -- nothing resolvable to a real person or brand.
+    raw_cartivo_customers:
+      +column_types:
+        cartivo_record_id: string
+        cartivo_customer_id: string
+        loyalty_id: string
+        email: string
+        full_name: string
+        phone: string
+        address_line: string
+        city: string
+        postal_code: string
+        country: string
+        marketing_consent: string
+        preferred_channel: string
+        customer_status: string
+        as_of_date: string
+    raw_cartivo_products:
+      +column_types:
+        cartivo_record_id: string
+        cartivo_product_id: string
+        shared_product_code: string
+        product_name: string
+        brand: string
+        category: string
+        list_price: string
+        currency: string
+        product_status: string
+        as_of_date: string
+    raw_cartivo_orders:
+      +column_types:
+        cartivo_record_id: string
+        cartivo_order_id: string
+        cartivo_customer_id: string
+        order_date: string
+        order_status: string
+        currency: string
+        order_total: string
+        channel: string
+    raw_cartivo_order_lines:
+      +column_types:
+        cartivo_record_id: string
+        cartivo_order_id: string
+        cartivo_product_id: string
+        line_number: string
+        quantity: string
+        unit_price: string
+        line_revenue: string
+        currency: string
+        order_date: string
+    raw_mercaro_customers:
+      +column_types:
+        mercaro_record_id: string
+        mercaro_customer_id: string
+        loyalty_id: string
+        email: string
+        full_name: string
+        city: string
+        buyer_segment: string
+        customer_status: string
+        as_of_date: string
+    raw_mercaro_products:
+      +column_types:
+        mercaro_record_id: string
+        mercaro_product_id: string
+        shared_product_code: string
+        product_name: string
+        brand: string
+        category: string
+        list_price: string
+        currency: string
+        product_status: string
+        as_of_date: string
+    raw_mercaro_orders:
+      +column_types:
+        mercaro_record_id: string
+        mercaro_order_id: string
+        mercaro_customer_id: string
+        order_date: string
+        order_status: string
+        currency: string
+        order_total: string
+        channel: string
+    raw_mercaro_order_lines:
+      +column_types:
+        mercaro_record_id: string
+        mercaro_order_id: string
+        mercaro_product_id: string
+        line_number: string
+        quantity: string
+        unit_price: string
+        line_revenue: string
+        currency: string
+        order_date: string
+    raw_relatio_customers:
+      +column_types:
+        relatio_record_id: string
+        relatio_customer_id: string
+        loyalty_id: string
+        email: string
+        full_name: string
+        phone: string
+        address_line: string
+        city: string
+        postal_code: string
+        country: string
+        customer_status: string
+        as_of_date: string
+    # Ground-truth customer ER manifest: the human-known TRUE customer
+    # identity per source customer record, used by
+    # tests/assert_res_customer_er_precision_manifest.sql. A per-entity manifest, the
+    # same precedent as entity_resolution_overlap_manifest (fund) and
+    # deal_er_overlap_manifest (deal).
+    customer_er_overlap_manifest:
+      +column_types:
+        source_system: string
+        source_record_id: string
+        true_customer_external_id: string
+        overlap_note: string
+    # Seeded customer loyalty-tier / segment history, staged now for the
+    # SCD2 dim_customer_segment (half-open-range point-in-time attribution). Not consumed
+    # by any model -- staged ahead so segment attribution has deterministic history.
+    customer_segment_history_seed:
+      +column_types:
+        customer_external_id: string
+        segment: string
+        effective_from: string
+        record_source: string
+        load_datetime: string

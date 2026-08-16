@@ -1,0 +1,5 @@
+asset_uid,vehicle_code,issuer_name_text,issuer_lei,vendor_company_id,industry_group,industry_detail,country_iso2,holding_status,first_reported_on
+CHR-PC-LUMINA,CHR-AG2-A,Lumina Health Holdings,549300LUMINAHEALTH01,OPENIM-PC-LUMINA,healthcare,providers,US,active,2025-12-31
+CHR-PC-GRID,CHR-AG2-A,GridForge Renewables,,OPENIM-PC-GRIDFORGE,energy,renewables,US,active,2025-12-31
+CHR-PC-NOVA,CHR-NB4-M,NovaFoods Group,549300NOVAFOODS0001,OPENIM-PC-NOVA,consumer,food,GB,active,2025-12-31
+CHR-PC-SUNVALE,CHR-HELIO-CLIMATE-I,Sunvale Storage,,OPENIM-PC-SUNVALE,energy,battery_storage,US,active,2025-12-31

@@ -1,0 +1,17 @@
+{{ generated_header }}
+{{ "{{ config(materialized='table', schema='business_vault') }}" }}
+
+{{ dbt_set('source_satellites', source_satellites) }}
+
+{{ dbt_set('source_priority', source_priority) }}
+
+{{ rules_set }}
+
+{{ "{{ survivorship_golden_record(" }}
+    entity='{{ entity_name }}',
+    hub_model='{{ bv.hub_model }}',
+    hub_pk='{{ bv.hub_pk }}',
+    hub_nk='{{ bv.hub_nk }}',
+    source_satellites=source_satellites,
+    attribute_rules=rules
+{{ ") }}" }}

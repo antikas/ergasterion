@@ -1,0 +1,4 @@
+cartivo_record_id,cartivo_customer_id,loyalty_id,email,full_name,phone,address_line,city,postal_code,country,marketing_consent,preferred_channel,customer_status,as_of_date
+CART-CR-001,CART-CUST-001,LOY-1001,ava@example.com,Ava Thompson,+44-20-7000-0001,12 Elm Street,London,EC1A 1AA,GB,true,email,active,2025-01-10
+CART-CR-002,CART-CUST-002,,ben.carter@example.com,Ben Carter,+44-20-7000-0002,5 Oak Lane,Bristol,BS1 4ST,GB,false,sms,active,2025-02-14
+CART-CR-003,CART-CUST-003,LOY-1003,chloe.nguyen@example.com,Chloe Nguyen,+44-20-7000-0003,9 Birch Road,Leeds,LS1 5AA,GB,true,email,active,2025-03-05

@@ -1,0 +1,66 @@
+{{ header }}
+source:
+  name: {{ source.name }}
+  display_name: {{ source.display_name }}
+  system: {{ source.system | tojson }}
+  priority: {{ source.priority }}  # TODO: confirm survivorship priority (lower wins ties -- see sibling declarations/*.yml for the convention this domain uses)
+
+tables:
+{%- for table in tables %}
+  {{ table.name }}:
+    raw_model: {{ table.raw_model }}  # TODO: confirm the actual seed/landing table name this reads from
+    description: {{ table.description | tojson }}
+{%- if table.seed_tests %}
+    seed_tests:
+{%- for column in table.seed_tests %}
+      - {name: {{ column.name }}, data_tests: {{ column.data_tests }}}
+{%- endfor %}
+{%- else %}
+    seed_tests: []
+{%- endif %}
+{%- if table.model_tests %}
+    model_tests:
+{%- for column in table.model_tests %}
+      - {name: {{ column.name }}, data_tests: {{ column.data_tests }}}
+{%- endfor %}
+{%- else %}
+    model_tests: []
+{%- endif %}
+    projection:
+{%- for column in table.projection %}
+      - {name: {{ column.name }}, expression: {{ column.expression | tojson }}}
+{%- if column.physical_type %}
+      # supplier physicalType for {{ column.name }}: {{ column.physical_type }} (not compiled into the cast above -- see module docstring)
+{%- endif %}
+{%- endfor %}
+    # TODO vault_entities -- no ODCS contract carries this; it is authored judgment, never
+    # guessed. Add manually if this table's records feed a vault entity declared in this
+    # domain's domains/<domain>.yml entity_configs. Worked example shape (see
+    # declarations/cartivo.yml for a fully worked one):
+    #   vault_entities:
+    #     - name: {{ table.name }}
+    #       entity: <entity_configs key>
+    #       record_source: "!{{ source.display_name }}_{{ table.name | upper }}"
+    #       bridge:
+    #         resolutions:
+    #           - alias: <alias>_resolution
+    #             model: res_<entity>
+    #             join_type: inner
+    #             conditions:
+    #               - <alias>_resolution.source_system = source.source_system
+    #               - <alias>_resolution.source_id = source.<source_id_column>
+    #         select:
+    #           - {name: source_system, expression: source.source_system}
+    #           - ...
+    #         where:
+    #           - <alias>_resolution.golden_<entity>_key is not null
+    vault_entities: []
+{% endfor %}
+# TODO entity_resolution -- add a top-level `entity_resolution:` mapping only if a table
+# above is vaulted against an entity that fans into a shared res_<entity> resolution
+# model; see declarations/cartivo.yml's `entity_resolution:` section for the shape. No
+# ODCS contract carries this either -- authored judgment.
+#
+# TODO canonical_mappings -- only relevant if this domain cross-validates sources against
+# an external canonical model (an investment-domain-only convention today; see README
+# "What this is not"). Omit entirely if this domain has none.

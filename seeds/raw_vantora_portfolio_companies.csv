@@ -1,0 +1,7 @@
+vantora_company_id,vantora_fund_id,company_name,company_lei,shared_external_id,sector,sub_sector,country,status,first_seen_at
+CEP-PC-001,CPS-1001,Lumina Health,549300LUMINAHEALTH01,OPENIM-PC-LUMINA,healthcare,providers,US,active,2025-03-31
+CEP-PC-002,CPS-1001-A,GridForge Energy,,OPENIM-PC-GRIDFORGE,energy,renewables,US,active,2025-06-30
+CEP-PC-003,CPS-2002,NovaFoods,549300NOVAFOODS0001,OPENIM-PC-NOVA,consumer,food,GB,active,2025-03-31
+CEP-PC-004,CPS-3003,Atlas Robotics,,,industrials,automation,DE,active,2025-06-30
+CEP-PC-005,CPS-4004,ClearPath Data,549300CLEARPATH001,OPENIM-PC-CLEARPATH,technology,data_services,US,active,2025-09-30
+CEP-PC-006,CPS-5005,BlueRail Logistics,,,transport,rail,US,active,2025-09-30

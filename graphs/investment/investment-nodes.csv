@@ -1,0 +1,6 @@
+id,name,domain,hash_key,golden_key
+deal,deal,investment,deal_hk,golden_deal_key
+fund,fund,investment,fund_hk,golden_fund_key
+gp,gp,investment,gp_hk,golden_gp_key
+legal_vehicle,legal_vehicle,investment,legal_vehicle_hk,golden_legal_vehicle_key
+portfolio_company,portfolio_company,investment,portfolio_company_hk,golden_portfolio_company_key

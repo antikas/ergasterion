@@ -1,0 +1,43 @@
+-- Populated-review-queue test (criterion 4).
+--
+-- correctness claim: the probabilistic tier-2 band (review_queue.sql,
+--) is not a dead code path -- on a full build at least one candidate
+-- pair genuinely lands in the review band (composite_score between
+-- threshold_review and threshold_auto inclusive, i.e. 0.65 through 0.85 per
+-- seeds/entity_resolution_scoring_config.csv) and so is exposed unmerged for a
+-- human steward rather than silently auto-merged or auto-rejected.
+--
+-- The guarantee is traced from the seeds, not assumed:
+--   * the pair is meridex SS-F-99 ("Harbor Infra Fund III",
+--     seeds/raw_meridex_funds.csv) and portiq PORTIQ-55 ("Harbor Infrastructure
+--     3", seeds/raw_portiq_funds.csv). Both are the same real
+--     fund per seeds/entity_resolution_overlap_manifest.csv (OPENIM-FUND-
+--     HARBOR-III), but neither carries a lei/shared_external_id/vantora id, and
+--     their names do NOT normalise identically (normalise_name strips to
+--     HARBORINFRAFUNDIII vs HARBORINFRASTRUCTURE3 -- "FUND" vs "STRUCTURE",
+--     roman "III" vs arabic "3") -- so tier-0/1 deterministic matching in
+--     res_fund misses them and both come out pending_probabilistic = true,
+--     the seeded "unmatched sighting" this test's guarantee rests on.
+--   * At tier-2 (int_entity_resolution_candidate_pairs.sql / macros/
+--     entity_resolution_scoring.sql) the two records score: sector_score = 1.0
+--     (both strategy = core_plus), date_score = 1.0 (both vintage_year = 2022,
+--     0 days apart), string_score ~= 0.571 (Levenshtein edit distance 9 over
+--     the longer 21-char normalised name, 1 - 9/21), value_score NULL (funds
+--     carry no value_proxy, renormalised out of the weighted average). Composite
+--     = (0.571*0.4 + 1.0*0.2 + 1.0*0.2) / (0.4 + 0.2 + 0.2) ~= 0.786 -- inside
+--     the review band, so res_entity_resolution_tier2.tier2_disposition =
+--     'review' for this pair and review_queue.sql (filtered to that
+--     disposition) is non-empty.
+--   * QUALIFY in int_entity_resolution_candidate_pairs.sql keeps each side's
+--     single best-scoring cross-source match; this pair's nearest competitors
+--     (e.g. SS-F-99 against portiq's "Summit Bridge Ventures") differ in
+--     sector and vintage and score well below this pairing, so it is not
+--     displaced.
+--
+-- Singular test: PASSES when review_queue has at least one row. Returns a
+-- single violation row when the queue is empty (design regression, or a seed
+-- change that removed the guarantee above without replacing it).
+select 'review_queue_is_empty' as violation
+where not exists (
+    select 1 from {{ ref('review_queue') }}
+)

@@ -1,0 +1,11 @@
+edge_id,src,dst,rel_type,cardinality,kind,inverse,source_key,target_key,source_column,discriminator_value,link,properties
+e00001,deal,portfolio_company,CONCERNS_COMPANY,many_to_one,column_level,SUBJECT_OF_DEAL,,,target_entity_id,,,
+e00002,deal,fund,CONVERTED_TO,many_to_one,column_level,CONVERSION_OF,,,converted_record_id,fund,,
+e00003,deal,portfolio_company,CONVERTED_TO,many_to_one,column_level,CONVERSION_OF,,,converted_record_id,portfolio_company,,
+e00004,deal,fund,CONVERTED_TO_FUND,one_to_one,link_backed,CONVERTED_FROM_DEAL,deal_hk,fund_hk,,,deal_fund_conversion,source_deal_id;converted_record_type;converted_record_id
+e00005,deal,portfolio_company,TARGETS_COMPANY,many_to_one,link_backed,TARGET_OF_DEAL,deal_hk,portfolio_company_hk,,,deal_target_company,source_deal_id;target_entity_id;target_company_external_id
+e00006,fund,portfolio_company,HOLDS_POSITION_IN,many_to_many,link_backed,POSITION_HELD_BY,fund_hk,portfolio_company_hk,,,fund_portfolio_company,
+e00007,fund,legal_vehicle,INVESTS_THROUGH,many_to_many,link_backed,VEHICLE_OF,fund_hk,legal_vehicle_hk,,,investment_vehicle,
+e00008,fund,gp,MANAGED_BY,many_to_one,link_backed,MANAGES,fund_hk,gp_hk,,,fund_gp,
+e00009,gp,gp,SUCCEEDED_BY,one_to_one,link_backed,SUCCEEDS,predecessor_gp_hk,successor_gp_hk,,,gp_succession,succession_event_id;predecessor_source_gp_id;successor_source_gp_id;event_type;effective_date
+e00010,legal_vehicle,legal_vehicle,SUBSIDIARY_OF,many_to_one,column_level,PARENT_OF,,,parent_vehicle_id,,,

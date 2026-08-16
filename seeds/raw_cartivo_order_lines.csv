@@ -1,0 +1,4 @@
+cartivo_record_id,cartivo_order_id,cartivo_product_id,line_number,quantity,unit_price,line_revenue,currency,order_date
+CART-OL-001,CART-O-001,CART-PROD-001,1,1,59.99,59.99,GBP,2025-07-01
+CART-OL-002,CART-O-001,CART-PROD-002,2,2,19.99,39.98,GBP,2025-07-01
+CART-OL-003,CART-O-002,CART-PROD-003,1,1,89.99,89.99,GBP,2025-07-03

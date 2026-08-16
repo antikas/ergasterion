@@ -1,0 +1,479 @@
+{
+  "graph": "investment_graph",
+  "node_label": "Entity",
+  "relationship_label": "Relationship",
+  "csv": {
+    "node_headers": [
+      "id",
+      "name",
+      "domain",
+      "hash_key",
+      "golden_key"
+    ],
+    "edge_headers": [
+      "edge_id",
+      "src",
+      "dst",
+      "rel_type",
+      "cardinality",
+      "kind",
+      "inverse",
+      "source_key",
+      "target_key",
+      "source_column",
+      "discriminator_value",
+      "link",
+      "properties"
+    ]
+  },
+  "node_types": [
+    {
+      "id": "deal",
+      "name": "deal",
+      "domain": "investment",
+      "hash_key": "deal_hk",
+      "golden_key": "golden_deal_key"
+    },
+    {
+      "id": "fund",
+      "name": "fund",
+      "domain": "investment",
+      "hash_key": "fund_hk",
+      "golden_key": "golden_fund_key"
+    },
+    {
+      "id": "gp",
+      "name": "gp",
+      "domain": "investment",
+      "hash_key": "gp_hk",
+      "golden_key": "golden_gp_key"
+    },
+    {
+      "id": "legal_vehicle",
+      "name": "legal_vehicle",
+      "domain": "investment",
+      "hash_key": "legal_vehicle_hk",
+      "golden_key": "golden_legal_vehicle_key"
+    },
+    {
+      "id": "portfolio_company",
+      "name": "portfolio_company",
+      "domain": "investment",
+      "hash_key": "portfolio_company_hk",
+      "golden_key": "golden_portfolio_company_key"
+    }
+  ],
+  "relation_types": [
+    {
+      "type": "CONCERNS_COMPANY",
+      "alias": "concerns-company",
+      "direction": "directed",
+      "kind": "reference",
+      "cardinality": "many_to_one",
+      "inverse": "SUBJECT_OF_DEAL",
+      "source_types": [
+        "deal"
+      ],
+      "target_types": [
+        "portfolio_company"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "deal",
+        "relation": "CONCERNS_COMPANY",
+        "target": "portfolio_company"
+      }
+    },
+    {
+      "type": "CONVERSION_OF",
+      "alias": "conversion-of",
+      "direction": "directed",
+      "kind": "reference",
+      "cardinality": "one_to_many",
+      "inverse": "CONVERTED_TO",
+      "source_types": [
+        "fund",
+        "portfolio_company"
+      ],
+      "target_types": [
+        "deal"
+      ],
+      "edge_count": 2,
+      "example_traversal": {
+        "source": "fund",
+        "relation": "CONVERSION_OF",
+        "target": "deal"
+      }
+    },
+    {
+      "type": "CONVERTED_FROM_DEAL",
+      "alias": "converted-from-deal",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_one",
+      "inverse": "CONVERTED_TO_FUND",
+      "source_types": [
+        "fund"
+      ],
+      "target_types": [
+        "deal"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "fund",
+        "relation": "CONVERTED_FROM_DEAL",
+        "target": "deal"
+      }
+    },
+    {
+      "type": "CONVERTED_TO",
+      "alias": "converted-to",
+      "direction": "directed",
+      "kind": "reference",
+      "cardinality": "many_to_one",
+      "inverse": "CONVERSION_OF",
+      "source_types": [
+        "deal"
+      ],
+      "target_types": [
+        "fund",
+        "portfolio_company"
+      ],
+      "edge_count": 2,
+      "example_traversal": {
+        "source": "deal",
+        "relation": "CONVERTED_TO",
+        "target": "fund"
+      }
+    },
+    {
+      "type": "CONVERTED_TO_FUND",
+      "alias": "converted-to-fund",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_one",
+      "inverse": "CONVERTED_FROM_DEAL",
+      "source_types": [
+        "deal"
+      ],
+      "target_types": [
+        "fund"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "deal",
+        "relation": "CONVERTED_TO_FUND",
+        "target": "fund"
+      }
+    },
+    {
+      "type": "HOLDS_POSITION_IN",
+      "alias": "holds-position-in",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_many",
+      "inverse": "POSITION_HELD_BY",
+      "source_types": [
+        "fund"
+      ],
+      "target_types": [
+        "portfolio_company"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "fund",
+        "relation": "HOLDS_POSITION_IN",
+        "target": "portfolio_company"
+      }
+    },
+    {
+      "type": "INVESTS_THROUGH",
+      "alias": "invests-through",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_many",
+      "inverse": "VEHICLE_OF",
+      "source_types": [
+        "fund"
+      ],
+      "target_types": [
+        "legal_vehicle"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "fund",
+        "relation": "INVESTS_THROUGH",
+        "target": "legal_vehicle"
+      }
+    },
+    {
+      "type": "MANAGED_BY",
+      "alias": "managed-by",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_one",
+      "inverse": "MANAGES",
+      "source_types": [
+        "fund"
+      ],
+      "target_types": [
+        "gp"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "fund",
+        "relation": "MANAGED_BY",
+        "target": "gp"
+      }
+    },
+    {
+      "type": "MANAGES",
+      "alias": "manages",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_many",
+      "inverse": "MANAGED_BY",
+      "source_types": [
+        "gp"
+      ],
+      "target_types": [
+        "fund"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "gp",
+        "relation": "MANAGES",
+        "target": "fund"
+      }
+    },
+    {
+      "type": "PARENT_OF",
+      "alias": "parent-of",
+      "direction": "directed",
+      "kind": "aggregation",
+      "cardinality": "one_to_many",
+      "inverse": "SUBSIDIARY_OF",
+      "source_types": [
+        "legal_vehicle"
+      ],
+      "target_types": [
+        "legal_vehicle"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "legal_vehicle",
+        "relation": "PARENT_OF",
+        "target": "legal_vehicle"
+      }
+    },
+    {
+      "type": "POSITION_HELD_BY",
+      "alias": "position-held-by",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_many",
+      "inverse": "HOLDS_POSITION_IN",
+      "source_types": [
+        "portfolio_company"
+      ],
+      "target_types": [
+        "fund"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "portfolio_company",
+        "relation": "POSITION_HELD_BY",
+        "target": "fund"
+      }
+    },
+    {
+      "type": "SUBJECT_OF_DEAL",
+      "alias": "subject-of-deal",
+      "direction": "directed",
+      "kind": "reference",
+      "cardinality": "one_to_many",
+      "inverse": "CONCERNS_COMPANY",
+      "source_types": [
+        "portfolio_company"
+      ],
+      "target_types": [
+        "deal"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "portfolio_company",
+        "relation": "SUBJECT_OF_DEAL",
+        "target": "deal"
+      }
+    },
+    {
+      "type": "SUBSIDIARY_OF",
+      "alias": "subsidiary-of",
+      "direction": "directed",
+      "kind": "aggregation",
+      "cardinality": "many_to_one",
+      "inverse": "PARENT_OF",
+      "source_types": [
+        "legal_vehicle"
+      ],
+      "target_types": [
+        "legal_vehicle"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "legal_vehicle",
+        "relation": "SUBSIDIARY_OF",
+        "target": "legal_vehicle"
+      }
+    },
+    {
+      "type": "SUCCEEDED_BY",
+      "alias": "succeeded-by",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_one",
+      "inverse": "SUCCEEDS",
+      "source_types": [
+        "gp"
+      ],
+      "target_types": [
+        "gp"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "gp",
+        "relation": "SUCCEEDED_BY",
+        "target": "gp"
+      }
+    },
+    {
+      "type": "SUCCEEDS",
+      "alias": "succeeds",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_one",
+      "inverse": "SUCCEEDED_BY",
+      "source_types": [
+        "gp"
+      ],
+      "target_types": [
+        "gp"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "gp",
+        "relation": "SUCCEEDS",
+        "target": "gp"
+      }
+    },
+    {
+      "type": "TARGETS_COMPANY",
+      "alias": "targets-company",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_one",
+      "inverse": "TARGET_OF_DEAL",
+      "source_types": [
+        "deal"
+      ],
+      "target_types": [
+        "portfolio_company"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "deal",
+        "relation": "TARGETS_COMPANY",
+        "target": "portfolio_company"
+      }
+    },
+    {
+      "type": "TARGET_OF_DEAL",
+      "alias": "target-of-deal",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_many",
+      "inverse": "TARGETS_COMPANY",
+      "source_types": [
+        "portfolio_company"
+      ],
+      "target_types": [
+        "deal"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "portfolio_company",
+        "relation": "TARGET_OF_DEAL",
+        "target": "deal"
+      }
+    },
+    {
+      "type": "VEHICLE_OF",
+      "alias": "vehicle-of",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_many",
+      "inverse": "INVESTS_THROUGH",
+      "source_types": [
+        "legal_vehicle"
+      ],
+      "target_types": [
+        "fund"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "legal_vehicle",
+        "relation": "VEHICLE_OF",
+        "target": "fund"
+      }
+    }
+  ],
+  "satellites": [
+    {
+      "name": "fund_cash_flow",
+      "anchor": "fund",
+      "payload_columns": [
+        "cash_flow_id",
+        "source_fund_id",
+        "cash_flow_date",
+        "cash_flow_type",
+        "direction",
+        "amount_usd",
+        "currency",
+        "fund_resolution_tier",
+        "fund_resolution_confidence"
+      ]
+    },
+    {
+      "name": "fund_valuation",
+      "anchor": "fund",
+      "payload_columns": [
+        "valuation_id",
+        "source_fund_id",
+        "source_company_id",
+        "valuation_date",
+        "value_usd",
+        "method",
+        "valuation_level",
+        "confidence_score",
+        "golden_portfolio_company_key",
+        "fund_resolution_tier",
+        "fund_resolution_confidence",
+        "portfolio_company_resolution_tier",
+        "portfolio_company_resolution_confidence"
+      ]
+    },
+    {
+      "name": "legal_vehicle_cash_flow",
+      "anchor": "legal_vehicle",
+      "payload_columns": [
+        "cash_flow_id",
+        "vehicle_natural_id",
+        "cash_flow_date",
+        "cash_flow_type",
+        "direction",
+        "amount_usd",
+        "currency"
+      ]
+    }
+  ]
+}

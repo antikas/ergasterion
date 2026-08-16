@@ -1,0 +1,111 @@
+version: 2
+
+# deal_decision_log is an append-only table that dbt never builds or truncates. The
+# on-run-start hooks in dbt_project.yml create it idempotently through the shared
+# macros/entity_resolution_decisions.sql helpers. It is declared as a source because
+# dbt must not manage its lifecycle. deal_decision_log_fixtures supplies deterministic
+# test rows through the dpf_merge_seed_into_append_only_log post-hook. The management
+# console appends real decisions through the same interface.
+#
+# The raw decision log is append-only. The derived stage row from
+# int_deal_stage_from_decision.sql is recomputed from each deal's latest decision
+# (int_deal_latest_decision.sql) on every build. If a deal's latest decision changes
+# from a terminal one (approve/approve_with_conditions/decline) to a non-terminal one
+# (e.g. the IC reconvenes and defers after a prior approval), the previously-derived
+# terminal stage row (COMMITTED/DECLINED) disappears from sat_deal_stage_history.sql
+# on the next build. The log keeps the full decision trail; the derived stage view shows current
+# truth, not an append-only history of derivations.
+sources:
+  - name: deal_decision_raw
+    schema: "{{ target.schema }}_RAW"
+    tables:
+      - name: deal_decision_log
+        description: >
+          Append-only investment-authorisation decision log for the deal
+          pipeline's approvals workflow. One row per IC decision event --
+          INSERT only, never UPDATE/DELETE, so a re-decided deal (the IC changes its
+          mind, or reconvenes) appends a new row rather than overwriting the prior
+          one. decision uses approve /
+          approve_with_conditions / decline / defer). decision and conditions are
+          the decision and rationale; actor and decided_at record who decided and when.
+          external_deal_id is the deal's business
+          key from its single ORIGO source. decision_id is a
+          business-assigned identifier for the decision event itself -- the
+          deterministic tie-break latest-wins dedup uses, never load_datetime.
+          Snowflake-only; created idempotently by the on-run-start hooks in
+          dbt_project.yml, never by a dbt seed/model, so no dbt build ever truncates
+          it.
+
+models:
+  - name: int_deal_latest_decision
+    description: >
+      Latest-wins dedup over deal_decision_log's append-only history --
+      one row per external_deal_id, the most recent decision wins, keyed on decided_at
+      desc with decision_id desc as the deterministic secondary tie-break (never
+      load_datetime). Mirrors int_entity_resolution_latest_decision.sql's shape for
+      the ER log.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [external_deal_id]
+    columns:
+      - name: external_deal_id
+        data_tests: [not_null]
+      - name: decision
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [approve, approve_with_conditions, decline, defer]
+      - name: decided_at
+        data_tests: [not_null]
+
+  - name: int_deal_stage_from_decision
+    description: >
+      Deterministic stage derivation: an approve or
+      approve_with_conditions decision on a deal at the DECISION stage (per the
+      seed-sourced history alone) derives the deal's next stage-classification row,
+      COMMITTED; a decline derives DECLINED. Rows are additive within a build. A
+      defer decision derives no row; defer is non-terminal. Feeds
+      sat_deal_stage_history.sql via a UNION ALL alongside the seed-sourced history,
+      which dim_deal_stage.sql reads.
+
+      Retroactive derived-history disclosure: this model recomputes in full from
+      int_deal_latest_decision (the latest decision per deal) on every build. When a
+      deal's latest decision changes from terminal to non-terminal (the IC reconvenes
+      and defers after a prior approval), the previously derived row is absent on the
+      next build. The raw deal_decision_log keeps every decision ever recorded; this
+      model and its downstream consumers (sat_deal_stage_history.sql,
+      dim_deal_stage.sql) carry the current derivation.
+    columns:
+      - name: entity_external_id
+        data_tests: [not_null]
+      - name: classification_value_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [COMMITTED, DECLINED]
+
+  - name: deal_approval_queue
+    description: >
+      Pending-approvals worklist: resolved deals currently sitting at the
+      DECISION stage without a terminal decision, with the fields an approver needs --
+      deal identity, current stage + how long it has been there, the latest recorded
+      decision if any (defer or none leave a deal here; approve/approve_with_conditions/
+      decline move it to its next stage via int_deal_stage_from_decision and so drop
+      it out of this queue by construction), and resolution provenance.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          combination_of_columns: [deal_id]
+    columns:
+      - name: deal_id
+        data_tests: [not_null]
+      - name: stage_code
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [DECISION]
+      - name: latest_decision
+        data_tests:
+          - accepted_values:
+              values: [approve, approve_with_conditions, decline, defer]
+              config:
+                where: "latest_decision is not null"

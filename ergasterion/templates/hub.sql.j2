@@ -1,0 +1,15 @@
+{{ generated_header }}
+{{ dbt_set('source_model', source_models) }}
+{{ dbt_set('src_pk', hub.src_pk) }}
+{{ dbt_set('src_nk', hub.src_nk) }}
+{{ dbt_set('src_ldts', 'load_datetime') }}
+{{ dbt_set('src_source', 'record_source') }}
+
+{{ "{{ automate_dv.hub(" }}
+    src_pk=src_pk,
+    src_nk=src_nk,
+    src_extra_columns=none,
+    src_ldts=src_ldts,
+    src_source=src_source,
+    source_model=source_model
+{{ ") }}" }}

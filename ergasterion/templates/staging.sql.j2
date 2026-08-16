@@ -1,0 +1,15 @@
+{{ generated_header }}
+with source as (
+{%- if table.landing.kind == "source" %}
+    select * from {{ "{{ source('" }}{{ table.landing.source_name }}{{ "', '" }}{{ table.landing.identifier }}{{ "') }}" }}
+{%- else %}
+    select * from {{ "{{ ref('" }}{{ table.raw_model }}{{ "') }}" }}
+{%- endif %}
+)
+
+select
+{%- for column in table.projection %}
+    {{ column.expression }} as {{ column.name }}{{ "," if not loop.last }}
+{%- endfor %}
+from source
+

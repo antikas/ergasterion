@@ -1,0 +1,135 @@
+{
+  "graph": "ecommerce_graph",
+  "node_label": "Entity",
+  "relationship_label": "Relationship",
+  "csv": {
+    "node_headers": [
+      "id",
+      "name",
+      "domain",
+      "hash_key",
+      "golden_key"
+    ],
+    "edge_headers": [
+      "edge_id",
+      "src",
+      "dst",
+      "rel_type",
+      "cardinality",
+      "kind",
+      "inverse",
+      "source_key",
+      "target_key",
+      "source_column",
+      "discriminator_value",
+      "link",
+      "properties"
+    ]
+  },
+  "node_types": [
+    {
+      "id": "customer",
+      "name": "customer",
+      "domain": "ecommerce",
+      "hash_key": "customer_hk",
+      "golden_key": "golden_customer_key"
+    },
+    {
+      "id": "order",
+      "name": "order",
+      "domain": "ecommerce",
+      "hash_key": "order_hk",
+      "golden_key": "golden_order_key"
+    },
+    {
+      "id": "product",
+      "name": "product",
+      "domain": "ecommerce",
+      "hash_key": "product_hk",
+      "golden_key": "golden_product_key"
+    }
+  ],
+  "relation_types": [
+    {
+      "type": "INCLUDES",
+      "alias": "includes",
+      "direction": "directed",
+      "kind": "composition",
+      "cardinality": "many_to_many",
+      "inverse": "LINE_OF",
+      "source_types": [
+        "order"
+      ],
+      "target_types": [
+        "product"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "order",
+        "relation": "INCLUDES",
+        "target": "product"
+      }
+    },
+    {
+      "type": "LINE_OF",
+      "alias": "line-of",
+      "direction": "directed",
+      "kind": "composition",
+      "cardinality": "many_to_many",
+      "inverse": "INCLUDES",
+      "source_types": [
+        "product"
+      ],
+      "target_types": [
+        "order"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "product",
+        "relation": "LINE_OF",
+        "target": "order"
+      }
+    },
+    {
+      "type": "PLACED",
+      "alias": "placed",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "one_to_many",
+      "inverse": "PLACED_BY",
+      "source_types": [
+        "customer"
+      ],
+      "target_types": [
+        "order"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "customer",
+        "relation": "PLACED",
+        "target": "order"
+      }
+    },
+    {
+      "type": "PLACED_BY",
+      "alias": "placed-by",
+      "direction": "directed",
+      "kind": "association",
+      "cardinality": "many_to_one",
+      "inverse": "PLACED",
+      "source_types": [
+        "order"
+      ],
+      "target_types": [
+        "customer"
+      ],
+      "edge_count": 1,
+      "example_traversal": {
+        "source": "order",
+        "relation": "PLACED_BY",
+        "target": "customer"
+      }
+    }
+  ],
+  "satellites": []
+}

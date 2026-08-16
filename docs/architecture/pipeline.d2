@@ -1,0 +1,203 @@
+# docs/architecture/pipeline.d2
+#
+# Ergasterion's declaration-to-product flow and its local verification gates.
+
+canvas: {
+  label: ""
+  style.fill: "#0d1117"
+  style.stroke: "#0d1117"
+  near: top-left
+  direction: right
+
+  sources: {
+    label: "declarations/"
+    class: container
+    vantora: "vantora.yml"
+    chrono: "chrono.yml"
+    portiq: "portiq.yml"
+    meridex: "meridex.yml"
+  }
+
+  emit: "ergasterion/emit.py\n(the generator)"
+
+  staging: "models/staging/\ne.g. stg_chrono_funds.sql"
+
+  entity_resolution: {
+    label: "models/entity_resolution/"
+    class: container
+    tier1: "res_fund.sql\nres_gp.sql\nres_portfolio_company.sql\n(Tier 1: deterministic)"
+    tier2: "res_entity_resolution_tier2.sql\n(Tier 2: probabilistic)"
+    review_queue: "review_queue.sql\n(human review + override)"
+  }
+
+  raw_vault: "models/raw_vault/\nhubs · links · bridges · satellites"
+
+  business_vault: "models/business_vault/\nbv_*_golden_record.sql\npit/pit_fund.sql"
+
+  canonical: "models/canonical/\ncanonical_*.sql (5 models)"
+
+  marts: "models/marts/ + calculated_fields/\n+ semantic/\ndim_*.sql · fact_*.sql · cf_*.sql"
+
+  gates: {
+    label: "what keeps it honest"
+    class: container
+    byte_stable: "emit.py --check\n(byte-stable re-emit)"
+    dialect_lint: "ergasterion/dialect_lint.py"
+    target_parse: "dbt parse\nSnowflake · BigQuery · DuckDB"
+    duckdb_build: "dbt build -t duckdb\n(complete local estate)"
+  }
+
+  # --- the true flow ---
+  sources.vantora -> emit
+  sources.chrono -> emit
+  sources.portiq -> emit
+  sources.meridex -> emit
+  emit -> staging
+
+  staging -> entity_resolution.tier1
+  entity_resolution.tier1 -> entity_resolution.tier2
+  entity_resolution.tier2 -> entity_resolution.review_queue
+
+  entity_resolution.tier1 -> raw_vault: golden key
+  entity_resolution.review_queue -> raw_vault: reviewed decision
+  raw_vault -> business_vault
+  business_vault -> canonical
+  canonical -> marts
+
+  # --- the gates ring the pipeline (dashed: not data flow, verification) ---
+  gates.byte_stable -> emit: {style.stroke-dash: 4}
+  gates.dialect_lint -> raw_vault: {style.stroke-dash: 4}
+  gates.target_parse -> business_vault: {style.stroke-dash: 4}
+  gates.duckdb_build -> canonical: {style.stroke-dash: 4}
+}
+
+classes: {
+  container: {
+    style.fill: "#111820"
+    style.stroke: "#21262d"
+    style.font-color: "#8b949e"
+    style.border-radius: 6
+  }
+  dim: {
+    style.fill: "#161b22"
+    style.stroke: "#30363d"
+    style.font-color: "#8b949e"
+    style.stroke-width: 1
+  }
+  lit: {
+    style.fill: "#1f6feb"
+    style.stroke: "#58a6ff"
+    style.font-color: "#f0f6fc"
+    style.stroke-width: 2
+    style.shadow: true
+  }
+  dim-edge: {
+    style.stroke: "#30363d"
+    style.stroke-width: 1
+    style.opacity: 0.6
+  }
+  lit-edge: {
+    style.stroke: "#58a6ff"
+    style.stroke-width: 2
+    style.opacity: 1
+  }
+  gate-dim: {
+    style.fill: "#161b22"
+    style.stroke: "#30363d"
+    style.font-color: "#8b949e"
+    style.stroke-width: 1
+    style.stroke-dash: 2
+  }
+  gate-lit: {
+    style.fill: "#3fb950"
+    style.stroke: "#56d364"
+    style.font-color: "#0d1117"
+    style.stroke-width: 2
+  }
+}
+
+# --- default resting state: everything dim ---
+canvas.sources.vantora.class: dim
+canvas.sources.chrono.class: dim
+canvas.sources.portiq.class: dim
+canvas.sources.meridex.class: dim
+canvas.emit.class: dim
+canvas.staging.class: dim
+canvas.entity_resolution.tier1.class: dim
+canvas.entity_resolution.tier2.class: dim
+canvas.entity_resolution.review_queue.class: dim
+canvas.raw_vault.class: dim
+canvas.business_vault.class: dim
+canvas.canonical.class: dim
+canvas.marts.class: dim
+canvas.gates.byte_stable.class: gate-dim
+canvas.gates.dialect_lint.class: gate-dim
+canvas.gates.target_parse.class: gate-dim
+canvas.gates.duckdb_build.class: gate-dim
+
+(canvas.sources.vantora -> canvas.emit)[0].class: dim-edge
+(canvas.sources.chrono -> canvas.emit)[0].class: dim-edge
+(canvas.sources.portiq -> canvas.emit)[0].class: dim-edge
+(canvas.sources.meridex -> canvas.emit)[0].class: dim-edge
+(canvas.emit -> canvas.staging)[0].class: dim-edge
+(canvas.staging -> canvas.entity_resolution.tier1)[0].class: dim-edge
+(canvas.entity_resolution.tier1 -> canvas.entity_resolution.tier2)[0].class: dim-edge
+(canvas.entity_resolution.tier2 -> canvas.entity_resolution.review_queue)[0].class: dim-edge
+(canvas.entity_resolution.tier1 -> canvas.raw_vault)[0].class: dim-edge
+(canvas.entity_resolution.review_queue -> canvas.raw_vault)[0].class: dim-edge
+(canvas.raw_vault -> canvas.business_vault)[0].class: dim-edge
+(canvas.business_vault -> canvas.canonical)[0].class: dim-edge
+(canvas.canonical -> canvas.marts)[0].class: dim-edge
+
+# --- progressive reveal: each step lights the next real stage of the pipeline ---
+
+steps: {
+  # state1 -- "you write a short description of the source"
+  1: {
+    canvas.sources.vantora.class: lit
+    canvas.sources.chrono.class: lit
+    canvas.sources.portiq.class: lit
+    canvas.sources.meridex.class: lit
+    (canvas.sources.vantora -> canvas.emit)[0].class: lit-edge
+    (canvas.sources.chrono -> canvas.emit)[0].class: lit-edge
+    (canvas.sources.portiq -> canvas.emit)[0].class: lit-edge
+    (canvas.sources.meridex -> canvas.emit)[0].class: lit-edge
+  }
+  # state2 -- "a generator reads those descriptions"; the emitted layers fan out
+  2: {
+    canvas.emit.class: lit
+    canvas.staging.class: lit
+    (canvas.emit -> canvas.staging)[0].class: lit-edge
+  }
+  # state3 -- one fund's journey: recognition begins (deterministic tier)
+  3: {
+    canvas.entity_resolution.tier1.class: lit
+    (canvas.staging -> canvas.entity_resolution.tier1)[0].class: lit-edge
+  }
+  # state4 -- recognition completes (probabilistic tier + human review queue)
+  4: {
+    canvas.entity_resolution.tier2.class: lit
+    canvas.entity_resolution.review_queue.class: lit
+    (canvas.entity_resolution.tier1 -> canvas.entity_resolution.tier2)[0].class: lit-edge
+    (canvas.entity_resolution.tier2 -> canvas.entity_resolution.review_queue)[0].class: lit-edge
+  }
+  # state5 -- memory, choosing: raw vault + business vault golden record light together
+  5: {
+    canvas.raw_vault.class: lit
+    canvas.business_vault.class: lit
+    (canvas.entity_resolution.tier1 -> canvas.raw_vault)[0].class: lit-edge
+    (canvas.entity_resolution.review_queue -> canvas.raw_vault)[0].class: lit-edge
+    (canvas.raw_vault -> canvas.business_vault)[0].class: lit-edge
+  }
+  # state6 -- canonical + marts/metrics light, and the gates ring the whole pipeline
+  6: {
+    canvas.canonical.class: lit
+    canvas.marts.class: lit
+    canvas.gates.byte_stable.class: gate-lit
+    canvas.gates.dialect_lint.class: gate-lit
+    canvas.gates.target_parse.class: gate-lit
+    canvas.gates.duckdb_build.class: gate-lit
+    (canvas.business_vault -> canvas.canonical)[0].class: lit-edge
+    (canvas.canonical -> canvas.marts)[0].class: lit-edge
+  }
+}
