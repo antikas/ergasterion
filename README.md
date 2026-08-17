@@ -19,7 +19,7 @@ the checkout. The engine and the DuckDB path need local tools only, with no ware
 - **Git**, to fetch the code if you install from source.
 - **Bash and a terminal**, to run the repository checks and demonstrations.
 - **The repository build dependencies**, when you want to validate or demonstrate this checkout. The one-time setup in the [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md#1-install) creates the repository `.venv` and installs the tested stack: dbt Core 1.11.12, dbt-snowflake 1.11.6, dbt-bigquery 1.11.3, and dbt-duckdb 1.11.0. It then installs the repository package in editable mode. Run the validator from that activated shell or select the `.venv` Python and dbt executables explicitly as shown there.
-- **A warehouse account only for a live run.** Snowflake has the worked live path. BigQuery has generation and dialect-lint support. Its parse is verified, but this repository does not provide a worked BigQuery runtime lane.
+- **A warehouse account only for the live Snowflake route.** The complete local DuckDB run needs no warehouse account.
 
 ## Install the engine and local database support
 
@@ -200,9 +200,7 @@ The e-commerce domain is not a reduced copy of the investment one. It runs the s
 - **Deterministic customer resolution.** The e-commerce customer path uses loyalty id and normalised email. Its unmatched records stay separate. The review console serves the investment domain's probabilistic matches and deal decisions.
 - **The clean, final tables are hand-authored in both domains.** `canonical_customer`, `canonical_product`, the customer, product, and segment dimensions, and `fact_order` are designed and written by a person on top of what the generator produces, not generated themselves, exactly as `canonical_fund` / `dim_fund` / `fact_fund_performance` are in the investment domain. See "What this is not," below, for why that boundary exists.
 
-## What keeps it honest
-
-None of the above depends on anyone's good intentions. The checks do the trusting.
+## How the output is verified
 
 The generator always produces identical output from identical descriptions, and the build fails if anyone edits a generated file by hand instead of editing the description it came from. A badly written description is rejected before anything is built, with a message naming exactly what is missing. A test suite asserts known answers on the made-up data. In the e-commerce domain, a seeded cross-feed customer duplicate must resolve to exactly one identity, order lines must sum to their header, and a segment change must attribute correctly by date, with no gap and no overlap. In the investment domain, a specific fund's return must come out at a specific number, a fund with contradictory cash flows must produce no return at all rather than a nonsense one, the record-matching must find exactly the overlaps that were planted in the data, a vehicle's cash flows must add up to the fund's own total no matter how many wrappers sit in between, a manager's history must stay attached to the right name on either side of a rebrand, and a classification asked about a past date must return what was true then, not today's answer read backward. The same discipline reaches the deal pipeline: a deal's dated stages are checked the same way a fund's classification history is, and a deal that claims to have become a fund must point at a fund that genuinely exists, not a dangling reference. The account-free validator re-emits the generated estate, parses all three supported targets, builds the complete seeded project in DuckDB, and runs the remaining package, contract, graph, scaffold, and wheel checks. Live Snowflake validation is a separate, authorised run against a bounded development schema.
 
