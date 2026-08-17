@@ -21,7 +21,7 @@ For local DuckDB use:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "ergasterion-factory[duckdb]==0.3.1"
+python -m pip install "ergasterion-factory[duckdb]==0.3.2"
 ```
 
 In Windows Git Bash, activate the environment with:
@@ -33,9 +33,9 @@ source .venv/Scripts/activate
 Install a different adapter only when you need it:
 
 ```bash
-python -m pip install "ergasterion-factory[snowflake]==0.3.1"
-python -m pip install "ergasterion-factory[bigquery]==0.3.1"
-python -m pip install "ergasterion-factory[all]==0.3.1"
+python -m pip install "ergasterion-factory[snowflake]==0.3.2"
+python -m pip install "ergasterion-factory[bigquery]==0.3.2"
+python -m pip install "ergasterion-factory[all]==0.3.2"
 ```
 
 The base package contains the declaration engine. Adapter extras add the pinned dbt
@@ -184,7 +184,7 @@ warehouse credits. The supplied warehouse is extra-small and auto-suspends after
 Install the Snowflake CLI and the Snowflake package extra:
 
 ```bash
-python -m pip install "ergasterion-factory[snowflake]==0.3.1"
+python -m pip install "ergasterion-factory[snowflake]==0.3.2"
 snow --version
 ```
 
@@ -283,7 +283,7 @@ DROP ROLE IF EXISTS DPF_BUILDER;
 Install the BigQuery extra and set a project and dataset:
 
 ```bash
-python -m pip install "ergasterion-factory[bigquery]==0.3.1"
+python -m pip install "ergasterion-factory[bigquery]==0.3.2"
 export DPF_BQ_PROJECT="your-project"
 export DPF_BQ_DATASET="ergasterion_dev"
 dbt parse --profiles-dir profiles -t bigquery --no-partial-parse

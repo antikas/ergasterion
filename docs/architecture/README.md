@@ -62,7 +62,7 @@ A small amount of authored intent goes in, a small amount of authored output com
 
 None of the three is hand-written, and none of them can drift from the tables they describe: they regenerate from the same declarations everything else does, and the build fails if one is hand-edited instead.
 
-## What keeps the generated layers honest
+## How the generated layers are verified
 
 ![The four verification gates: byte-stable re-emit, dialect lint, three-target parse, and a complete local DuckDB build](pipeline_gates.svg)
 

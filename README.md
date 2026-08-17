@@ -127,11 +127,11 @@ Everything the repository ships runs on made-up data that imitates the real shap
 
 ## The two worked domains
 
-The sections below cover the two worked domains, the checks that keep the output honest, the standards at the boundary, the graph map, the live warehouse path, and the engine layout. None of this is needed for the first local run. The complete system shape is in the [architecture guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/README.md).
+The sections below cover the two worked domains, how the output is verified, the standards at the boundary, the graph map, the live warehouse path, and the engine layout. None of this is needed for the first local run. The complete system shape is in the [architecture guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/README.md).
 
 The factory core carries no domain vocabulary. To show that, this repository proves the identical mechanism on two domains that share not a single noun: an online retailer's view of its own customers, and an investment dataset built from fund-administration and market-data feeds. The engine that builds both (`ergasterion/emit.py` and its templates) contains zero e-commerce or investment words either way. Both domains are *data*, read by the same generic code.
 
-The two are peers, not a main example and a lesser one. The investment domain happens to exercise more of the structural patterns further down (a legal-vehicle grain, a manager succession, a deal pipeline that the retail data has no equivalent of), so it appears in more of the pattern examples. That is an honest difference in how much of the surface each domain touches, not a claim that investment is what the factory is for. The e-commerce domain runs the same generator, unmodified, and proves the domain-agnosticism in its most direct form: it validates against no external model at all, and builds and runs identically without one.
+The two domains are peers with equal standing. Investment exercises some structural patterns that have no retail equivalent, including a legal-vehicle grain and manager succession, so it appears in more examples. The extra coverage reflects the domain, while the factory remains domain-independent. E-commerce runs the same generator unmodified and builds identically without an external model.
 
 ### Worked domain: e-commerce customer-360
 
@@ -193,7 +193,7 @@ This second arc reuses everything the fund journey already built: the same shape
 
 ### What is different between the two domains, stated plainly
 
-The e-commerce domain is not a reduced copy of the investment one. It runs the same generator and answers to no external model, which is exactly the domain-agnosticism proof. A few honest differences are worth naming rather than smoothing over:
+The e-commerce domain is a complete worked domain in its own right. It runs the same generator and answers to no external model, which proves the factory is domain-independent. The practical differences are:
 
 - **No canonical model repo.** The investment domain's declarations carry an optional `canonical_mappings` block that cross-checks attribute lineage against the Open Investment Model (see "What this is not," below); the e-commerce declarations carry none. There is no external model this domain validates against, and the pipeline builds and runs identically without one.
 - **A shared scoring slot.** The scoring configuration calls its categorical comparison weight `weight_sector`. Investment entities use it for sector; other entities can use it for another categorical attribute. The e-commerce declarations carry customer weights, but customer records do not enter the probabilistic scoring branch.
