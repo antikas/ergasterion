@@ -52,5 +52,5 @@ ergasterion:
 
     duckdb:
       type: duckdb
-      path: "{{ env_var('DPF_DUCKDB_PATH', 'target/ergasterion.duckdb') }}"
+      path: "{{ env_var('DPF_DUCKDB_PATH', 'runtime/data/ergasterion.duckdb') }}"
       threads: 4

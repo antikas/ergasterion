@@ -16,9 +16,15 @@ seeds:
 {%- endfor %}
 {%- endif %}
 {%- endfor %}
-{%- endif %}{% if source_groups %}{{ '\n\n' if seed_tables else '' }}sources:
+{%- endif %}{% if source_groups or projection_source_groups %}{{ '\n\n' if seed_tables else '' }}sources:
 {%- for source in source_groups %}
   - name: {{ source.name }}
+{%- if source.database | default('') %}
+    database: {{ source.database }}
+{%- endif %}
+{%- if source.schema | default('') %}
+    schema: {{ source.schema }}
+{%- endif %}
     tables:
 {%- for table in source.tables %}
       - name: {{ table.landing.identifier }}
@@ -31,6 +37,25 @@ seeds:
           - name: {{ column.name }}
             data_tests: {{ column.data_tests }}
 {%- endfor %}
+{%- endif %}
+{%- if table.bronze_source_yaml %}
+{{ table.bronze_source_yaml }}
+{%- endif %}
+{%- endfor %}
+{%- endfor %}
+{%- for source in projection_source_groups %}
+  - name: {{ source.name }}
+{%- if source.database | default('') %}
+    database: {{ source.database }}
+{%- endif %}
+{%- if source.schema | default('') %}
+    schema: {{ source.schema }}
+{%- endif %}
+    tables:
+{%- for table in source.tables %}
+      - name: {{ table.name }}
+{%- if table.identifier %}
+        identifier: {{ table.identifier }}
 {%- endif %}
 {%- endfor %}
 {%- endfor %}
@@ -50,4 +75,3 @@ models:
 {%- endfor %}
 {%- endif %}
 {%- endfor %}
-

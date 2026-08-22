@@ -29,8 +29,18 @@ stripped first. DEFAULT expressions and CHECK constraints are read past, never m
 onto the seed (they carry no shape this format needs). Multiple CREATE TABLE statements
 in one input are all seeded together (one declarations/domains file per --mode run).
 
+``--mode feed`` additionally takes ``--landing {seed,source}`` (default ``seed``, the
+behaviour above, unchanged). ``--landing source`` emits a ``landing: {kind: source, ...}``
++ ``delivery: {kind: draft, reason: delivery_contract_required}`` block instead: the
+physical schema alone (source_name/identifier/codec/physical_columns, physical types
+mapped onto Bronze's SimpleLogicalType/decimal/local_datetime vocabulary), with no
+raw_model, seed_tests, model_tests or vault_entities -- ``landing.kind: source`` forbids
+raw_model, and product/delivery-mode facts are never guessed. See
+docs/specifications/bronze-product-v1.md.
+
 Usage:
     python ergasterion/import_ddl.py <path-to.ddl.sql> --mode feed --source <name>
+    python ergasterion/import_ddl.py <path-to.ddl.sql> --mode feed --source <name> --landing source
     python ergasterion/import_ddl.py <path-to.ddl.sql> --mode model --domain <name>
 """
 
@@ -50,10 +60,18 @@ if __package__ in (None, ""):
 
 from ergasterion import emit
 from ergasterion.estate import EstateContext
-# SSOT reuse (never duplicated): the logical-type -> dpf_safe_cast expression map and the
-# source/domain-name slugifier already live in import_odcs.py -- this sibling module reads
-# them rather than re-declaring the same mapping under a second name.
-from ergasterion.import_odcs import _cast_expression, _slugify
+# SSOT reuse (never duplicated): the logical-type -> dpf_safe_cast expression map, the
+# source/domain-name slugifier, the Bronze physical-type mapper and the source-landing/
+# draft-delivery builders already live in import_odcs.py -- this sibling module reads them
+# rather than re-declaring the same mapping under a second name.
+from ergasterion.import_odcs import (
+    BRONZE_CODEC_CHOICES,
+    _cast_expression,
+    _slugify,
+    _sql_type_to_bronze_field,
+    build_delivery_draft,
+    build_source_landing,
+)
 
 # Ambient estate context; main() resolves its own (honouring --estate-root).
 _DEFAULT_CTX = EstateContext.default()
@@ -333,13 +351,56 @@ def _declaration_header(ddl_path: Path, tables: list[ParsedTable]) -> str:
     ])
 
 
-def build_declaration_tables(tables: list[ParsedTable]) -> list[dict[str, Any]]:
-    """Mechanically transcribe parsed DDL tables into declaration table dicts: one per
-    CREATE TABLE, straight passthrough of column names, types -> cast expressions,
-    NOT NULL/PRIMARY KEY/UNIQUE -> seed_tests + model_tests. No vault/entity-resolution/
-    survivorship content -- see module docstring."""
+def build_declaration_tables(
+    tables: list[ParsedTable],
+    *,
+    source_name: str | None = None,
+    landing_kind: str = "seed",
+    codec_kind: str = "csv",
+) -> list[dict[str, Any]]:
+    """Mechanically transcribe parsed DDL tables into declaration table dicts.
+
+    ``landing_kind="seed"`` (the default, unchanged): straight passthrough of column
+    names, types -> cast expressions, NOT NULL/PRIMARY KEY/UNIQUE -> seed_tests +
+    model_tests. No vault/entity-resolution/survivorship content -- see module docstring.
+
+    ``landing_kind="source"`` instead builds each table's physical schema into a Bronze
+    ``landing``/``delivery`` draft block (see ``ergasterion.import_odcs.build_source_landing``);
+    no ``raw_model``, ``seed_tests``, ``model_tests`` or ``projection`` (``landing.kind:
+    source`` forbids ``raw_model``, and the rest are production-only facts)."""
+    if landing_kind not in ("seed", "source"):
+        raise DdlImportError(f"--landing must be 'seed' or 'source', got {landing_kind!r}")
     out: list[dict[str, Any]] = []
     for table in tables:
+        if landing_kind == "source":
+            physical_columns = [
+                {
+                    "name": _slugify(col.name),
+                    "logical_type": _sql_type_to_bronze_field(col.sql_type),
+                    "nullable": col.nullable,
+                }
+                for col in table.columns
+            ]
+            # The dict key below becomes the declaration's `(source, table)` identity --
+            # the same one a later production compile builds `LogicalIdentity.table` from
+            # (Bronze `Identifier`: lowercase only). Slugifying it now, and defaulting
+            # `landing.identifier` to the same slug, means a draft is already conformant:
+            # flipping delivery.kind to production later needs no renaming.
+            slug_name = _slugify(table.name)
+            out.append({
+                "name": slug_name,
+                "description": f"TODO: describe {table.name}",
+                "landing": build_source_landing(
+                    source_name=source_name or table.name,
+                    table_name=table.name,
+                    identifier=table.name,
+                    physical_columns=physical_columns,
+                    codec_kind=codec_kind,
+                ),
+                "delivery": build_delivery_draft(),
+            })
+            continue
+
         pk_cols = set(table.primary_key)
         single_col_pk = pk_cols if len(pk_cols) == 1 else set()
         projection: list[dict[str, Any]] = []
@@ -369,19 +430,45 @@ def build_declaration_tables(tables: list[ParsedTable]) -> list[dict[str, Any]]:
     return out
 
 
+def _source_landing_header(ddl_path: Path, tables: list[ParsedTable]) -> str:
+    table_names = ", ".join(t.name for t in tables)
+    return "\n".join([
+        f"# Seeded by ergasterion/import_ddl.py --mode feed --landing source from DDL: {_relative_path(ddl_path)}",
+        f"#   tables={table_names!r}",
+        "#",
+        "# This is a STARTING POINT, not regenerated output -- this file is meant to be",
+        "# hand-edited. It mechanically transcribes the DDL's CREATE TABLE column list (name,",
+        "# type -> Bronze physical logical_type, NOT NULL -> nullable) into a Bronze landing",
+        "# block, with delivery: {kind: draft, reason: delivery_contract_required} until",
+        "# product and production semantics are supplied. What no DDL carries -- ownership,",
+        "# support, access, retention, schedule, progress, quality rules -- is left as an",
+        "# explicit TODO below and never guessed. See docs/specifications/bronze-product-v1.md.",
+    ])
+
+
 def build_declaration_context(
     tables: list[ParsedTable],
     ddl_path: Path,
     source_name: str,
     display_name: str | None,
     priority: int,
+    *,
+    landing_kind: str = "seed",
+    codec_kind: str = "csv",
 ) -> dict[str, Any]:
     display_name = display_name or source_name.upper()
-    decl_tables = build_declaration_tables(tables)
-    for decl_table in decl_tables:
-        decl_table["raw_model"] = f"raw_{source_name}_{decl_table['name']}"
+    decl_tables = build_declaration_tables(
+        tables, source_name=source_name, landing_kind=landing_kind, codec_kind=codec_kind,
+    )
+    if landing_kind == "seed":
+        for decl_table in decl_tables:
+            decl_table["raw_model"] = f"raw_{source_name}_{decl_table['name']}"
+    header = (
+        _source_landing_header(ddl_path, tables) if landing_kind == "source"
+        else _declaration_header(ddl_path, tables)
+    )
     return {
-        "header": _declaration_header(ddl_path, tables),
+        "header": header,
         "source": {
             "name": source_name,
             "display_name": display_name,
@@ -397,13 +484,19 @@ def seed_declaration_from_ddl(
     source_name: str | None = None,
     display_name: str | None = None,
     priority: int = 100,
+    *,
+    landing_kind: str = "seed",
+    codec_kind: str = "csv",
 ) -> tuple[str, str]:
     """Pure function: parse the DDL, build the seeded declaration YAML text. Returns
     (source_name, yaml_text). Does not touch disk -- callers (main(), tests) decide
     where the text lands."""
     tables = parse_ddl(ddl_path.read_text(encoding="utf-8"))
     resolved_source = source_name or _slugify(ddl_path.stem)
-    context = build_declaration_context(tables, ddl_path, resolved_source, display_name, priority)
+    context = build_declaration_context(
+        tables, ddl_path, resolved_source, display_name, priority,
+        landing_kind=landing_kind, codec_kind=codec_kind,
+    )
     env = emit.template_env()
     return resolved_source, env.get_template(DECLARATION_TEMPLATE).render(**context)
 
@@ -563,16 +656,38 @@ def main() -> int:
     parser.add_argument("--domain", default=None, help="[model mode] Domain name. Defaults to a slug of the DDL filename.")
     parser.add_argument("--out", type=Path, default=None, help="Output path. Defaults to declarations/<source>.yml or domains/<domain>.yml.")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing destination file.")
+    parser.add_argument(
+        "--landing", choices=("seed", "source"), default="seed",
+        help="[feed mode only] seed (default): the unchanged vault-style declaration seed. "
+             "source: emit a Bronze landing/delivery draft carrying the physical schema "
+             "alone -- no raw_model, seed_tests, model_tests or vault_entities; see "
+             "docs/specifications/bronze-product-v1.md.",
+    )
+    parser.add_argument(
+        "--codec", choices=BRONZE_CODEC_CHOICES, default="csv",
+        help="[feed mode, --landing source] The delivered payload codec (default csv).",
+    )
     parser.add_argument("--estate-root", type=Path, default=None, help="Estate root whose declarations/domains receives the seed (resolved from the environment or working directory when omitted).")
     args = parser.parse_args()
+
+    if args.mode == "model" and args.landing != "seed":
+        print("FAIL: --landing source applies to --mode feed only (a domain carries no landing).", file=sys.stderr)
+        return 1
 
     ctx = EstateContext.resolve(estate_root=args.estate_root)
 
     try:
         if args.mode == "feed":
-            name, text = seed_declaration_from_ddl(args.ddl, args.source, args.display_name, args.priority)
+            name, text = seed_declaration_from_ddl(
+                args.ddl, args.source, args.display_name, args.priority,
+                landing_kind=args.landing, codec_kind=args.codec,
+            )
             out_path = args.out or (ctx.declarations_dir / f"{name}.yml")
-            next_hint = "vault_entities / entity_resolution"
+            next_hint = (
+                "product / delivery / projection (register this (source, table) under a "
+                "domains/<domain>.yml bronze: block, then flip delivery.kind to production)"
+                if args.landing == "source" else "vault_entities / entity_resolution"
+            )
         else:
             name, text = seed_domain_from_ddl(args.ddl, args.domain)
             out_path = args.out or (ctx.domains_dir / f"{name}.yml")
@@ -589,7 +704,12 @@ def main() -> int:
     out_path.write_text(text, encoding="utf-8")
     rel = out_path.relative_to(ctx.root).as_posix() if out_path.is_relative_to(ctx.root) else out_path
     print(f"seeded {rel}")
-    print(f"Next: fill in the {next_hint} TODOs, then run ergasterion/emit.py.")
+    if args.mode == "feed" and args.landing == "source":
+        print(
+            f"Next: fill in the {next_hint} TODOs -- see docs/specifications/bronze-product-v1.md."
+        )
+    else:
+        print(f"Next: fill in the {next_hint} TODOs, then run ergasterion/emit.py.")
     return 0
 
 

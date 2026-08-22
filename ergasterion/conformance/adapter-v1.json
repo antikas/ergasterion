@@ -1,0 +1,150 @@
+{
+  "schema": "ergasterion.ingestion-adapter-conformance/v1",
+  "vectors": [
+    {
+      "id": "all-accepted-commits",
+      "description": "Every row accepted: publication decision is publish_all, the attempt reaches committed, accepted_count matches the row count.",
+      "rows": [
+        {"key": "a", "accept": true},
+        {"key": "b", "accept": true},
+        {"key": "c", "accept": true}
+      ],
+      "expect": {"outcome": "committed", "accepted_count": "3"}
+    },
+    {
+      "id": "mixed-rows-publish-valid-rows-commits",
+      "description": "A mix of accepted and rejected rows under publish_valid_rows: the accepted subset still commits, the rejected rows are recorded as quarantine evaluations rather than blocking the whole delivery.",
+      "publication_mode": "publish_valid_rows",
+      "rows": [
+        {"key": "a", "accept": true},
+        {"key": "b", "accept": false},
+        {"key": "c", "accept": true}
+      ],
+      "expect": {"outcome": "committed", "accepted_count": "2"}
+    },
+    {
+      "id": "mixed-rows-all-or-nothing-rejects-delivery",
+      "description": "The same mixed rows under all_or_nothing: a single rejected row rejects the whole delivery, so partial acceptance exists only where the contract admits it.",
+      "publication_mode": "all_or_nothing",
+      "rows": [
+        {"key": "a", "accept": true},
+        {"key": "b", "accept": false},
+        {"key": "c", "accept": true}
+      ],
+      "expect": {"outcome": "failed", "accepted_count": "2"}
+    },
+    {
+      "id": "all-rejected-fails-no-progress",
+      "description": "Every row rejected: publication_decision is reject_delivery, the attempt reaches failed, and no projection intent or outbox entry is ever staged -- the pre-intent failure rule.",
+      "rows": [
+        {"key": "a", "accept": false},
+        {"key": "b", "accept": false}
+      ],
+      "expect": {"outcome": "failed"}
+    },
+    {
+      "id": "resubmission-replays-idempotently",
+      "description": "The same manifest submitted twice claims the same digest: the second submit_managed call returns the identical attempt rather than creating a second one, and the delivery still commits once.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "resubmit": true,
+      "expect": {"outcome": "committed", "accepted_count": "1"}
+    },
+    {
+      "id": "conflicting-claim-same-delivery-id-rejected",
+      "description": "The same delivery_id is submitted twice with different row content (a different claim digest): the second submission is a conflicting claim, not a replay, and is rejected rather than silently accepted as a new attempt.",
+      "delivery_id": "shared-delivery-id",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "conflict_second_rows": [
+        {"key": "a", "accept": true},
+        {"key": "b", "accept": true}
+      ],
+      "expect": {"outcome": "error", "error_code": "claim_conflict"}
+    },
+    {
+      "id": "progress-kind-mismatch-is-invalid-manifest",
+      "description": "The contract declares sequence progress; the claim carries opaque_batch instead. Mode validation fails closed before any port beyond source_connector is touched.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "progress_kind_override": "opaque_batch",
+      "expect": {"outcome": "error", "error_code": "invalid_manifest"}
+    },
+    {
+      "id": "contract-digest-mismatch-is-capability-mismatch",
+      "description": "The manifest declares a contract_digest that does not match the contract the runtime was given -- a stale plan/manifest pairing -- and is rejected before a claim digest is even computed.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "contract_digest_override": "1111111111111111111111111111111111111111111111111111111111111111",
+      "expect": {"outcome": "error", "error_code": "capability_mismatch"}
+    },
+    {
+      "id": "target-failure-then-retry-commits-exactly-once",
+      "description": "The projection target rejects the first apply attempt (target_unavailable): the attempt lands commit_blocked with accepted progress already durable, then a due-evaluation resume applies the identical intent and reaches committed exactly once.",
+      "rows": [
+        {"key": "a", "accept": true},
+        {"key": "b", "accept": true}
+      ],
+      "publisher_fault": "fail_once",
+      "expect": {"outcome": "committed_after_retry", "accepted_count": "2"}
+    },
+    {
+      "id": "target-failure-exhausts-retries-and-dead-letters",
+      "description": "The projection target rejects every apply attempt: the outbox entry dispatches until the contract's max_attempts is reached and then dead-letters. The attempt stays commit_blocked with its accepted progress reserved and invisible, and no further due evaluation consumes it.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "publisher_failures": 99,
+      "expect": {"outcome": "retry_exhausted"}
+    },
+    {
+      "id": "permanent-landing-failure-fails-with-no-progress",
+      "description": "Landing preparation fails permanently (integrity_error) before any intent exists: the attempt reaches failed, accepted_progress is untouched and no outbox entry is staged.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "landing_fault": "integrity_error",
+      "expect": {"outcome": "error", "error_code": "integrity_error", "attempt_state": "failed"}
+    },
+    {
+      "id": "materialization-failure-fails-the-attempt-it-reached",
+      "description": "Landing fails permanently (codec_error) at finish_materialization -- after the attempt has already transitioned to materializing. The attempt must be failed against the state it actually reached and the injected code must survive, rather than being masked by a stale_revision from failing against the revision landing started from. Still pre-intent, so no progress and no outbox entry.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "materialization_fault": "codec_error",
+      "expect": {"outcome": "error", "error_code": "codec_error", "attempt_state": "failed"}
+    },
+    {
+      "id": "unready-published-schema-blocks-publication",
+      "description": "The published schema interface is not ready: publication fails schema_invalid before the intent is built, so an unready schema never receives reserved progress.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "readiness_result": "rejected",
+      "expect": {"outcome": "error", "error_code": "schema_invalid"}
+    },
+    {
+      "id": "revoked-readiness-blocks-publication",
+      "description": "The interface readiness was verified but has since been revoked: publication fails schema_invalid on the revocation instant alone, even though the result still reads ready.",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "readiness_revoked_at": "2025-12-31T00:00:00.000000Z",
+      "expect": {"outcome": "error", "error_code": "schema_invalid"}
+    },
+    {
+      "id": "managed-payload-for-external-integration-rejected",
+      "description": "A managed payload is submitted against a contract whose integration is external: the delivery input kind and the contract's integration must agree, so mode validation fails closed.",
+      "integration": "external",
+      "rows": [
+        {"key": "a", "accept": true}
+      ],
+      "expect": {"outcome": "error", "error_code": "invalid_manifest"}
+    }
+  ]
+}

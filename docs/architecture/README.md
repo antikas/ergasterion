@@ -10,7 +10,7 @@ The factory core does not know or care what a customer, a fund, or any other rea
 
 *Illustrative: a generic before-picture, not a diagram of this repository's own pipeline.*
 
-Turning raw source feeds into a trustworthy warehouse normally means writing the same kind of plumbing by hand for every source: typed staging, history that never overwrites, clean served tables, tests. Written by hand, each source's script ends up shaped a little differently from the last, and the whole thing drifts out of date the moment a source changes and nobody remembers to update the script that reads it. The factory replaces the hand-written script with a generator: describe the source once, generate the plumbing, and rebuilding after a change is one command rather than a rewrite.
+Turning raw source feeds into a trustworthy warehouse normally means writing the same kind of plumbing by hand for every source: typed staging, history that never overwrites, clean served tables, and tests. Each handwritten script ends up shaped a little differently, then drifts when its source changes. Ergasterion generates the plumbing from one source description. Rebuilding after a change takes one command.
 
 ## The shape of the system, in one diagram
 
@@ -18,7 +18,7 @@ Turning raw source feeds into a trustworthy warehouse normally means writing the
 
 *The investment domain's four sources are drawn here for concreteness; the shape is identical for any domain, including the e-commerce example further down.*
 
-Read left to right. A set of source declarations feed the engine (`ergasterion/emit.py`). The engine generates, in order, typed staging, then identity resolution, then the raw vault (history), then the business vault (golden records), then the canonical layer, then the served marts. A ring of gates checks the output at every stage rather than trusting it. Each stage gets its own closer look below.
+Read left to right. A set of source declarations feed the engine (`ergasterion/emit.py`). The engine generates typed staging, identity resolution, the raw vault (history), the business vault (golden records), the canonical layer, and the served marts. A ring of gates checks the output at every stage. Each stage gets its own closer look below.
 
 ## What you write, and what the engine writes
 
@@ -30,9 +30,15 @@ You write:
 - **A source declaration** (`declarations/<source>.yml`), one per incoming feed: its columns, and which real-world thing in the domain each column belongs to.
 - **The served layer itself**: the small set of final, clean tables and measure definitions a person actually queries, the `canonical_*` models and the `dim_*` / `fact_*` marts. The engine hands these its output; a person designs the served shape on top, on purpose, because that is the layer everyone downstream builds their trust on.
 
-From those descriptions, the engine writes everything else: typed staging, identity resolution, the raw vault, the business vault's golden records, the data contracts, the product descriptor, and the graph map. None of that middle section is hand-maintained. Change a description and regenerate; the generated layers are always a direct, reproducible function of what you wrote, never an accumulation of manual edits, and the build refuses to run if anyone has hand-edited a generated file instead of the description it came from.
+From those descriptions, the engine writes everything else: typed staging, identity resolution, the raw vault, golden records, data contracts, the product descriptor, and the graph map. None of that middle section is hand-maintained. Change a description and regenerate. The generated layers remain a reproducible function of what you wrote, and the build refuses hand edits to generated files.
 
 A small amount of authored intent goes in, a small amount of authored output comes out, and everything between the two is generated. That is the whole shape of the system. The rest of this document walks the generated middle, stage by stage.
+
+## Bronze: receiving a source's delivered batch
+
+Before a source's data becomes a row the rest of this document walks, it has to arrive, get checked, and either publish or quarantine. That is Bronze, the layer that sits in front of typed staging. A team writes one Bronze Product Contract per source table: its native schema, how it delivers (a stream of change events, append-only rows, or a full snapshot), and the quality rules a delivery must clear. A delivery's payload and its sidecar manifest are preserved exactly as received, parsed under the contract's declared codec, checked against every declared rule, and either published or quarantined with a locator back to the exact raw bytes. No person decides a single delivery's outcome at run time; the contract decided it when it was written, and the runtime only applies it. The typed staging models below are generated against a Bronze product's published interface.
+
+[`bronze-ingestion.md`](bronze-ingestion.md) is the deep dive: the received-batch boundary in full, the five interfaces every Bronze product exposes, delivery modes, the operator command surface, and the local-versus-production access boundary. [`bronze-product-v1.md`](../specifications/bronze-product-v1.md) is the exact contract reference. [`demo/bronze-ingestion/`](../../demo/bronze-ingestion/) runs the mechanism account-free and network-free.
 
 ## Following a source through the factory
 
@@ -58,7 +64,7 @@ A small amount of authored intent goes in, a small amount of authored output com
 
 - **A data contract per served table**, in the published Open Data Contract Standard (ODCS) format: schema, keys, the same quality checks the build already runs, and a note of which source wins each field.
 - **One product descriptor per domain**, in the Open Data Product Standard (ODPS, Bitol): the tables' contracts wired together as output ports, plus the console and docs site a person operates the factory from.
-- **A typed graph map of the domain**: the entities as nodes, the relationships between them as edges, in common graph query forms (openCypher, SQL/PGQ, GQL) that let a tool or an agent navigate the domain's shape without reading the warehouse.
+- **A typed graph map of the domain**: entities become nodes and relationships become edges. Common graph query forms (openCypher, SQL/PGQ, and GQL) let a tool or agent navigate the domain's shape without reading the warehouse.
 
 None of the three is hand-written, and none of them can drift from the tables they describe: they regenerate from the same declarations everything else does, and the build fails if one is hand-edited instead.
 
@@ -66,7 +72,7 @@ None of the three is hand-written, and none of them can drift from the tables th
 
 ![The four verification gates: byte-stable re-emit, dialect lint, three-target parse, and a complete local DuckDB build](pipeline_gates.svg)
 
-Four checks ring the whole generation rather than trusting it. The engine re-emits and checks that the output is byte-for-byte identical to the declarations. A linter checks the SQL for each supported dialect. dbt parses Snowflake, BigQuery, and DuckDB. A complete local DuckDB build executes the seeded estate and its business assertions. One validation command runs the set.
+Four checks cover the complete generation. The engine re-emits and checks that the output is byte-for-byte identical to the declarations. A linter checks the SQL for each supported dialect. dbt parses Snowflake, BigQuery, and DuckDB. A complete local DuckDB build executes the seeded estate and its business assertions. One validation command runs the set.
 
 ### Portable verification without a warehouse
 
@@ -108,4 +114,4 @@ The [Open Investment Model (OpenIM)](https://openinvestmentmodel.org) is not par
 
 ## Where to go next
 
-The root [README.md](../../README.md) installs the engine and builds a first pipeline. [DEMO.md](../../DEMO.md) walks the source-description format field by field. [RUNBOOK.md](../../RUNBOOK.md) covers the account-free local build and the authorised live Snowflake path.
+The root [README.md](../../README.md) installs the engine and builds a first pipeline. [DEMO.md](../../DEMO.md) walks the source-description format field by field, including a source's Bronze declaration. [RUNBOOK.md](../../RUNBOOK.md) covers the account-free local build, the Bronze operator command surface, and the authorised live Snowflake path. [`bronze-ingestion.md`](bronze-ingestion.md) is the Bronze deep dive.

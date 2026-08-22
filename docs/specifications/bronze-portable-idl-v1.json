@@ -1,0 +1,2014 @@
+{
+  "schema": "ergasterion.portable-idl/v1",
+  "idl_version": "1.0.0",
+  "closed": true,
+  "purpose": "Language-neutral public record and runtime-port authority for Bronze ingestion version 1.",
+  "type_expression_grammar": {
+    "scalar": "a key in scalars",
+    "enum": "a key in enums",
+    "record": "a key in records",
+    "union": "a key in unions; each union declares either a field discriminator or an explicit token_or_object form",
+    "list": "list<T>",
+    "map": "map<Token,T>"
+  },
+    "canonicalization": {
+    "json": "RFC8785",
+    "text": "UTF-8 with human-authored text already NFC",
+    "unknown_fields": "reject",
+    "absent_optional": "omit",
+    "null": "allowed only when the field declares nullable true",
+    "set_like_lists": "reject duplicates then sort by canonical scalar bytes",
+    "ordered_lists": "preserve declared or receiver order",
+    "integer_encoding": "canonical base-10 string unless the field type is SafeInteger",
+    "digest": "lowercase hexadecimal SHA-256",
+    "derived_fields": "fields marked digest_excluded are omitted only from the enclosing record's own derived-ID or content-digest basis; referenced records retain their declared digests",
+    "signature_fields": "fields marked signature_excluded are omitted only from the enclosing signed-envelope bytes"
+  },
+  "scalars": {
+    "String": {"base": "string"},
+    "Boolean": {"base": "boolean"},
+    "SafeInteger": {"base": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991},
+    "PositiveInteger": {"base": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "NonNegativeInteger": {"base": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "IntegerString": {"base": "string", "pattern": "^(0|[1-9][0-9]*|-[1-9][0-9]*)$"},
+    "NonNegativeIntegerString": {"base": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "PositiveIntegerString": {"base": "string", "pattern": "^[1-9][0-9]*$"},
+    "DecimalString": {"base": "string", "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$"},
+    "Digest": {"base": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ContentId": {"base": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "Base64Url": {"base": "string", "pattern": "^[A-Za-z0-9_-]+$"},
+    "ByteStringBase64Url": {"base": "string", "pattern": "^[A-Za-z0-9_-]*$"},
+    "Token": {"base": "string", "pattern": "^[a-z][a-z0-9._:-]{0,126}$"},
+    "Identifier": {"base": "string", "pattern": "^[a-z_][a-z0-9_]*$"},
+    "EstateNamespace": {"base": "string", "pattern": "^(?=.{3,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"},
+    "SemVer": {"base": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"},
+    "UtcInstant": {"base": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
+    "Date": {"base": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+    "FileMode": {"base": "string", "pattern": "^[0-7]{6}$"},
+    "JsonPointer": {"base": "string", "pattern": "^(|/(?:[^~/]|~[01])*)$"},
+    "OpaqueRef": {"base": "string", "min_length": 1, "max_length": 512},
+    "ErrorCode": {"base": "string", "enum_ref": "error_codes"}
+  },
+  "enums": {
+    "DeliveryMode": ["cdc", "append_only", "complete_snapshot"],
+    "DeliveryInputKind": ["managed_payload", "external_receipt"],
+    "IntegrationKind": ["external", "managed"],
+    "CodecKind": ["csv", "jsonl"],
+    "CapabilityCodecKind": ["csv_v1", "jsonl_v1"],
+    "ContentEncoding": ["identity", "gzip"],
+    "NewlineKind": ["crlf", "lf"],
+    "BackoffKind": ["exponential", "fixed"],
+    "MediaType": ["application/x-ndjson", "text/csv"],
+    "LogicalTypeKind": ["binary", "boolean", "date", "decimal", "int64", "local_datetime", "utc_instant", "utf8_string"],
+    "SimpleLogicalType": ["binary", "boolean", "date", "int64", "utc_instant", "utf8_string"],
+    "ProgressKind": ["opaque_batch", "sequence"],
+    "DeleteStrategy": ["explicit_tombstone", "none", "snapshot_diff"],
+    "PublicationPolicy": ["all_or_nothing", "publish_valid_rows"],
+    "PublicationDecision": ["publish_all", "publish_valid_rows", "reject_delivery"],
+    "Severity": ["error", "warn"],
+    "RuleKind": ["accepted_values", "not_null", "range", "row_count", "unique_key"],
+    "PortKind": ["key_resolver", "landing_adapter", "lifecycle_sink", "projection_publisher", "raw_store", "remediation_repository", "scratch_store", "source_connector", "state_store"],
+    "ProfileClass": ["production_candidate", "synthetic_local_only"],
+    "BackupRestoreCapability": ["none", "operator_managed", "verified"],
+    "SecretBoundary": ["external_resolver", "none", "opaque_mac"],
+    "AttemptState": ["commit_blocked", "committed", "committing", "failed", "materializing", "preparing", "received", "validating"],
+    "BlockPhase": ["observer_blocked", "projection_blocked"],
+    "ProcessingOutcome": ["blocked", "committed", "failed", "in_progress", "none"],
+    "MigrationKind": ["carry", "reset"],
+    "ProjectionIntentKind": ["delivery_publication", "heartbeat", "migration", "processing", "remediation_release", "timeliness", "whole_delivery_reprocessing"],
+    "VisibilityKind": ["delivery", "release", "reprocess"],
+    "TimelinessState": ["awaiting", "late", "missing", "not_due", "on_time"],
+    "ErrorCategory": ["capability", "config", "conflict", "integrity", "permanent", "retryable", "usage"],
+    "CommandStatus": ["failed", "noop", "ok", "retryable"],
+    "BackupAction": ["create", "restore"],
+    "FindingKind": ["batch_rule", "parse", "rule", "type"],
+    "DiagnosticCode": ["accepted_value_violation", "column_count_mismatch", "duplicate_key", "invalid_encoding", "invalid_logical_type", "json_parse_error", "missing_required_field", "null_not_allowed", "range_violation", "row_count_violation", "unexpected_field"],
+    "DispositionStatus": ["accepted", "rejected"],
+    "ReadinessResult": ["ready", "rejected"]
+    ,"GraphOccurrenceRole": ["phase", "wrapper", "policy", "observer", "barrier"]
+    ,"GraphEdgeRole": ["data", "validation", "readiness", "barrier", "observe"]
+    ,"ContractLifecycleAction": ["register", "activate"]
+    ,"DeploymentLifecycleAction": ["register", "activate"]
+    ,"RemediationDecisionKind": ["evaluated", "released"]
+    ,"LifecycleEventType": ["received", "preparing", "validating", "materializing", "committing", "commit_blocked", "committed", "failed", "bronze.contract", "bronze.schema", "bronze.receipt", "bronze.quality", "bronze.quarantine", "bronze.publication", "bronze.deletion_evidence", "bronze.lineage", "bronze.metadata"]
+    ,"ContractActivationState": ["active", "pending_baseline"]
+    ,"PatternId": ["batch_ingestion", "data_validation", "data_contracts", "lineage_capture", "metadata_capture", "schema_publish", "data_publish", "checkpoint_retries", "batch_transfer", "schema_transform", "calculated_fields", "data_enrichment", "data_filtering", "data_aggregation", "data_curation"]
+    ,"HandoffSchemaId": ["ergasterion.raw-evidence/v1", "ergasterion.validation-result/v1", "ergasterion.contract-conformance/v1", "ergasterion.interface-readiness/v1", "ergasterion.publication-confirmation/v1"]
+    ,"EvidenceKind": ["attempt", "contract", "deletion_evidence", "lineage", "metadata", "publication", "quality", "quarantine", "receipt", "schema"]
+    ,"OutboxEntryKind": ["evidence", "lifecycle", "projection"]
+    ,"OutboxStatus": ["pending", "leased", "retryable", "dead_letter", "complete"]
+    ,"OutboxFailureDisposition": ["dead_letter", "retryable"]
+    ,"SnapshotReconciliationStatus": ["not_applicable", "pending", "leased", "retryable", "dead_letter", "complete"]
+    ,"QuarantineAction": ["list", "revalidate", "release"]
+    ,"RemediationActionStatus": ["listed", "unchanged_finding", "revalidated", "released"]
+    ,"TranslationRole": ["execution_owner", "observer", "projection_consumer"]
+    ,"ConformanceResult": ["conformant", "rejected"]
+    ,"HandoffRecordType": ["RawEvidenceHandoff", "ValidationResultHandoff", "ContractConformanceHandoff", "InterfaceReadinessHandoff", "PublicationConfirmationHandoff"]
+  },
+  "records": {
+    "LogicalIdentity": {"closed": true, "fields": [
+      {"name": "estate_namespace", "type": "EstateNamespace", "required": true, "nullable": false},
+      {"name": "source", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "table", "type": "Identifier", "required": true, "nullable": false}
+    ]},
+    "ProductFacts": {"closed": true, "fields": [
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "display_name", "type": "String", "required": true, "nullable": false},
+      {"name": "description", "type": "String", "required": true, "nullable": false},
+      {"name": "owner", "type": "Token", "required": true, "nullable": false},
+      {"name": "domain", "type": "Token", "required": true, "nullable": false},
+      {"name": "support", "type": "Token", "required": true, "nullable": false},
+      {"name": "classification", "type": "Token", "required": true, "nullable": false},
+      {"name": "access_policy_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "retention_policy_ref", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "DecimalType": {"closed": true, "fields": [
+      {"name": "kind", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "decimal"},
+      {"name": "precision", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "scale", "type": "NonNegativeInteger", "required": true, "nullable": false}
+    ]},
+    "LocalDateTimeType": {"closed": true, "fields": [
+      {"name": "kind", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "local_datetime"},
+      {"name": "timezone", "type": "String", "required": true, "nullable": false}
+    ]},
+    "TypedBoolean": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "boolean"},
+      {"name": "value", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "TypedInt64": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "int64"},
+      {"name": "value", "type": "IntegerString", "required": true, "nullable": false}
+    ]},
+    "TypedDecimal": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "decimal"},
+      {"name": "unscaled", "type": "IntegerString", "required": true, "nullable": false},
+      {"name": "scale", "type": "NonNegativeInteger", "required": true, "nullable": false}
+    ]},
+    "TypedString": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "utf8_string"},
+      {"name": "value", "type": "String", "required": true, "nullable": false}
+    ]},
+    "TypedDate": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "date"},
+      {"name": "value", "type": "Date", "required": true, "nullable": false}
+    ]},
+    "TypedUtcInstant": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "utc_instant"},
+      {"name": "value", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "TypedLocalDateTime": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "local_datetime"},
+      {"name": "value", "type": "String", "required": true, "nullable": false},
+      {"name": "timezone", "type": "String", "required": true, "nullable": false}
+    ]},
+    "TypedBinary": {"closed": true, "fields": [
+      {"name": "logical_type", "type": "LogicalTypeKind", "required": true, "nullable": false, "const": "binary"},
+      {"name": "value", "type": "ByteStringBase64Url", "required": true, "nullable": false}
+    ]},
+    "SourceField": {"closed": true, "fields": [
+      {"name": "name", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "logical_type", "type": "LogicalType", "required": true, "nullable": false},
+      {"name": "nullable", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "CsvCodec": {"closed": true, "fields": [
+      {"name": "kind", "type": "CodecKind", "required": true, "nullable": false, "const": "csv"},
+      {"name": "version", "type": "PositiveInteger", "required": true, "nullable": false, "const": 1},
+      {"name": "charset", "type": "String", "required": true, "nullable": false, "const": "utf-8"},
+      {"name": "delimiter", "type": "String", "required": true, "nullable": false},
+      {"name": "header", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "quote", "type": "String", "required": true, "nullable": false},
+      {"name": "escape", "type": "String", "required": true, "nullable": false},
+      {"name": "newline", "type": "NewlineKind", "required": true, "nullable": false},
+      {"name": "null_tokens", "type": "list<String>", "required": true, "nullable": false, "ordering": "authored"},
+      {"name": "trim_whitespace", "type": "Boolean", "required": true, "nullable": false, "const": false}
+    ]},
+    "JsonlCodec": {"closed": true, "fields": [
+      {"name": "kind", "type": "CodecKind", "required": true, "nullable": false, "const": "jsonl"},
+      {"name": "version", "type": "PositiveInteger", "required": true, "nullable": false, "const": 1},
+      {"name": "charset", "type": "String", "required": true, "nullable": false, "const": "utf-8"},
+      {"name": "newline", "type": "NewlineKind", "required": true, "nullable": false},
+      {"name": "top_level", "type": "Token", "required": true, "nullable": false, "const": "object"},
+      {"name": "duplicate_keys", "type": "Token", "required": true, "nullable": false, "const": "reject"},
+      {"name": "number_mode", "type": "Token", "required": true, "nullable": false, "const": "exact_decimal"},
+      {"name": "allow_blank_lines", "type": "Boolean", "required": true, "nullable": false, "const": false}
+    ]},
+    "ProjectionField": {"closed": true, "fields": [
+      {"name": "source", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "name", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "logical_type", "type": "LogicalType", "required": true, "nullable": false},
+      {"name": "nullable", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "LandingContract": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "source"},
+      {"name": "source_name", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "identifier", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "integration", "type": "Integration", "required": true, "nullable": false},
+      {"name": "content_encodings", "type": "list<ContentEncoding>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "codec", "type": "Codec", "required": true, "nullable": false},
+      {"name": "physical_columns", "type": "list<SourceField>", "required": true, "nullable": false, "ordering": "declared"}
+    ]},
+    "ManagedIntegration": {"closed": true, "fields": [{"name": "kind", "type": "IntegrationKind", "required": true, "nullable": false, "const": "managed"}]},
+    "ExternalTrustPolicy": {"closed": true, "fields": [
+      {"name": "policy_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "allowed_key_ids", "type": "list<Token>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "future_clock_skew_seconds", "type": "NonNegativeInteger", "required": true, "nullable": false}
+    ]},
+    "ExternalIntegration": {"closed": true, "fields": [
+      {"name": "kind", "type": "IntegrationKind", "required": true, "nullable": false, "const": "external"},
+      {"name": "delivery_id_column", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "visibility_epoch_column", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "visibility_kind_column", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "visibility_id_column", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "raw_reference_field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "candidate_reference_field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "frame_index_reference_field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "receipt_trust", "type": "ExternalTrustPolicy", "required": true, "nullable": false}
+    ]},
+    "IntervalSchedule": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "interval"},
+      {"name": "every_minutes", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "anchor_at", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "CronSchedule": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "cron"},
+      {"name": "expression", "type": "String", "required": true, "nullable": false},
+      {"name": "timezone", "type": "String", "required": true, "nullable": false},
+      {"name": "starts_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "timezone_data_version", "type": "String", "required": true, "nullable": false, "const": "2026.2"}
+    ]},
+    "SlaContract": {"closed": true, "fields": [
+      {"name": "warn_after_minutes", "type": "NonNegativeInteger", "required": true, "nullable": false},
+      {"name": "error_after_minutes", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "TimestampContract": {"closed": true, "fields": [
+      {"name": "load_field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "event_field", "type": "Identifier", "required": false, "nullable": false},
+      {"name": "effective_field", "type": "Identifier", "required": false, "nullable": false}
+    ]},
+    "SequenceProgress": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProgressKind", "required": true, "nullable": false, "const": "sequence"},
+      {"name": "field", "type": "Identifier", "required": true, "nullable": false}
+    ]},
+    "OpaqueBatchProgress": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProgressKind", "required": true, "nullable": false, "const": "opaque_batch"}
+    ]},
+    "FingerprintScope": {"closed": true, "fields": [
+      {"name": "scope_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "scope_parameters", "type": "map<Token,TypedScalar>", "required": true, "nullable": false}
+    ]},
+    "RecordKeyContract": {"closed": true, "fields": [
+      {"name": "fields", "type": "list<Identifier>", "required": true, "nullable": false, "ordering": "ordered"},
+      {"name": "fingerprint_scope", "type": "FingerprintScope", "required": false, "nullable": false},
+      {"name": "hmac_key_id", "type": "Token", "required": false, "nullable": false}
+    ]},
+    "RetryPolicy": {"closed": true, "fields": [
+      {"name": "max_attempts", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "backoff", "type": "BackoffKind", "required": true, "nullable": false},
+      {"name": "base_seconds", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "cap_seconds", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "NotNullRule": {"closed": true, "fields": [
+      {"name": "kind", "type": "RuleKind", "required": true, "nullable": false, "const": "not_null"},
+      {"name": "field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "severity", "type": "Severity", "required": true, "nullable": false}
+    ]},
+    "UniqueKeyRule": {"closed": true, "fields": [
+      {"name": "kind", "type": "RuleKind", "required": true, "nullable": false, "const": "unique_key"},
+      {"name": "fields", "type": "list<Identifier>", "required": true, "nullable": false, "ordering": "ordered"},
+      {"name": "severity", "type": "Severity", "required": true, "nullable": false}
+    ]},
+    "AcceptedValuesRule": {"closed": true, "fields": [
+      {"name": "kind", "type": "RuleKind", "required": true, "nullable": false, "const": "accepted_values"},
+      {"name": "field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "values", "type": "list<TypedScalar>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "allow_null", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "severity", "type": "Severity", "required": true, "nullable": false}
+    ]},
+    "RangeRule": {"closed": true, "fields": [
+      {"name": "kind", "type": "RuleKind", "required": true, "nullable": false, "const": "range"},
+      {"name": "field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "min", "type": "TypedScalar", "required": false, "nullable": false},
+      {"name": "max", "type": "TypedScalar", "required": false, "nullable": false},
+      {"name": "allow_null", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "severity", "type": "Severity", "required": true, "nullable": false}
+    ]},
+    "RowCountRule": {"closed": true, "fields": [
+      {"name": "kind", "type": "RuleKind", "required": true, "nullable": false, "const": "row_count"},
+      {"name": "min", "type": "NonNegativeIntegerString", "required": false, "nullable": false},
+      {"name": "max", "type": "NonNegativeIntegerString", "required": false, "nullable": false},
+      {"name": "severity", "type": "Severity", "required": true, "nullable": false}
+    ]},
+    "QualityPolicy": {"closed": true, "fields": [
+      {"name": "publication_mode", "type": "PublicationPolicy", "required": true, "nullable": false},
+      {"name": "max_error_fraction", "type": "DecimalString", "required": true, "nullable": false},
+      {"name": "rules", "type": "list<QualityRule>", "required": true, "nullable": false, "ordering": "rule_id"}
+    ]},
+    "TombstoneContract": {"closed": true, "fields": [
+      {"name": "field", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "values", "type": "list<TypedScalar>", "required": true, "nullable": false, "ordering": "set"}
+    ]},
+    "SnapshotContract": {"closed": true, "fields": [
+      {"name": "scope_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "scope_parameters", "type": "map<Token,TypedScalar>", "required": true, "nullable": false},
+      {"name": "attestation_policy_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "allowed_key_ids", "type": "list<Token>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "future_clock_skew_seconds", "type": "NonNegativeInteger", "required": true, "nullable": false}
+    ]},
+    "DeliveryPolicy": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "production"},
+      {"name": "mode", "type": "DeliveryMode", "required": true, "nullable": false},
+      {"name": "progress", "type": "ProgressContract", "required": true, "nullable": false},
+      {"name": "delete_strategy", "type": "DeleteStrategy", "required": true, "nullable": false},
+      {"name": "schedule", "type": "Schedule", "required": true, "nullable": false},
+      {"name": "schedule_lateness", "type": "SlaContract", "required": true, "nullable": false},
+      {"name": "maximum_age", "type": "SlaContract", "required": false, "nullable": false},
+      {"name": "timestamps", "type": "TimestampContract", "required": true, "nullable": false},
+      {"name": "record_key", "type": "RecordKeyContract", "required": true, "nullable": false},
+      {"name": "tombstone", "type": "TombstoneContract", "required": false, "nullable": false},
+      {"name": "snapshot", "type": "SnapshotContract", "required": false, "nullable": false},
+      {"name": "quality", "type": "QualityPolicy", "required": true, "nullable": false},
+      {"name": "retry", "type": "RetryPolicy", "required": true, "nullable": false}
+    ]},
+    "BronzeInterfaces": {"closed": true, "fields": [
+      {"name": "raw", "type": "Token", "required": true, "nullable": false},
+      {"name": "source_native", "type": "Token", "required": true, "nullable": false},
+      {"name": "published", "type": "Token", "required": true, "nullable": false},
+      {"name": "quarantine", "type": "Token", "required": true, "nullable": false},
+      {"name": "deletion_evidence", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "BronzeProductContract": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.bronze-product/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "product", "type": "ProductFacts", "required": true, "nullable": false},
+      {"name": "landing", "type": "LandingContract", "required": true, "nullable": false},
+      {"name": "delivery", "type": "DeliveryPolicy", "required": true, "nullable": false},
+      {"name": "projection", "type": "list<ProjectionField>", "required": true, "nullable": false, "ordering": "declared"},
+      {"name": "interfaces", "type": "BronzeInterfaces", "required": true, "nullable": false}
+    ]},
+    "GraphOccurrence": {"closed": true, "fields": [
+      {"name": "occurrence_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "pattern_id", "type": "PatternId", "required": true, "nullable": false},
+      {"name": "roles", "type": "list<GraphOccurrenceRole>", "required": true, "nullable": false, "ordering": "enum"},
+      {"name": "phase_ordinal", "type": "NonNegativeInteger", "required": true, "nullable": false},
+      {"name": "members", "type": "list<Token>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "execution_owner_required", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "GraphEdge": {"closed": true, "fields": [
+      {"name": "from_occurrence", "type": "Token", "required": true, "nullable": false},
+      {"name": "to_occurrence", "type": "Token", "required": true, "nullable": false},
+      {"name": "role", "type": "GraphEdgeRole", "required": true, "nullable": false},
+      {"name": "handoff_schema_id", "type": "HandoffSchemaId", "required": true, "nullable": false}
+    ]},
+    "HandoffSchema": {"closed": true, "fields": [
+      {"name": "schema_id", "type": "HandoffSchemaId", "required": true, "nullable": false},
+      {"name": "record_type", "type": "HandoffRecordType", "required": true, "nullable": false},
+      {"name": "schema_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "RawEvidenceHandoff": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_id", "type": "Token", "required": true, "nullable": true},
+      {"name": "reprocessing_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "remediation_evaluation_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "candidate_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "candidate_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "frame_index_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "frame_index_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "ValidationResultHandoff": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "evaluation_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "disposition_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "framed_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "error_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "warning_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "quarantined_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "batch_findings", "type": "list<Finding>", "required": true, "nullable": false, "ordering": "finding-identity"},
+      {"name": "error_numerator", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "error_denominator", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "publication_decision", "type": "PublicationDecision", "required": true, "nullable": false}
+    ]},
+    "ContractConformanceHandoff": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "result", "type": "ConformanceResult", "required": true, "nullable": false},
+      {"name": "findings", "type": "list<Finding>", "required": true, "nullable": false, "ordering": "finding-identity"}
+    ]},
+    "InterfaceReadinessHandoff": {"closed": true, "fields": [
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "readiness", "type": "InterfaceReadiness", "required": true, "nullable": false}
+    ]},
+    "PublicationConfirmationHandoff": {"closed": true, "fields": [
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "confirmation", "type": "ProjectionConfirmation", "required": true, "nullable": false}
+    ]},
+    "ExecutionPlan": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.execution-plan/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "occurrences", "type": "list<GraphOccurrence>", "required": true, "nullable": false, "ordering": "occurrence_id"},
+      {"name": "edges", "type": "list<GraphEdge>", "required": true, "nullable": false, "ordering": "from,to,role,schema"},
+      {"name": "handoffs", "type": "list<HandoffSchema>", "required": true, "nullable": false, "ordering": "schema_id"},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "PortBinding": {"closed": true, "fields": [
+      {"name": "adapter_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "implementation_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "capability_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "endpoint_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "secret_resolver_refs", "type": "list<Token>", "required": true, "nullable": false, "ordering": "set"}
+    ]},
+    "RuntimePortBindings": {"closed": true, "fields": [
+      {"name": "source_connector", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "raw_store", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "scratch_store", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "state_store", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "landing_adapter", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "remediation_repository", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "projection_publisher", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "lifecycle_sink", "type": "PortBinding", "required": true, "nullable": false},
+      {"name": "key_resolver", "type": "PortBinding", "required": true, "nullable": false}
+    ]},
+    "RelationCoordinate": {"closed": true, "fields": [
+      {"name": "database_ref", "type": "Token", "required": false, "nullable": false},
+      {"name": "schema_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "relation_ref", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "ProjectionRelations": {"closed": true, "fields": [
+      {"name": "database_ref", "type": "Token", "required": false, "nullable": false},
+      {"name": "schema_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "active_alias", "type": "Token", "required": true, "nullable": false},
+      {"name": "stream_status", "type": "Token", "required": true, "nullable": false},
+      {"name": "source_native_audit", "type": "Token", "required": true, "nullable": false},
+      {"name": "quarantine", "type": "Token", "required": true, "nullable": false},
+      {"name": "snapshot_history", "type": "Token", "required": true, "nullable": false},
+      {"name": "published_ledger", "type": "Token", "required": true, "nullable": false},
+      {"name": "visibility_ancestry", "type": "Token", "required": true, "nullable": false},
+      {"name": "version_registry", "type": "Token", "required": true, "nullable": false},
+      {"name": "contract_registry", "type": "Token", "required": true, "nullable": false},
+      {"name": "source_schema_registry", "type": "Token", "required": true, "nullable": false},
+      {"name": "published_schema_registry", "type": "Token", "required": true, "nullable": false},
+      {"name": "quality", "type": "Token", "required": true, "nullable": false},
+      {"name": "lineage", "type": "Token", "required": true, "nullable": false},
+      {"name": "product_metadata", "type": "Token", "required": true, "nullable": false},
+      {"name": "deletion_evidence", "type": "Token", "required": true, "nullable": false},
+      {"name": "lifecycle_events", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "SchedulerBinding": {"closed": true, "fields": [
+      {"name": "heartbeat_seconds", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "heartbeat_slo_seconds", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_due_transitions_per_call", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "OutboxBinding": {"closed": true, "fields": [
+      {"name": "max_attempts", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "lease_seconds", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "backoff", "type": "BackoffKind", "required": true, "nullable": false},
+      {"name": "base_seconds", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "cap_seconds", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "RuntimeResources": {"closed": true, "fields": [
+      {"name": "process_memory_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "validation_memory_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "scratch_reservation_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "max_parallel_attempts", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_wire_record_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "max_quarantine_disposition_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "max_quarantine_decision_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "max_remediation_locators", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_visibility_ancestry_rows", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "RetentionBinding": {"closed": true, "fields": [
+      {"name": "orphan_content_hours", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "deletion_keyset_days", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "RuntimeBinding": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.runtime-binding/v1"},
+      {"name": "binding_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "binding_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "environment", "type": "Token", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "ports", "type": "RuntimePortBindings", "required": true, "nullable": false},
+      {"name": "landing_ports", "type": "map<Token,RelationCoordinate>", "required": true, "nullable": false},
+      {"name": "projection_relations", "type": "ProjectionRelations", "required": true, "nullable": false},
+      {"name": "scheduler", "type": "SchedulerBinding", "required": true, "nullable": false},
+      {"name": "outbox", "type": "OutboxBinding", "required": true, "nullable": false},
+      {"name": "runtime_resources", "type": "RuntimeResources", "required": true, "nullable": false},
+      {"name": "retention", "type": "RetentionBinding", "required": true, "nullable": false},
+      {"name": "protection_profile", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "CapabilityGuarantees": {"closed": true, "fields": [
+      {"name": "immutable_write", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "compare_and_swap", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "atomic_projection", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "gap_free_revision", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "idempotent_replay", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "bounded_streaming", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "CapabilityLimits": {"closed": true, "fields": [
+      {"name": "max_payload_bytes", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "max_uncompressed_bytes", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "max_expansion_ratio", "type": "DecimalString", "required": true, "nullable": false},
+      {"name": "max_batch_records", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "max_memory_bytes", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "max_scratch_bytes", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "ProtectionCapabilities": {"closed": true, "fields": [
+      {"name": "profile_class", "type": "ProfileClass", "required": true, "nullable": false},
+      {"name": "encryption_at_rest", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "transport_encryption", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "access_policy_binding", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "audit_evidence", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "retention_enforcement", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "backup_restore", "type": "BackupRestoreCapability", "required": true, "nullable": false},
+      {"name": "secret_boundary", "type": "SecretBoundary", "required": true, "nullable": false}
+    ]},
+    "AdapterCapabilities": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.adapter-capabilities/v1"},
+      {"name": "port_kind", "type": "PortKind", "required": true, "nullable": false},
+      {"name": "operations", "type": "list<Token>", "required": true, "nullable": false, "ordering": "port-table"},
+      {"name": "input_kinds", "type": "list<DeliveryInputKind>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "delivery_modes", "type": "list<DeliveryMode>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "codecs", "type": "list<CapabilityCodecKind>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "content_encodings", "type": "list<ContentEncoding>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "logical_types", "type": "list<LogicalTypeKind>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "guarantees", "type": "CapabilityGuarantees", "required": true, "nullable": false},
+      {"name": "limits", "type": "CapabilityLimits", "required": true, "nullable": false},
+      {"name": "protection", "type": "ProtectionCapabilities", "required": true, "nullable": false}
+    ]},
+    "TranslatorAssignment": {"closed": true, "fields": [
+      {"name": "occurrence_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "role", "type": "TranslationRole", "required": true, "nullable": false},
+      {"name": "translator_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "translator_version", "type": "SemVer", "required": true, "nullable": false}
+    ]},
+    "RuntimeManifest": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.runtime-manifest/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_binding_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "binding", "type": "RuntimeBinding", "required": true, "nullable": false},
+      {"name": "engine_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "validation_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "codec_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "routes", "type": "list<TranslatorAssignment>", "required": true, "nullable": false, "ordering": "occurrence_id,role,translator_id"},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "InterfaceReadiness": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.interface-readiness/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "version_interface_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "capability_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "classification", "type": "Token", "required": true, "nullable": false},
+      {"name": "access_policy_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "retention_policy_ref", "type": "Token", "required": true, "nullable": false},
+      {"name": "protection_profile", "type": "Token", "required": true, "nullable": false},
+      {"name": "result", "type": "ReadinessResult", "required": true, "nullable": false},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "verified_at", "type": "UtcInstant", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "revoked_at", "type": "UtcInstant", "required": true, "nullable": true, "digest_excluded": true}
+    ]},
+    "RuntimeDeployment": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "candidate_manifest_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "active_manifest_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "retired_manifest_digests", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "deployment_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "DeploymentLifecycleRequest": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.deployment-lifecycle-request/v1"},
+      {"name": "action", "type": "DeploymentLifecycleAction", "required": true, "nullable": false},
+      {"name": "expected_state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "expected_deployment_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "deployment", "type": "RuntimeDeployment", "required": true, "nullable": false},
+      {"name": "readiness", "type": "InterfaceReadiness", "required": true, "nullable": false},
+      {"name": "catchup_cursor", "type": "ProjectionCursor", "required": true, "nullable": false},
+      {"name": "permit_pre_intent_fence", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "DeploymentLifecycleTransitionResult": {"closed": true, "fields": [
+      {"name": "state", "type": "StreamState", "required": true, "nullable": false},
+      {"name": "deployment", "type": "RuntimeDeployment", "required": true, "nullable": false},
+      {"name": "catchup_cursor", "type": "ProjectionCursor", "required": true, "nullable": false},
+      {"name": "fenced_attempt_ids", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"}
+    ]},
+    "PayloadDescriptor": {"closed": true, "fields": [
+      {"name": "media_type", "type": "MediaType", "required": true, "nullable": false},
+      {"name": "content_encoding", "type": "ContentEncoding", "required": true, "nullable": false},
+      {"name": "codec_version", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "byte_length", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "sha256", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "SequenceProgressClaim": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProgressKind", "required": true, "nullable": false, "const": "sequence"},
+      {"name": "high_watermark", "type": "IntegerString", "required": true, "nullable": false},
+      {"name": "event_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "OpaqueProgressClaim": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProgressKind", "required": true, "nullable": false, "const": "opaque_batch"}
+    ]},
+    "SnapshotAttestationPayload": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "batch_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "effective_boundary_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "content_fingerprint", "type": "Digest", "required": true, "nullable": false},
+      {"name": "scope", "type": "FingerprintScope", "required": true, "nullable": false},
+      {"name": "row_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "issued_at", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "DeliveryManifest": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.delivery-manifest/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "batch_id", "type": "Token", "required": true, "nullable": true},
+      {"name": "scheduled_boundary_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "effective_boundary_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "payload", "type": "PayloadDescriptor", "required": true, "nullable": false},
+      {"name": "frame_sequence_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "progress_claim", "type": "ProgressClaim", "required": true, "nullable": false},
+      {"name": "declared_row_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "snapshot_attestation", "type": "SignedAttestation", "required": true, "nullable": true}
+    ]},
+    "ManagedPayloadInput": {"closed": true, "fields": [
+      {"name": "kind", "type": "DeliveryInputKind", "required": true, "nullable": false, "const": "managed_payload"},
+      {"name": "manifest", "type": "DeliveryManifest", "required": true, "nullable": false},
+      {"name": "payload_handle", "type": "OpaqueRef", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "ExternalReceiptInput": {"closed": true, "fields": [
+      {"name": "kind", "type": "DeliveryInputKind", "required": true, "nullable": false, "const": "external_receipt"},
+      {"name": "receipt", "type": "SignedExternalReceipt", "required": true, "nullable": false}
+    ]},
+    "SignedAttestation": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.snapshot-attestation/v1"},
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "Ed25519"},
+      {"name": "key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "payload", "type": "SnapshotAttestationPayload", "required": true, "nullable": false},
+      {"name": "signature", "type": "Base64Url", "required": true, "nullable": false, "signature_excluded": true}
+    ]},
+    "SignedExternalReceipt": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.external-receipt/v1"},
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "Ed25519"},
+      {"name": "key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "payload", "type": "ExternalReceiptPayload", "required": true, "nullable": false},
+      {"name": "signature", "type": "Base64Url", "required": true, "nullable": false, "signature_excluded": true}
+    ]},
+    "ExternalReceiptPayload": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "claim", "type": "DeliveryManifest", "required": true, "nullable": false},
+      {"name": "delivery_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "visibility", "type": "DeliveryVisibilityIdentity", "required": true, "nullable": false},
+      {"name": "adapter_capability_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "raw_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "manifest_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "candidate_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "candidate_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "frame_index_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "frame_index_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "issued_at", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "RawPayloadObject": {"closed": true, "fields": [
+      {"name": "content_id", "type": "ContentId", "required": true, "nullable": false},
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "sha256"},
+      {"name": "byte_length", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "media_type", "type": "MediaType", "required": true, "nullable": false},
+      {"name": "content_encoding", "type": "ContentEncoding", "required": true, "nullable": false}
+    ]},
+    "RawManifestObject": {"closed": true, "fields": [
+      {"name": "content_id", "type": "ContentId", "required": true, "nullable": false},
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "sha256"},
+      {"name": "byte_length", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "RawReceipt": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.raw-receipt/v1"},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "payload", "type": "RawPayloadObject", "required": true, "nullable": false},
+      {"name": "manifest", "type": "RawManifestObject", "required": true, "nullable": false},
+      {"name": "frame_sequence_digest", "type": "Digest", "required": false, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "DeliveryVisibilityIdentity": {"closed": true, "fields": [
+      {"name": "epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "kind", "type": "VisibilityKind", "required": true, "nullable": false, "const": "delivery"},
+      {"name": "id", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "ReleaseVisibilityIdentity": {"closed": true, "fields": [
+      {"name": "epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "kind", "type": "VisibilityKind", "required": true, "nullable": false, "const": "release"},
+      {"name": "id", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "ReprocessVisibilityIdentity": {"closed": true, "fields": [
+      {"name": "epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "kind", "type": "VisibilityKind", "required": true, "nullable": false, "const": "reprocess"},
+      {"name": "id", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "BronzeEvidence": {"closed": true, "fields": [
+      {"name": "raw_receipt", "type": "RawReceipt", "required": true, "nullable": false},
+      {"name": "candidate_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "candidate_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "frame_index_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "frame_index_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false}
+    ]},
+    "RawReadHandle": {"closed": true, "fields": [
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "content_id", "type": "ContentId", "required": true, "nullable": false},
+      {"name": "byte_length", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "handle_ref", "type": "OpaqueRef", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "RawReadPage": {"closed": true, "fields": [
+      {"name": "handle_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "offset", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "bytes_base64url", "type": "ByteStringBase64Url", "required": true, "nullable": false},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "next_offset", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "eof", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "LandingPreparation": {"closed": true, "fields": [
+      {"name": "preparation_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "next_offset", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "closed", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "CandidateField": {"closed": true, "fields": [
+      {"name": "name", "type": "Identifier", "required": true, "nullable": false},
+      {"name": "value", "type": "TypedScalar", "required": true, "nullable": true}
+    ]},
+    "RawLocator": {"closed": true, "fields": [
+      {"name": "frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "byte_offset", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "byte_length", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "line_number", "type": "PositiveIntegerString", "required": true, "nullable": true}
+    ]},
+    "CandidateFrame": {"closed": true, "fields": [
+      {"name": "frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "raw_locator", "type": "RawLocator", "required": true, "nullable": false},
+      {"name": "typed_fields", "type": "list<CandidateField>", "required": true, "nullable": true, "ordering": "source-schema"},
+      {"name": "structural_findings", "type": "list<Finding>", "required": true, "nullable": false, "ordering": "finding-identity"}
+    ]},
+    "CandidateFramePage": {"closed": true, "fields": [
+      {"name": "frames", "type": "list<CandidateFrame>", "required": true, "nullable": false, "ordering": "frame_sequence"},
+      {"name": "next_after_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "MaterializationSession": {"closed": true, "fields": [
+      {"name": "session_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "evaluation_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "next_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "closed", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "CandidateReadQuery": {"closed": true, "fields": [
+      {"name": "evidence", "type": "BronzeEvidence", "required": true, "nullable": false},
+      {"name": "after_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "max_frames", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "DispositionPage": {"closed": true, "fields": [
+      {"name": "session_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "dispositions", "type": "list<Disposition>", "required": true, "nullable": false, "ordering": "receiver"},
+      {"name": "first_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "next_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "bytes_supplied", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "MaterializationCompletion": {"closed": true, "fields": [
+      {"name": "session", "type": "MaterializationSession", "required": true, "nullable": false},
+      {"name": "validation", "type": "ValidationResult", "required": true, "nullable": false},
+      {"name": "candidate_keyset", "type": "SnapshotKeyset", "required": true, "nullable": true},
+      {"name": "output_visibility", "type": "VisibilityIdentity", "required": true, "nullable": true}
+    ]},
+    "MaterializedBronzeEvidence": {"closed": true, "fields": [
+      {"name": "prepared", "type": "BronzeEvidence", "required": true, "nullable": false},
+      {"name": "disposition_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "candidate_keyset", "type": "SnapshotKeyset", "required": true, "nullable": true},
+      {"name": "published_visibility", "type": "VisibilityIdentity", "required": true, "nullable": true}
+    ]},
+    "ReleaseVisibilityBinding": {"closed": true, "fields": [
+      {"name": "materialized", "type": "MaterializedBronzeEvidence", "required": true, "nullable": false},
+      {"name": "visibility", "type": "ReleaseVisibilityIdentity", "required": true, "nullable": false}
+    ]},
+    "FindingMetadata": {"closed": true, "fields": [
+      {"name": "diagnostic_code", "type": "DiagnosticCode", "required": true, "nullable": false},
+      {"name": "raw_locator", "type": "RawLocator", "required": true, "nullable": true},
+      {"name": "expected_logical_type", "type": "LogicalTypeKind", "required": true, "nullable": true},
+      {"name": "observed_logical_type", "type": "LogicalTypeKind", "required": true, "nullable": true},
+      {"name": "observed_count", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "expected_min_count", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "expected_max_count", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "duplicate_group_size", "type": "PositiveIntegerString", "required": true, "nullable": true}
+    ]},
+    "Finding": {"closed": true, "fields": [
+      {"name": "kind", "type": "FindingKind", "required": true, "nullable": false},
+      {"name": "rule_id", "type": "Digest", "required": false, "nullable": false},
+      {"name": "field_path", "type": "JsonPointer", "required": false, "nullable": false},
+      {"name": "code", "type": "ErrorCode", "required": true, "nullable": false},
+      {"name": "severity", "type": "Severity", "required": true, "nullable": false},
+      {"name": "metadata", "type": "FindingMetadata", "required": true, "nullable": false}
+    ]},
+    "Disposition": {"closed": true, "fields": [
+      {"name": "disposition_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "raw_locator", "type": "RawLocator", "required": true, "nullable": false},
+      {"name": "delivery_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "status", "type": "DispositionStatus", "required": true, "nullable": false},
+      {"name": "findings", "type": "list<Finding>", "required": true, "nullable": false, "ordering": "finding-identity"},
+      {"name": "outcome_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "ValidationResult": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.validation-result/v1"},
+      {"name": "evaluation_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "batch_findings", "type": "list<Finding>", "required": true, "nullable": false, "ordering": "finding-identity"},
+      {"name": "framed_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "error_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "warning_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "quarantined_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "error_numerator", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "error_denominator", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "publication_decision", "type": "PublicationDecision", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "SnapshotAcceptance": {"closed": true, "fields": [
+      {"name": "source_snapshot_complete", "type": "Boolean", "required": true, "nullable": false, "const": true},
+      {"name": "accepted_snapshot_complete", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "framed_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "quarantined_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "publication_decision", "type": "PublicationDecision", "required": true, "nullable": false}
+    ]},
+    "ReprocessingClaim": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.reprocessing-claim/v1"},
+      {"name": "original_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "target_contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "reprocessing_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "RemediationEvaluation": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.remediation-evaluation/v1"},
+      {"name": "original_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "target_ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "root_visibility_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "remediation_evaluation_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "RemediationRelease": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.remediation-release/v1"},
+      {"name": "remediation_evaluation_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "selected_locators", "type": "list<RawLocator>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "release_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "RemediationDecision": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.remediation-decision/v1"},
+      {"name": "decision_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "kind", "type": "RemediationDecisionKind", "required": true, "nullable": false},
+      {"name": "evaluation", "type": "RemediationEvaluation", "required": true, "nullable": false},
+      {"name": "disposition_ids", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "release", "type": "RemediationRelease", "required": true, "nullable": true},
+      {"name": "decided_at", "type": "UtcInstant", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "RemediationCommitCheckpoint": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.remediation-commit-checkpoint/v1"},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "decision", "type": "RemediationDecision", "required": true, "nullable": false},
+      {"name": "release_projection_payload", "type": "RemediationReleasePayload", "required": true, "nullable": false},
+      {"name": "checkpoint_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "Attempt": {"closed": true, "fields": [
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_id", "type": "Token", "required": false, "nullable": false},
+      {"name": "reprocessing_id", "type": "Digest", "required": false, "nullable": false},
+      {"name": "remediation_evaluation_id", "type": "Digest", "required": false, "nullable": false},
+      {"name": "scheduled_boundary_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "attempt_ordinal", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "state", "type": "AttemptState", "required": true, "nullable": false},
+      {"name": "block_phase", "type": "BlockPhase", "required": true, "nullable": true},
+      {"name": "reason_code", "type": "ErrorCode", "required": true, "nullable": true},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "remediation_commit_checkpoint", "type": "RemediationCommitCheckpoint", "required": false, "nullable": false},
+      {"name": "snapshot_acceptance", "type": "SnapshotAcceptance", "required": false, "nullable": false},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": false, "nullable": false},
+      {"name": "committed_at", "type": "UtcInstant", "required": false, "nullable": false}
+    ]},
+    "StreamState": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "active_contract_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "visibility_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "accepted_progress", "type": "map<Token,TypedScalar>", "required": true, "nullable": false},
+      {"name": "last_committed_visibility", "type": "VisibilityIdentity", "required": false, "nullable": false},
+      {"name": "last_committed_at", "type": "UtcInstant", "required": false, "nullable": false},
+      {"name": "snapshot_reconciliation", "type": "SnapshotReconciliation", "required": true, "nullable": true},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "required_projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "OperationalStatus": {"closed": true, "fields": [
+      {"name": "state", "type": "StreamState", "required": true, "nullable": false},
+      {"name": "latest_attempt", "type": "Attempt", "required": true, "nullable": true},
+      {"name": "processing", "type": "ProcessingOutcome", "required": true, "nullable": false},
+      {"name": "block_phase", "type": "BlockPhase", "required": true, "nullable": true},
+      {"name": "incomplete_outbox_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "AttemptPage": {"closed": true, "fields": [
+      {"name": "attempts", "type": "list<Attempt>", "required": true, "nullable": false, "ordering": "attempt_id"},
+      {"name": "next_after_attempt_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "AttemptQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "nonterminal_only", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "after_attempt_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false}
+    ]},
+    "Migration": {"closed": true, "fields": [
+      {"name": "migration_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "kind", "type": "MigrationKind", "required": true, "nullable": false},
+      {"name": "from_contract_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "to_contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "activated_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "from_visibility_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "to_visibility_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "ContractLifecycleRequest": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.contract-lifecycle-request/v1"},
+      {"name": "action", "type": "ContractLifecycleAction", "required": true, "nullable": false},
+      {"name": "expected_state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "expected_deployment_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "contract", "type": "BronzeProductContract", "required": true, "nullable": false},
+      {"name": "migration", "type": "Migration", "required": true, "nullable": true},
+      {"name": "permit_pre_intent_fence", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "ContractLifecycleTransitionResult": {"closed": true, "fields": [
+      {"name": "state", "type": "StreamState", "required": true, "nullable": false},
+      {"name": "deployment", "type": "RuntimeDeployment", "required": true, "nullable": true},
+      {"name": "fenced_attempt_ids", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"}
+    ]},
+    "DeliveryPublicationPayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "delivery_publication"},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "transport_payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "bronze_partition_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "progress_claim", "type": "ProgressClaim", "required": true, "nullable": false},
+      {"name": "deletion_evidence", "type": "DeletionEvidenceIntent", "required": true, "nullable": true},
+      {"name": "scheduled_boundary_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "warning_deadline_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "error_deadline_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "lineage_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "WholeDeliveryReprocessingPayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "whole_delivery_reprocessing"},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "reprocessing_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "original_delivery_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "transport_payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "bronze_partition_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "progress_claim", "type": "ProgressClaim", "required": true, "nullable": false},
+      {"name": "deletion_evidence", "type": "DeletionEvidenceIntent", "required": true, "nullable": true},
+      {"name": "scheduled_boundary_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "warning_deadline_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "error_deadline_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "lineage_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "RemediationReleasePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "remediation_release"},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "remediation_evaluation_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "release_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "transport_payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "bronze_partition_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "progress_claim", "type": "ProgressClaim", "required": true, "nullable": false},
+      {"name": "deletion_evidence", "type": "DeletionEvidenceIntent", "required": true, "nullable": true},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "lineage_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "MigrationProjectionPayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "migration"},
+      {"name": "migration", "type": "Migration", "required": true, "nullable": false},
+      {"name": "version_interface", "type": "VersionInterface", "required": true, "nullable": false},
+      {"name": "ancestry", "type": "list<VisibilityAncestryRow>", "required": true, "nullable": false, "ordering": "ancestor_epoch"},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true}
+    ]},
+    "ProcessingProjectionPayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "processing"},
+      {"name": "attempt", "type": "Attempt", "required": true, "nullable": false},
+      {"name": "processing", "type": "ProcessingOutcome", "required": true, "nullable": false},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true}
+    ]},
+    "TimelinessProjectionPayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "timeliness"},
+      {"name": "scheduled_boundary_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "warning_deadline_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "error_deadline_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "timeliness", "type": "TimelinessState", "required": true, "nullable": false},
+      {"name": "evaluated_through_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true}
+    ]},
+    "HeartbeatProjectionPayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false, "const": "heartbeat"},
+      {"name": "heartbeat_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "evaluated_through_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "prior_committed_at", "type": "UtcInstant", "required": true, "nullable": true}
+    ]},
+    "ProjectionIntent": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.projection-intent/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "originating_state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "payload", "type": "ProjectionPayload", "required": true, "nullable": false},
+      {"name": "payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_intent_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "ProjectionConfirmation": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.projection-confirmation/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "kind", "type": "ProjectionIntentKind", "required": true, "nullable": false},
+      {"name": "projection_intent_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "target_applied_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "committed_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "release_applied_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "timeliness", "type": "TimelinessState", "required": true, "nullable": true},
+      {"name": "processing", "type": "ProcessingOutcome", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": true},
+      {"name": "ledger_ref", "type": "OpaqueRef", "required": true, "nullable": true},
+      {"name": "deletion_evidence", "type": "DeletionEvidence", "required": true, "nullable": true},
+      {"name": "target_result_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "ProjectionCursor": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "projection_intent_digest", "type": "Digest", "required": true, "nullable": true}
+    ]},
+    "ProjectionLogPage": {"closed": true, "fields": [
+      {"name": "intents", "type": "list<ProjectionIntent>", "required": true, "nullable": false, "ordering": "projection_revision"},
+      {"name": "next_after_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "ProjectionConfirmationLogPage": {"closed": true, "fields": [
+      {"name": "confirmations", "type": "list<ProjectionConfirmation>", "required": true, "nullable": false, "ordering": "projection_revision"},
+      {"name": "next_after_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "ProjectionReplayBatch": {"closed": true, "fields": [
+      {"name": "intents", "type": "list<ProjectionIntent>", "required": true, "nullable": false, "ordering": "projection_revision"},
+      {"name": "confirmations", "type": "list<ProjectionConfirmation>", "required": true, "nullable": false, "ordering": "projection_revision"},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "bytes_supplied", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "StreamStatus": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "projected_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "scheduled_boundary_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "processing", "type": "ProcessingOutcome", "required": true, "nullable": false},
+      {"name": "timeliness", "type": "TimelinessState", "required": true, "nullable": false},
+      {"name": "latest_attempt", "type": "Attempt", "required": true, "nullable": true},
+      {"name": "committed_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "accepted_progress", "type": "map<Token,TypedScalar>", "required": true, "nullable": false},
+      {"name": "latest_snapshot_visibility", "type": "VisibilityIdentity", "required": true, "nullable": true},
+      {"name": "snapshot_reconciliation", "type": "SnapshotReconciliationStatus", "required": true, "nullable": false},
+      {"name": "heartbeat_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "evaluated_through_at", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "PublishedLedgerRow": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "transport_payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "raw_receipt_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "raw_receipt_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "bronze_partition_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "accepted_content_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "progress_claim", "type": "ProgressClaim", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "committed_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "release_applied_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "VisibilityAncestryRow": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "descendant_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "ancestor_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "projection_target", "type": "Token", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "VersionInterface": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "root_visibility_epoch", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "relation_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "active", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "AttemptLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "AttemptState", "required": true, "nullable": false},
+      {"name": "attempt", "type": "Attempt", "required": true, "nullable": false},
+      {"name": "projection_confirmation", "type": "ProjectionConfirmation", "required": true, "nullable": true}
+    ]},
+    "LineageLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.lineage"},
+      {"name": "lineage", "type": "LineageDescriptor", "required": true, "nullable": false},
+      {"name": "run_lineage", "type": "RunLineage", "required": true, "nullable": false}
+    ]},
+    "MetadataLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.metadata"},
+      {"name": "metadata", "type": "ProductMetadata", "required": true, "nullable": false}
+    ]},
+    "ContractEvidenceLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.contract"},
+      {"name": "contract", "type": "BronzeProductContract", "required": true, "nullable": false}
+    ]},
+    "SchemaEvidenceLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.schema"},
+      {"name": "metadata", "type": "ProductMetadata", "required": true, "nullable": false}
+    ]},
+    "ReceiptLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.receipt"},
+      {"name": "receipt", "type": "RawReceipt", "required": true, "nullable": false}
+    ]},
+    "QualityLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.quality"},
+      {"name": "validation", "type": "ValidationResultHandoff", "required": true, "nullable": false}
+    ]},
+    "QuarantineLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.quarantine"},
+      {"name": "validation", "type": "ValidationResultHandoff", "required": true, "nullable": false},
+      {"name": "decision", "type": "RemediationDecision", "required": true, "nullable": true}
+    ]},
+    "PublicationLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.publication"},
+      {"name": "confirmation", "type": "PublicationConfirmationHandoff", "required": true, "nullable": false},
+      {"name": "ledger", "type": "PublishedLedgerRow", "required": true, "nullable": false}
+    ]},
+    "DeletionEvidenceLifecyclePayload": {"closed": true, "fields": [
+      {"name": "kind", "type": "LifecycleEventType", "required": true, "nullable": false, "const": "bronze.deletion_evidence"},
+      {"name": "evidence", "type": "DeletionEvidence", "required": true, "nullable": false}
+    ]},
+    "LifecycleEvent": {"closed": true, "fields": [
+      {"name": "event_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "event_type", "type": "LifecycleEventType", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "event_ordinal", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": false, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "payload", "type": "LifecyclePayload", "required": true, "nullable": false},
+      {"name": "payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "created_at", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "LifecycleEventCursor": {"closed": true, "fields": [
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "event_ordinal", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "event_id", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "LifecycleEventLogPage": {"closed": true, "fields": [
+      {"name": "events", "type": "list<LifecycleEvent>", "required": true, "nullable": false, "ordering": "state_revision,event_ordinal,event_id"},
+      {"name": "next_cursor", "type": "LifecycleEventCursor", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "LifecycleEventLogQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "after_cursor", "type": "LifecycleEventCursor", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "LifecycleEventBatch": {"closed": true, "fields": [
+      {"name": "events", "type": "list<LifecycleEvent>", "required": true, "nullable": false, "ordering": "state_revision,event_ordinal,event_id"},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "bytes_supplied", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "DeliveryClaim": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.delivery-claim/v1"},
+      {"name": "claim", "type": "DeliveryManifest", "required": true, "nullable": false},
+      {"name": "delivery_claim_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "LineageDescriptor": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "projection", "type": "list<ProjectionField>", "required": true, "nullable": false, "ordering": "declared"},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "lineage_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "RunLineage": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.run-lineage/v1"},
+      {"name": "run_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "delivery_id", "type": "Token", "required": true, "nullable": true},
+      {"name": "reprocessing_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "remediation_evaluation_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "transport_payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "delivery_claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "ruleset_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "validation_result_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "accepted_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "quarantined_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "product_version", "type": "SemVer", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "landing_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "publication_ref", "type": "OpaqueRef", "required": true, "nullable": true},
+      {"name": "result", "type": "ProcessingOutcome", "required": true, "nullable": false},
+      {"name": "committed_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "run_lineage_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "ProductMetadata": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "product", "type": "ProductFacts", "required": true, "nullable": false},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema", "type": "list<SourceField>", "required": true, "nullable": false, "ordering": "declared"},
+      {"name": "quality", "type": "QualityPolicy", "required": true, "nullable": false},
+      {"name": "interfaces", "type": "BronzeInterfaces", "required": true, "nullable": false},
+      {"name": "latest_stream_status_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "latest_publication_ref", "type": "OpaqueRef", "required": false, "nullable": false}
+    ]},
+    "SnapshotKeyset": {"closed": true, "fields": [
+      {"name": "keyset_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "record_key_scope", "type": "FingerprintScope", "required": true, "nullable": false},
+      {"name": "hmac_key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "key_commitment", "type": "Digest", "required": true, "nullable": false},
+      {"name": "keyset_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "keyset_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "key_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "complete", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "SnapshotKeysetRequest": {"closed": true, "fields": [
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "record_key_scope", "type": "FingerprintScope", "required": true, "nullable": false},
+      {"name": "hmac_key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "key_commitment", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "SnapshotKeysetCompletion": {"closed": true, "fields": [
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "keyset_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "expected_key_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "expected_keyset_digest", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "TombstoneKeyset": {"closed": true, "fields": [
+      {"name": "keyset_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "visibility", "type": "DeliveryVisibilityIdentity", "required": true, "nullable": false},
+      {"name": "record_key_scope", "type": "FingerprintScope", "required": true, "nullable": false},
+      {"name": "hmac_key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "key_commitment", "type": "Digest", "required": true, "nullable": false},
+      {"name": "keyset_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "keyset_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "key_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "event_sequence_low", "type": "IntegerString", "required": true, "nullable": true},
+      {"name": "event_sequence_high", "type": "IntegerString", "required": true, "nullable": true},
+      {"name": "complete", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "TombstoneKeysetRequest": {"closed": true, "fields": [
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "visibility", "type": "DeliveryVisibilityIdentity", "required": true, "nullable": false},
+      {"name": "record_key_scope", "type": "FingerprintScope", "required": true, "nullable": false},
+      {"name": "hmac_key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "key_commitment", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "TombstoneKeysetCompletion": {"closed": true, "fields": [
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "keyset_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "expected_key_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "expected_keyset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "event_sequence_low", "type": "IntegerString", "required": true, "nullable": true},
+      {"name": "event_sequence_high", "type": "IntegerString", "required": true, "nullable": true}
+    ]},
+    "TombstoneTag": {"closed": true, "fields": [
+      {"name": "event_sequence", "type": "IntegerString", "required": true, "nullable": false},
+      {"name": "tag", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "TombstoneTagPage": {"closed": true, "fields": [
+      {"name": "keyset_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "items", "type": "list<TombstoneTag>", "required": true, "nullable": false, "ordering": "event_sequence"},
+      {"name": "bytes_supplied", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "RecordKeyTagPage": {"closed": true, "fields": [
+      {"name": "keyset_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "first_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "next_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "tags", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "frame_sequence"},
+      {"name": "bytes_supplied", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "DeletionEvidenceIntent": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": false},
+      {"name": "delete_strategy", "type": "DeleteStrategy", "required": true, "nullable": false},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "event_sequence_low", "type": "IntegerString", "required": true, "nullable": true},
+      {"name": "event_sequence_high", "type": "IntegerString", "required": true, "nullable": true},
+      {"name": "record_key_scope", "type": "FingerprintScope", "required": true, "nullable": false},
+      {"name": "hmac_key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "key_commitment", "type": "Digest", "required": true, "nullable": false},
+      {"name": "deleted_keyset_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "deleted_keyset_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "deleted_key_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "reconciliation_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "deletion_evidence_intent_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "DeletionEvidence": {"closed": true, "fields": [
+      {"name": "intent", "type": "DeletionEvidenceIntent", "required": true, "nullable": false},
+      {"name": "applied_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "deletion_evidence_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "SnapshotReconciliation": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.snapshot-reconciliation/v1"},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "candidate_visibility", "type": "DeliveryVisibilityIdentity", "required": true, "nullable": false},
+      {"name": "prior_visibility", "type": "VisibilityIdentity", "required": true, "nullable": true},
+      {"name": "prior_keyset_ref", "type": "OpaqueRef", "required": true, "nullable": true},
+      {"name": "candidate_keyset_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "status", "type": "SnapshotReconciliationStatus", "required": true, "nullable": false},
+      {"name": "attempt_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "next_attempt_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "lease_owner", "type": "Token", "required": true, "nullable": true},
+      {"name": "lease_expires_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "reason_code", "type": "ErrorCode", "required": true, "nullable": true},
+      {"name": "deletion_evidence", "type": "DeletionEvidenceIntent", "required": true, "nullable": true},
+      {"name": "reconciliation_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "SnapshotReconciliationRequest": {"closed": true, "fields": [
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "prior_keyset", "type": "SnapshotKeyset", "required": true, "nullable": true},
+      {"name": "candidate_keyset", "type": "SnapshotKeyset", "required": true, "nullable": false}
+    ]},
+    "SnapshotReconciliationResult": {"closed": true, "fields": [
+      {"name": "reconciliation", "type": "SnapshotReconciliation", "required": true, "nullable": false},
+      {"name": "deletion_evidence", "type": "DeletionEvidenceIntent", "required": true, "nullable": false}
+    ]},
+    "TombstoneEvidenceRequest": {"closed": true, "fields": [
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "claim_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "keyset", "type": "TombstoneKeyset", "required": true, "nullable": false}
+    ]},
+    "OutboxEntry": {"closed": true, "fields": [
+      {"name": "outbox_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "entry_kind", "type": "OutboxEntryKind", "required": true, "nullable": false},
+      {"name": "payload_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "status", "type": "OutboxStatus", "required": true, "nullable": false},
+      {"name": "dispatch_ordinal", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "next_not_before", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "lease_owner", "type": "Token", "required": true, "nullable": true},
+      {"name": "lease_expires_at", "type": "UtcInstant", "required": true, "nullable": true},
+      {"name": "reason_code", "type": "ErrorCode", "required": true, "nullable": true},
+      {"name": "completed_at", "type": "UtcInstant", "required": true, "nullable": true}
+    ]},
+    "ProjectionOutboxPayload": {"closed": true, "fields": [
+      {"name": "entry_kind", "type": "OutboxEntryKind", "required": true, "nullable": false, "const": "projection"},
+      {"name": "intent", "type": "ProjectionIntent", "required": true, "nullable": false}
+    ]},
+    "LifecycleOutboxPayload": {"closed": true, "fields": [
+      {"name": "entry_kind", "type": "OutboxEntryKind", "required": true, "nullable": false, "const": "lifecycle"},
+      {"name": "event", "type": "LifecycleEvent", "required": true, "nullable": false}
+    ]},
+    "EvidenceOutboxPayload": {"closed": true, "fields": [
+      {"name": "entry_kind", "type": "OutboxEntryKind", "required": true, "nullable": false, "const": "evidence"},
+      {"name": "reconciliation", "type": "SnapshotReconciliation", "required": true, "nullable": false}
+    ]},
+    "OutboxEnqueue": {"closed": true, "fields": [
+      {"name": "outbox_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "payload", "type": "OutboxPayload", "required": true, "nullable": false},
+      {"name": "payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "next_not_before", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "OutboxCompletion": {"closed": true, "fields": [
+      {"name": "outbox_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "lease_owner", "type": "Token", "required": true, "nullable": false},
+      {"name": "completed_at", "type": "UtcInstant", "required": true, "nullable": false}
+    ]},
+    "StateOutboxTransaction": {"closed": true, "fields": [
+      {"name": "expected_state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "next_state", "type": "StreamState", "required": true, "nullable": false},
+      {"name": "attempt_updates", "type": "list<Attempt>", "required": true, "nullable": false, "ordering": "attempt_id"},
+      {"name": "deployment_update", "type": "RuntimeDeployment", "required": true, "nullable": true},
+      {"name": "projection_confirmation", "type": "ProjectionConfirmation", "required": true, "nullable": true},
+      {"name": "enqueue", "type": "list<OutboxEnqueue>", "required": true, "nullable": false, "ordering": "outbox_id"},
+      {"name": "complete", "type": "list<OutboxCompletion>", "required": true, "nullable": false, "ordering": "outbox_id"}
+    ]},
+    "OutboxFailureTransaction": {"closed": true, "fields": [
+      {"name": "expected_state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "next_state", "type": "StreamState", "required": true, "nullable": false},
+      {"name": "attempt_updates", "type": "list<Attempt>", "required": true, "nullable": false, "ordering": "attempt_id"},
+      {"name": "outbox_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "payload_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "lease_owner", "type": "Token", "required": true, "nullable": false},
+      {"name": "failure_observed_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "reason_code", "type": "ErrorCode", "required": true, "nullable": false},
+      {"name": "disposition", "type": "OutboxFailureDisposition", "required": true, "nullable": false},
+      {"name": "next_not_before", "type": "UtcInstant", "required": true, "nullable": true}
+    ]},
+    "VerificationKeyRecord": {"closed": true, "fields": [
+      {"name": "key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "Ed25519"},
+      {"name": "public_key_base64url", "type": "Base64Url", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "public_key_fingerprint", "type": "Digest", "required": true, "nullable": false},
+      {"name": "enabled_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "expires_at", "type": "UtcInstant", "required": false, "nullable": false},
+      {"name": "revoked_at", "type": "UtcInstant", "required": false, "nullable": false},
+      {"name": "authorized_policy_refs", "type": "list<Token>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "trust_record_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "KeyCommitmentRecord": {"closed": true, "fields": [
+      {"name": "key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "HMAC-SHA-256"},
+      {"name": "commitment", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "MacResult": {"closed": true, "fields": [
+      {"name": "algorithm", "type": "String", "required": true, "nullable": false, "const": "HMAC-SHA-256"},
+      {"name": "key_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "tag_hex", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "BackupEntry": {"closed": true, "fields": [
+      {"name": "relative_path", "type": "String", "required": true, "nullable": false},
+      {"name": "mode", "type": "FileMode", "required": true, "nullable": false},
+      {"name": "size_bytes", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "sha256", "type": "Digest", "required": true, "nullable": false}
+    ]},
+    "BackupEntryPage": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.local-backup-entry-page/v1"},
+      {"name": "page_index", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "previous_page_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "entries", "type": "list<BackupEntry>", "required": true, "nullable": false, "ordering": "relative_path"},
+      {"name": "page_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "BackupManifest": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.local-backup/v1"},
+      {"name": "backup_id", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true},
+      {"name": "runtime_binding_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "projection_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "created_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "entry_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "page_count", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "entry_pages_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "final_entry_page_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "manifest_digest", "type": "Digest", "required": true, "nullable": false, "digest_excluded": true}
+    ]},
+    "CommandError": {"closed": true, "fields": [
+      {"name": "code", "type": "ErrorCode", "required": true, "nullable": false},
+      {"name": "category", "type": "ErrorCategory", "required": true, "nullable": false},
+      {"name": "retryable", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "message", "type": "String", "required": true, "nullable": false},
+      {"name": "field_path", "type": "JsonPointer", "required": false, "nullable": false},
+      {"name": "safe_ref", "type": "OpaqueRef", "required": false, "nullable": false}
+    ]},
+    "CommandEnvelope": {"closed": true, "fields": [
+      {"name": "schema", "type": "String", "required": true, "nullable": false, "const": "ergasterion.command-result/v1"},
+      {"name": "command", "type": "Token", "required": true, "nullable": false},
+      {"name": "status", "type": "CommandStatus", "required": true, "nullable": false},
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": true},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "result", "type": "CommandResult", "required": true, "nullable": true},
+      {"name": "errors", "type": "list<CommandError>", "required": true, "nullable": false, "ordering": "code,field_path,safe_ref"}
+    ]},
+    "PlanCommandResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "plan"},
+      {"name": "execution_plan", "type": "ExecutionPlan", "required": true, "nullable": false},
+      {"name": "runtime_manifest", "type": "RuntimeManifest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "findings", "type": "list<Finding>", "required": true, "nullable": false, "ordering": "finding-identity"}
+    ]},
+    "ContractRegisteredResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "contract_registered"},
+      {"name": "contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "source_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "published_schema_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "execution_plan_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "ContractActivationResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "contract_activation"},
+      {"name": "migration", "type": "Migration", "required": true, "nullable": false},
+      {"name": "activation_state", "type": "ContractActivationState", "required": true, "nullable": false},
+      {"name": "candidate_contract_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "active_contract_digest", "type": "Digest", "required": true, "nullable": true},
+      {"name": "fenced_attempt_ids", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "DeploymentRegisteredResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "deployment_registered"},
+      {"name": "runtime_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "capability_digests", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "readiness_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "catchup_cursor", "type": "ProjectionCursor", "required": true, "nullable": false}
+    ]},
+    "DeploymentActivationResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "deployment_activation"},
+      {"name": "deployment", "type": "RuntimeDeployment", "required": true, "nullable": false},
+      {"name": "previous_manifest_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "fenced_attempt_ids", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "active_cursor", "type": "ProjectionCursor", "required": true, "nullable": false}
+    ]},
+    "RetryDirective": {"closed": true, "fields": [
+      {"name": "attempt_ordinal", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "error_code", "type": "ErrorCode", "required": true, "nullable": false},
+      {"name": "failure_observed_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "next_not_before", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "exhausted", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "IngestionResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "ingestion"},
+      {"name": "attempt", "type": "Attempt", "required": true, "nullable": false},
+      {"name": "visibility", "type": "VisibilityIdentity", "required": true, "nullable": true},
+      {"name": "publication", "type": "PublishedLedgerRow", "required": true, "nullable": true},
+      {"name": "projection_confirmation", "type": "ProjectionConfirmation", "required": true, "nullable": true},
+      {"name": "retry_directive", "type": "RetryDirective", "required": true, "nullable": true}
+    ]},
+    "DueEvaluationResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "due_evaluation"},
+      {"name": "evaluated_through_at", "type": "UtcInstant", "required": true, "nullable": false},
+      {"name": "transitions_applied", "type": "NonNegativeInteger", "required": true, "nullable": false},
+      {"name": "state_revision", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "projection_revisions", "type": "list<NonNegativeIntegerString>", "required": true, "nullable": false, "ordering": "ascending"},
+      {"name": "more_due", "type": "Boolean", "required": true, "nullable": false},
+      {"name": "continuation_after", "type": "UtcInstant", "required": false, "nullable": false}
+    ]},
+    "ReconciliationResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "reconciliation"},
+      {"name": "target_cursors", "type": "list<ProjectionCursor>", "required": true, "nullable": false, "ordering": "identity,target"},
+      {"name": "actions", "type": "list<Token>", "required": true, "nullable": false, "ordering": "execution"},
+      {"name": "remaining_blocks", "type": "list<Digest>", "required": true, "nullable": false, "ordering": "set"},
+      {"name": "confirmations", "type": "list<ProjectionConfirmation>", "required": true, "nullable": false, "ordering": "revision"}
+    ]},
+    "StreamStatusResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "stream_status"},
+      {"name": "stream_status", "type": "StreamStatus", "required": true, "nullable": false},
+      {"name": "operational_status", "type": "OperationalStatus", "required": true, "nullable": false},
+      {"name": "target_cursor", "type": "ProjectionCursor", "required": true, "nullable": false},
+      {"name": "projection_lag", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "InspectionResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "inspection"},
+      {"name": "evidence", "type": "EvidencePage", "required": true, "nullable": false}
+    ]},
+    "QuarantineResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "quarantine"},
+      {"name": "action", "type": "QuarantineAction", "required": true, "nullable": false},
+      {"name": "status", "type": "RemediationActionStatus", "required": true, "nullable": false},
+      {"name": "evidence", "type": "QuarantinePage", "required": true, "nullable": false},
+      {"name": "decision", "type": "RemediationDecision", "required": true, "nullable": true}
+    ]},
+    "LocalBackupResult": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "local_backup"},
+      {"name": "action", "type": "BackupAction", "required": true, "nullable": false},
+      {"name": "manifest_path", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "manifest", "type": "BackupManifest", "required": true, "nullable": false},
+      {"name": "verification_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "reconciliation", "type": "ReconciliationResult", "required": true, "nullable": true}
+    ]},
+    "UnitResult": {"closed": true, "fields": [{"name": "ok", "type": "Boolean", "required": true, "nullable": false}]},
+    "ScratchScope": {"closed": true, "fields": [
+      {"name": "scope_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "attempt_id", "type": "Digest", "required": true, "nullable": false},
+      {"name": "capacity_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "ScratchChunk": {"closed": true, "fields": [
+      {"name": "scope_id", "type": "Token", "required": true, "nullable": false},
+      {"name": "sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "bytes_base64url", "type": "Base64Url", "required": true, "nullable": false}
+    ]},
+    "ScratchReadPage": {"closed": true, "fields": [
+      {"name": "chunks", "type": "list<ScratchChunk>", "required": true, "nullable": false, "ordering": "sequence"},
+      {"name": "next_sequence", "type": "NonNegativeIntegerString", "required": false, "nullable": false},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false}
+    ]},
+    "EvidenceQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "evidence_kind", "type": "EvidenceKind", "required": true, "nullable": false},
+      {"name": "immutable_id", "type": "OpaqueRef", "required": true, "nullable": true},
+      {"name": "authorization_context_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "after_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "AttemptEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "attempt"},
+      {"name": "attempt", "type": "Attempt", "required": true, "nullable": false},
+      {"name": "confirmation", "type": "ProjectionConfirmation", "required": true, "nullable": true}
+    ]},
+    "ContractEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "contract"},
+      {"name": "contract", "type": "BronzeProductContract", "required": true, "nullable": false}
+    ]},
+    "SchemaEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "schema"},
+      {"name": "metadata", "type": "ProductMetadata", "required": true, "nullable": false}
+    ]},
+    "ReceiptEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "receipt"},
+      {"name": "receipt", "type": "RawReceipt", "required": true, "nullable": false}
+    ]},
+    "QualityEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "quality"},
+      {"name": "validation", "type": "ValidationResultHandoff", "required": true, "nullable": false}
+    ]},
+    "LineageEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "lineage"},
+      {"name": "lineage", "type": "LineageDescriptor", "required": true, "nullable": false},
+      {"name": "run_lineage", "type": "RunLineage", "required": true, "nullable": false}
+    ]},
+    "MetadataEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "metadata"},
+      {"name": "metadata", "type": "ProductMetadata", "required": true, "nullable": false}
+    ]},
+    "PublicationEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "publication"},
+      {"name": "ledger", "type": "PublishedLedgerRow", "required": true, "nullable": false},
+      {"name": "confirmation", "type": "PublicationConfirmationHandoff", "required": true, "nullable": false}
+    ]},
+    "QuarantineEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "quarantine"},
+      {"name": "validation", "type": "ValidationResultHandoff", "required": true, "nullable": false},
+      {"name": "decision", "type": "RemediationDecision", "required": true, "nullable": true}
+    ]},
+    "QuarantineSnapshot": {"closed": true, "fields": [
+      {"name": "query_digest", "type": "Digest", "required": true, "nullable": false},
+      {"name": "disposition_snapshot_token", "type": "Token", "required": true, "nullable": false},
+      {"name": "remediation_snapshot_token", "type": "Token", "required": true, "nullable": false}
+    ]},
+    "QuarantineCursor": {"closed": true, "fields": [
+      {"name": "snapshot", "type": "QuarantineSnapshot", "required": true, "nullable": false},
+      {"name": "disposition_after_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "active_disposition_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "decision_after_cursor", "type": "Token", "required": true, "nullable": true}
+    ]},
+    "QuarantineQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "disposition_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "authorization_context_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "cursor", "type": "QuarantineCursor", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false},
+      {"name": "max_decisions_per_item", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_decision_bytes_per_item", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "QuarantineItem": {"closed": true, "fields": [
+      {"name": "disposition", "type": "Disposition", "required": true, "nullable": false},
+      {"name": "decision_page", "type": "RemediationDecisionPage", "required": true, "nullable": false}
+    ]},
+    "QuarantinePage": {"closed": true, "fields": [
+      {"name": "items", "type": "list<QuarantineItem>", "required": true, "nullable": false, "ordering": "disposition_id"},
+      {"name": "snapshot", "type": "QuarantineSnapshot", "required": true, "nullable": false},
+      {"name": "next_cursor", "type": "QuarantineCursor", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "DeletionEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "EvidenceKind", "required": true, "nullable": false, "const": "deletion_evidence"},
+      {"name": "evidence", "type": "DeletionEvidence", "required": true, "nullable": false}
+    ]},
+    "SourceNativeEvidenceItem": {"closed": true, "fields": [
+      {"name": "kind", "type": "Token", "required": true, "nullable": false, "const": "source_native"},
+      {"name": "frame", "type": "CandidateFrame", "required": true, "nullable": false},
+      {"name": "disposition", "type": "Disposition", "required": true, "nullable": true}
+    ]},
+    "SourceNativeQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "candidate_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "disposition_ref", "type": "OpaqueRef", "required": true, "nullable": true},
+      {"name": "authorization_context_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "after_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "SourceNativePage": {"closed": true, "fields": [
+      {"name": "items", "type": "list<SourceNativeEvidenceItem>", "required": true, "nullable": false, "ordering": "frame_sequence"},
+      {"name": "next_frame_sequence", "type": "NonNegativeIntegerString", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "DispositionQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "disposition_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "authorization_context_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "snapshot_token", "type": "Token", "required": true, "nullable": true},
+      {"name": "after_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "DispositionQueryPage": {"closed": true, "fields": [
+      {"name": "items", "type": "list<Disposition>", "required": true, "nullable": false, "ordering": "disposition_id"},
+      {"name": "snapshot_token", "type": "Token", "required": true, "nullable": false},
+      {"name": "next_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "RemediationDecisionQuery": {"closed": true, "fields": [
+      {"name": "logical_identity", "type": "LogicalIdentity", "required": true, "nullable": false},
+      {"name": "disposition_id", "type": "Digest", "required": true, "nullable": true},
+      {"name": "authorization_context_ref", "type": "OpaqueRef", "required": true, "nullable": false},
+      {"name": "snapshot_token", "type": "Token", "required": true, "nullable": true},
+      {"name": "after_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "max_items", "type": "PositiveInteger", "required": true, "nullable": false},
+      {"name": "max_bytes", "type": "PositiveIntegerString", "required": true, "nullable": false}
+    ]},
+    "RemediationDecisionPage": {"closed": true, "fields": [
+      {"name": "items", "type": "list<RemediationDecision>", "required": true, "nullable": false, "ordering": "decided_at,decision_id"},
+      {"name": "snapshot_token", "type": "Token", "required": true, "nullable": false},
+      {"name": "next_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]},
+    "EvidencePage": {"closed": true, "fields": [
+      {"name": "items", "type": "list<EvidenceRecord>", "required": true, "nullable": false, "ordering": "immutable-identity"},
+      {"name": "next_cursor", "type": "Token", "required": true, "nullable": true},
+      {"name": "bytes_returned", "type": "NonNegativeIntegerString", "required": true, "nullable": false},
+      {"name": "more", "type": "Boolean", "required": true, "nullable": false}
+    ]}
+  },
+  "unions": {
+    "LogicalType": {"style": "token_or_object", "token_enum": "SimpleLogicalType", "object_discriminator": "kind", "object_variants": ["DecimalType", "LocalDateTimeType"]},
+    "Codec": {"discriminator": "kind", "variants": ["CsvCodec", "JsonlCodec"]},
+    "Integration": {"discriminator": "kind", "variants": ["ExternalIntegration", "ManagedIntegration"]},
+    "Schedule": {"discriminator": "kind", "variants": ["CronSchedule", "IntervalSchedule"]},
+    "ProgressContract": {"discriminator": "kind", "variants": ["OpaqueBatchProgress", "SequenceProgress"]},
+    "ProgressClaim": {"discriminator": "kind", "variants": ["OpaqueProgressClaim", "SequenceProgressClaim"]},
+    "QualityRule": {"discriminator": "kind", "variants": ["AcceptedValuesRule", "NotNullRule", "RangeRule", "RowCountRule", "UniqueKeyRule"]},
+    "DeliveryInput": {"discriminator": "kind", "variants": ["ExternalReceiptInput", "ManagedPayloadInput"]},
+    "VisibilityIdentity": {"discriminator": "kind", "variants": ["DeliveryVisibilityIdentity", "ReleaseVisibilityIdentity", "ReprocessVisibilityIdentity"]},
+    "OutboxPayload": {"discriminator": "entry_kind", "variants": ["EvidenceOutboxPayload", "LifecycleOutboxPayload", "ProjectionOutboxPayload"]},
+    "ProjectionPayload": {"discriminator": "kind", "variants": ["DeliveryPublicationPayload", "HeartbeatProjectionPayload", "MigrationProjectionPayload", "ProcessingProjectionPayload", "RemediationReleasePayload", "TimelinessProjectionPayload", "WholeDeliveryReprocessingPayload"]},
+    "LifecyclePayload": {"discriminator": "kind", "variants": ["AttemptLifecyclePayload", "ContractEvidenceLifecyclePayload", "DeletionEvidenceLifecyclePayload", "LineageLifecyclePayload", "MetadataLifecyclePayload", "PublicationLifecyclePayload", "QualityLifecyclePayload", "QuarantineLifecyclePayload", "ReceiptLifecyclePayload", "SchemaEvidenceLifecyclePayload"]},
+    "EvidenceRecord": {"discriminator": "kind", "variants": ["AttemptEvidenceItem", "ContractEvidenceItem", "DeletionEvidenceItem", "LineageEvidenceItem", "MetadataEvidenceItem", "PublicationEvidenceItem", "QualityEvidenceItem", "QuarantineEvidenceItem", "ReceiptEvidenceItem", "SchemaEvidenceItem"]},
+    "TypedScalar": {"discriminator": "logical_type", "variants": ["TypedBinary", "TypedBoolean", "TypedDate", "TypedDecimal", "TypedInt64", "TypedLocalDateTime", "TypedString", "TypedUtcInstant"]},
+    "CommandResult": {"discriminator": "kind", "variants": ["ContractActivationResult", "ContractRegisteredResult", "DeploymentActivationResult", "DeploymentRegisteredResult", "DueEvaluationResult", "IngestionResult", "InspectionResult", "LocalBackupResult", "PlanCommandResult", "QuarantineResult", "ReconciliationResult", "StreamStatusResult"]}
+  },
+  "handoff_schema_bindings": {
+    "ergasterion.raw-evidence/v1": "RawEvidenceHandoff",
+    "ergasterion.validation-result/v1": "ValidationResultHandoff",
+    "ergasterion.contract-conformance/v1": "ContractConformanceHandoff",
+    "ergasterion.interface-readiness/v1": "InterfaceReadinessHandoff",
+    "ergasterion.publication-confirmation/v1": "PublicationConfirmationHandoff"
+  },
+  "port_operation_order": {
+    "source_connector": ["submit_managed", "verify_external"],
+    "raw_store": ["get_receipt", "open_raw", "read_raw", "preserve", "verify_open"],
+    "scratch_store": ["create_scope", "write_sequential", "read_sequential", "close_scope", "delete_scope", "cleanup_orphans"],
+    "state_store": ["contract_lifecycle", "deployment_lifecycle", "attempts", "state_transaction", "lease_outbox", "load_outbox_payload", "fail_outbox", "projection_log", "projection_confirmation_log", "lifecycle_event_log", "status_query", "begin_snapshot_keyset", "append_snapshot_keyset", "complete_snapshot_keyset", "get_snapshot_keyset", "reconcile_snapshot", "begin_tombstone_keyset", "append_tombstone_keyset", "complete_tombstone_keyset", "finalize_tombstone_evidence"],
+    "landing_adapter": ["begin_prepare", "append_raw", "finish_prepare", "read_candidate", "begin_materialization", "append_dispositions", "finish_materialization", "bind_release_visibility", "source_native_query", "disposition_query", "verify_open"],
+    "remediation_repository": ["record_decision", "decision_query"],
+    "projection_publisher": ["apply_gap_ordered", "read_cursor", "rebuild_read_models"],
+    "lifecycle_sink": ["project_events", "evidence_query"],
+    "key_resolver": ["resolve_verification_key", "key_commitment", "mac"]
+  },
+  "ports": {
+    "SourceConnector": {"kind": "source_connector", "methods": {
+      "submit_managed": {"request": [{"name": "input", "type": "ManagedPayloadInput"}], "response": "DeliveryInput", "errors": ["capability_mismatch", "invalid_manifest", "integrity_error"]},
+      "verify_external": {"request": [{"name": "input", "type": "ExternalReceiptInput"}], "response": "DeliveryInput", "errors": ["capability_mismatch", "invalid_signature", "integrity_error"]}
+    }},
+    "RawStore": {"kind": "raw_store", "methods": {
+      "get_receipt": {"request": [{"name": "raw_receipt_digest", "type": "Digest"}], "response": "RawReceipt", "errors": ["not_found", "integrity_error"]},
+      "open_raw": {"request": [{"name": "raw_receipt_digest", "type": "Digest"}], "response": "RawReadHandle", "errors": ["not_found", "access_denied", "integrity_error"]},
+      "read_raw": {"request": [{"name": "handle", "type": "RawReadHandle"}, {"name": "offset", "type": "NonNegativeIntegerString"}, {"name": "max_bytes", "type": "PositiveIntegerString"}], "response": "RawReadPage", "errors": ["not_found", "access_denied", "integrity_error"]},
+      "preserve": {"request": [{"name": "input", "type": "ManagedPayloadInput"}], "response": "RawReceipt", "errors": ["capacity_exceeded", "claim_conflict", "integrity_error"]},
+      "verify_open": {"request": [{"name": "input", "type": "ExternalReceiptInput"}], "response": "RawReceipt", "errors": ["invalid_signature", "not_found", "integrity_error"]}
+    }},
+    "ScratchStore": {"kind": "scratch_store", "methods": {
+      "create_scope": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "capacity_bytes", "type": "PositiveIntegerString"}], "response": "ScratchScope", "errors": ["capacity_exceeded", "scope_conflict"]},
+      "write_sequential": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "chunk", "type": "ScratchChunk"}], "response": "UnitResult", "errors": ["capacity_exceeded", "scope_closed", "scope_owner_mismatch", "sequence_conflict"]},
+      "read_sequential": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "scope_id", "type": "Token"}, {"name": "after_sequence", "type": "NonNegativeIntegerString"}, {"name": "max_bytes", "type": "PositiveIntegerString"}], "response": "ScratchReadPage", "errors": ["item_too_large", "not_found", "scope_open", "scope_owner_mismatch"]},
+      "close_scope": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "scope_id", "type": "Token"}], "response": "UnitResult", "errors": ["not_found", "scope_owner_mismatch"]},
+      "delete_scope": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "scope_id", "type": "Token"}], "response": "UnitResult", "errors": ["scope_owner_mismatch"]},
+      "cleanup_orphans": {"request": [{"name": "active_attempt_ids", "type": "list<Digest>"}, {"name": "max_scopes", "type": "PositiveInteger"}], "response": "list<Token>", "errors": ["integrity_error"]}
+    }},
+    "DeliveryStateStore": {"kind": "state_store", "methods": {
+      "contract_lifecycle": {"request": [{"name": "request", "type": "ContractLifecycleRequest"}], "response": "ContractLifecycleTransitionResult", "errors": ["stale_revision", "contract_conflict", "migration_conflict", "inflight_attempt"]},
+      "deployment_lifecycle": {"request": [{"name": "request", "type": "DeploymentLifecycleRequest"}], "response": "DeploymentLifecycleTransitionResult", "errors": ["stale_revision", "capability_mismatch", "inflight_attempt", "unsupported_secondary_target", "superseded_deployment"]},
+      "attempts": {"request": [{"name": "query", "type": "AttemptQuery"}], "response": "AttemptPage", "errors": ["not_found"]},
+      "state_transaction": {"request": [{"name": "transaction", "type": "StateOutboxTransaction"}], "response": "StreamState", "errors": ["capacity_exceeded", "stale_revision", "intent_conflict", "event_conflict", "integrity_error"]},
+      "lease_outbox": {"request": [{"name": "logical_identity", "type": "LogicalIdentity"}, {"name": "entry_kind", "type": "OutboxEntryKind"}, {"name": "lease_owner", "type": "Token"}, {"name": "observed_at", "type": "UtcInstant"}, {"name": "max_items", "type": "PositiveInteger"}], "response": "list<OutboxEntry>", "errors": ["concurrency_conflict"]},
+      "load_outbox_payload": {"request": [{"name": "outbox_id", "type": "Digest"}, {"name": "payload_digest", "type": "Digest"}], "response": "OutboxPayload", "errors": ["not_found", "integrity_error"]},
+      "fail_outbox": {"request": [{"name": "transaction", "type": "OutboxFailureTransaction"}], "response": "StreamState", "errors": ["stale_revision", "concurrency_conflict", "integrity_error"]},
+      "projection_log": {"request": [{"name": "logical_identity", "type": "LogicalIdentity"}, {"name": "after_revision", "type": "NonNegativeIntegerString"}, {"name": "max_items", "type": "PositiveInteger"}, {"name": "max_bytes", "type": "PositiveIntegerString"}], "response": "ProjectionLogPage", "errors": ["item_too_large", "not_found"]},
+      "projection_confirmation_log": {"request": [{"name": "logical_identity", "type": "LogicalIdentity"}, {"name": "after_revision", "type": "NonNegativeIntegerString"}, {"name": "max_items", "type": "PositiveInteger"}, {"name": "max_bytes", "type": "PositiveIntegerString"}], "response": "ProjectionConfirmationLogPage", "errors": ["item_too_large", "not_found"]},
+      "lifecycle_event_log": {"request": [{"name": "query", "type": "LifecycleEventLogQuery"}], "response": "LifecycleEventLogPage", "errors": ["item_too_large", "not_found"]},
+      "status_query": {"request": [{"name": "logical_identity", "type": "LogicalIdentity"}], "response": "OperationalStatus", "errors": ["not_found"]},
+      "begin_snapshot_keyset": {"request": [{"name": "request", "type": "SnapshotKeysetRequest"}], "response": "SnapshotKeyset", "errors": ["key_commitment_conflict", "integrity_error"]},
+      "append_snapshot_keyset": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "page", "type": "RecordKeyTagPage"}], "response": "SnapshotKeyset", "errors": ["sequence_conflict", "key_commitment_conflict", "integrity_error"]},
+      "complete_snapshot_keyset": {"request": [{"name": "completion", "type": "SnapshotKeysetCompletion"}], "response": "SnapshotKeyset", "errors": ["integrity_error", "key_commitment_conflict"]},
+      "get_snapshot_keyset": {"request": [{"name": "logical_identity", "type": "LogicalIdentity"}, {"name": "visibility", "type": "VisibilityIdentity"}], "response": "SnapshotKeyset", "errors": ["not_found", "key_commitment_conflict"]},
+      "reconcile_snapshot": {"request": [{"name": "request", "type": "SnapshotReconciliationRequest"}], "response": "SnapshotReconciliationResult", "errors": ["integrity_error", "key_commitment_conflict", "concurrency_conflict"]},
+      "begin_tombstone_keyset": {"request": [{"name": "request", "type": "TombstoneKeysetRequest"}], "response": "TombstoneKeyset", "errors": ["key_commitment_conflict", "integrity_error"]},
+      "append_tombstone_keyset": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "page", "type": "TombstoneTagPage"}], "response": "TombstoneKeyset", "errors": ["sequence_conflict", "key_commitment_conflict", "integrity_error"]},
+      "complete_tombstone_keyset": {"request": [{"name": "completion", "type": "TombstoneKeysetCompletion"}], "response": "TombstoneKeyset", "errors": ["integrity_error", "key_commitment_conflict"]},
+      "finalize_tombstone_evidence": {"request": [{"name": "request", "type": "TombstoneEvidenceRequest"}], "response": "DeletionEvidenceIntent", "errors": ["integrity_error", "key_commitment_conflict", "concurrency_conflict"]}
+    }},
+    "LandingAdapter": {"kind": "landing_adapter", "methods": {
+      "begin_prepare": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "receipt", "type": "RawReceipt"}, {"name": "raw", "type": "RawReadHandle"}, {"name": "contract", "type": "BronzeProductContract"}, {"name": "visibility", "type": "VisibilityIdentity"}], "response": "LandingPreparation", "errors": ["codec_error", "framing_error", "integrity_error"]},
+      "append_raw": {"request": [{"name": "preparation", "type": "LandingPreparation"}, {"name": "page", "type": "RawReadPage"}], "response": "LandingPreparation", "errors": ["sequence_conflict", "codec_error", "framing_error", "integrity_error"]},
+      "finish_prepare": {"request": [{"name": "preparation", "type": "LandingPreparation"}], "response": "BronzeEvidence", "errors": ["codec_error", "framing_error", "integrity_error"]},
+      "read_candidate": {"request": [{"name": "query", "type": "CandidateReadQuery"}], "response": "CandidateFramePage", "errors": ["item_too_large", "not_found", "access_denied", "integrity_error"]},
+      "begin_materialization": {"request": [{"name": "attempt_id", "type": "Digest"}, {"name": "evidence", "type": "BronzeEvidence"}, {"name": "evaluation_id", "type": "Digest"}, {"name": "ruleset_digest", "type": "Digest"}], "response": "MaterializationSession", "errors": ["evidence_conflict", "capacity_exceeded"]},
+      "append_dispositions": {"request": [{"name": "session", "type": "MaterializationSession"}, {"name": "page", "type": "DispositionPage"}], "response": "MaterializationSession", "errors": ["sequence_conflict", "evidence_conflict", "capacity_exceeded"]},
+      "finish_materialization": {"request": [{"name": "completion", "type": "MaterializationCompletion"}], "response": "MaterializedBronzeEvidence", "errors": ["evidence_conflict", "capacity_exceeded", "integrity_error"]},
+      "bind_release_visibility": {"request": [{"name": "binding", "type": "ReleaseVisibilityBinding"}], "response": "MaterializedBronzeEvidence", "errors": ["evidence_conflict", "row_attribution_error", "integrity_error"]},
+      "source_native_query": {"request": [{"name": "query", "type": "SourceNativeQuery"}], "response": "SourceNativePage", "errors": ["access_denied", "item_too_large", "not_found"]},
+      "disposition_query": {"request": [{"name": "query", "type": "DispositionQuery"}], "response": "DispositionQueryPage", "errors": ["access_denied", "item_too_large", "not_found"]},
+      "verify_open": {"request": [{"name": "input", "type": "ExternalReceiptInput"}, {"name": "visibility", "type": "DeliveryVisibilityIdentity"}], "response": "BronzeEvidence", "errors": ["integrity_error", "row_attribution_error"]}
+    }},
+    "RemediationRepository": {"kind": "remediation_repository", "methods": {
+      "record_decision": {"request": [{"name": "decision", "type": "RemediationDecision"}], "response": "RemediationDecision", "errors": ["capacity_exceeded", "decision_conflict", "release_conflict", "ancestry_mismatch", "integrity_error"]},
+      "decision_query": {"request": [{"name": "query", "type": "RemediationDecisionQuery"}], "response": "RemediationDecisionPage", "errors": ["access_denied", "item_too_large", "not_found"]}
+    }},
+    "ProjectionPublisher": {"kind": "projection_publisher", "methods": {
+      "apply_gap_ordered": {"request": [{"name": "intent", "type": "ProjectionIntent"}], "response": "ProjectionConfirmation", "errors": ["projection_gap", "projection_conflict", "target_unavailable"]},
+      "read_cursor": {"request": [{"name": "logical_identity", "type": "LogicalIdentity"}, {"name": "projection_target", "type": "Token"}], "response": "ProjectionCursor", "errors": ["not_found"]},
+      "rebuild_read_models": {"request": [{"name": "batch", "type": "ProjectionReplayBatch"}], "response": "ProjectionCursor", "errors": ["capacity_exceeded", "item_too_large", "unconfirmed_revision", "projection_conflict", "target_unavailable"]}
+    }},
+    "LifecycleSink": {"kind": "lifecycle_sink", "methods": {
+      "project_events": {"request": [{"name": "batch", "type": "LifecycleEventBatch"}], "response": "list<Digest>", "errors": ["capacity_exceeded", "item_too_large", "event_conflict", "target_unavailable"]},
+      "evidence_query": {"request": [{"name": "query", "type": "EvidenceQuery"}], "response": "EvidencePage", "errors": ["access_denied", "item_too_large", "not_found"]}
+    }},
+    "KeyResolver": {"kind": "key_resolver", "methods": {
+      "resolve_verification_key": {"request": [{"name": "key_id", "type": "Token"}], "response": "VerificationKeyRecord", "errors": ["key_not_found", "key_revoked", "policy_not_authorized"]},
+      "key_commitment": {"request": [{"name": "key_id", "type": "Token"}], "response": "KeyCommitmentRecord", "errors": ["key_not_found", "key_commitment_conflict"]},
+      "mac": {"request": [{"name": "key_id", "type": "Token"}, {"name": "domain", "type": "String"}, {"name": "message_base64url", "type": "Base64Url"}], "response": "MacResult", "errors": ["key_not_found", "key_revoked", "policy_not_authorized"]}
+    }}
+  },
+  "error_codes": [
+    "access_denied", "ancestry_mismatch", "attestation_invalid", "authorization_denied", "bronze_store_restore_required", "capability_mismatch", "capacity_exceeded", "claim_conflict", "codec_error", "concurrency_conflict", "contract_conflict", "contract_invalid", "decision_conflict", "event_conflict", "evidence_conflict", "framing_error", "inflight_attempt", "integrity_error", "intent_conflict", "invalid_config", "invalid_manifest", "invalid_signature", "invalid_usage", "item_too_large", "key_commitment_conflict", "key_not_found", "key_revoked", "migration_conflict", "missing_extra", "not_found", "policy_not_authorized", "production_policy_adapter_required", "projection_conflict", "projection_gap", "release_conflict", "row_attribution_error", "schema_invalid", "scope_closed", "scope_conflict", "scope_open", "scope_owner_mismatch", "sequence_conflict", "stale_revision", "superseded_contract", "superseded_deployment", "target_unavailable", "throttled", "transient_io", "unconfirmed_projection_evidence_lost", "unconfirmed_revision", "unsupported_layer", "unsupported_optional_pattern", "unsupported_secondary_target", "unsupported_store_migration"
+  ],
+  "mac_framing": {
+    "algorithm": "HMAC-SHA-256",
+    "input": "uint32be(domain_length) || domain_utf8 || uint64be(message_length) || message_bytes",
+    "tag_encoding": "lowercase hexadecimal",
+    "record_key_domain_utf8": "ergasterion.record-key/v1"
+  },
+  "golden_vectors": {
+    "record_key_mac": {
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "domain_utf8": "ergasterion.record-key/v1",
+      "message_utf8": "{\"components\":[{\"logical_type\":\"utf8_string\",\"value\":\"acct-001\"},{\"logical_type\":\"int64\",\"value\":\"42\"}],\"logical_identity\":{\"estate_namespace\":\"com.example.synthetic\",\"source\":\"ledger\",\"table\":\"accounts\"},\"schema\":\"ergasterion.record-key/v1\",\"scope\":{\"scope_id\":\"account_population\",\"scope_parameters\":{}}}",
+      "framed_input_hex": "000000196572676173746572696f6e2e7265636f72642d6b65792f763100000000000001327b22636f6d706f6e656e7473223a5b7b226c6f676963616c5f74797065223a22757466385f737472696e67222c2276616c7565223a22616363742d303031227d2c7b226c6f676963616c5f74797065223a22696e743634222c2276616c7565223a223432227d5d2c226c6f676963616c5f6964656e74697479223a7b226573746174655f6e616d657370616365223a22636f6d2e6578616d706c652e73796e746865746963222c22736f75726365223a226c6564676572222c227461626c65223a226163636f756e7473227d2c22736368656d61223a226572676173746572696f6e2e7265636f72642d6b65792f7631222c2273636f7065223a7b2273636f70655f6964223a226163636f756e745f706f70756c6174696f6e222c2273636f70655f706172616d6574657273223a7b7d7d7d",
+      "tag_hex": "da2c220e9358b87a16fcd7dde919c8708b9d4e9b3215ac852b04a4a12ded7a6b"
+    },
+    "record_key_mac_parameterized_scope": {
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "domain_utf8": "ergasterion.record-key/v1",
+      "message_utf8": "{\"components\":[{\"logical_type\":\"utf8_string\",\"value\":\"acct-001\"},{\"logical_type\":\"int64\",\"value\":\"42\"}],\"logical_identity\":{\"estate_namespace\":\"com.example.synthetic\",\"source\":\"ledger\",\"table\":\"accounts\"},\"schema\":\"ergasterion.record-key/v1\",\"scope\":{\"scope_id\":\"account_population\",\"scope_parameters\":{\"region\":{\"logical_type\":\"utf8_string\",\"value\":\"emea\"}}}}",
+      "framed_input_hex": "000000196572676173746572696f6e2e7265636f72642d6b65792f763100000000000001687b22636f6d706f6e656e7473223a5b7b226c6f676963616c5f74797065223a22757466385f737472696e67222c2276616c7565223a22616363742d303031227d2c7b226c6f676963616c5f74797065223a22696e743634222c2276616c7565223a223432227d5d2c226c6f676963616c5f6964656e74697479223a7b226573746174655f6e616d657370616365223a22636f6d2e6578616d706c652e73796e746865746963222c22736f75726365223a226c6564676572222c227461626c65223a226163636f756e7473227d2c22736368656d61223a226572676173746572696f6e2e7265636f72642d6b65792f7631222c2273636f7065223a7b2273636f70655f6964223a226163636f756e745f706f70756c6174696f6e222c2273636f70655f706172616d6574657273223a7b22726567696f6e223a7b226c6f676963616c5f74797065223a22757466385f737472696e67222c2276616c7565223a22656d6561227d7d7d7d",
+      "tag_hex": "e99d6d323ba67a76d4af164b2b4b86cc17823e8895999f6c0b0a6fe423afcc6f"
+    },
+    "empty_binary": {
+      "typed_value": {"logical_type": "binary", "value": ""},
+      "decoded_length": "0"
+    },
+    "zero_byte_raw_read_page": {
+      "handle_ref": "raw:zero-byte-object",
+      "offset": "0",
+      "bytes_base64url": "",
+      "bytes_returned": "0",
+      "next_offset": null,
+      "eof": true
+    }
+  }
+}

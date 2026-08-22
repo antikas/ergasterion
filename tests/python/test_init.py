@@ -115,9 +115,46 @@ def test_scaffold_structure_and_macro_fidelity() -> None:
         for src, copy in zip(engine_macros, scaffold_macros):
             assert src.read_bytes() == copy.read_bytes(), f"{copy.name}: macro copy must be byte-identical to the engine source"
 
-        # packages.yml / profiles/profiles.yml: byte-identical copies.
+        # packages.yml: byte-identical copy.
         assert (dest / "packages.yml").read_bytes() == (REPO_ROOT / "packages.yml").read_bytes()
-        assert (dest / "profiles" / "profiles.yml").read_bytes() == (REPO_ROOT / "profiles" / "profiles.yml").read_bytes()
+
+        # profiles/profiles.yml: derived from the engine's own file -- everything except
+        # the DuckDB target's default path is byte-identical, and that one path is fixed
+        # under the tracked runtime/local.yml binding's data root.
+        scaffolded_profiles = (dest / "profiles" / "profiles.yml").read_text(encoding="utf-8")
+        engine_profiles = (REPO_ROOT / "profiles" / "profiles.yml").read_text(encoding="utf-8")
+        assert scaffolded_profiles != engine_profiles
+        assert "runtime/data/ergasterion.duckdb" in scaffolded_profiles
+        assert "target/ergasterion.duckdb" not in scaffolded_profiles
+        for other_line in engine_profiles.splitlines():
+            if "target/ergasterion.duckdb" in other_line:
+                continue
+            assert other_line in scaffolded_profiles.splitlines(), (
+                f"unexpected drift outside the DuckDB path override: {other_line!r}"
+            )
+
+        # estate.yml, .gitignore, and runtime/local.yml are required scaffold surfaces.
+        estate_yml = yaml.safe_load((dest / "estate.yml").read_text(encoding="utf-8"))
+        assert estate_yml["estate"]["namespace"] == "com.example.ergasterion"
+
+        gitignore_lines = [
+            line.strip() for line in (dest / ".gitignore").read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        assert gitignore_lines == ["runtime/data/"], (
+            f"the scaffold .gitignore must ignore only runtime/data/, got: {gitignore_lines}"
+        )
+
+        binding = yaml.safe_load((dest / "runtime" / "local.yml").read_text(encoding="utf-8"))
+        assert binding["schema"] == "ergasterion.runtime-binding/v1"
+        assert binding["environment"] == "local"
+        assert binding["runtime_resources"]["max_parallel_attempts"] == 1
+        assert set(binding["ports"]) == {
+            "source_connector", "raw_store", "scratch_store", "state_store", "landing_adapter",
+            "remediation_repository", "projection_publisher", "lifecycle_sink", "key_resolver",
+        }, "the binding must name all nine local ports"
+        for digest_field in ("contract_digest", "execution_plan_digest"):
+            assert len(binding[digest_field]) == 64, f"{digest_field} must be a real computed sha256 digest"
 
         # Empty dirs, each seeded with .gitkeep. declarations/ also carries the
         # copied targets/ budget declarations (asserted below); everything else
@@ -153,6 +190,14 @@ def test_scaffold_structure_and_macro_fidelity() -> None:
             "the doc must correct the record on --packages-install-path: it is a "
             "dbt_project.yml PROJECT CONFIG key, not a dbt CLI flag (`dbt deps --help` "
             "lists no such option on the installed dbt version)"
+        )
+        assert "runtime/data/dbt/target/manifest.json" in getting_started and (
+            "cp runtime/data/dbt/target/manifest.json target/manifest.json" in getting_started
+        ), (
+            "the doc must name the manifest copy step the contracts/odps/graph commands need: "
+            "dbt parse writes the manifest under the relocated target-path, but "
+            "ergasterion.estate.EstateContext still reads it from the conventional "
+            "<root>/target/manifest.json location"
         )
 
 
@@ -408,12 +453,14 @@ def test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph() -> None:
         (estate / "dbt_project.yml").write_text(yaml.safe_dump(project, sort_keys=False), encoding="utf-8")
 
         # (3) dbt packages from a COPY of this repo's own dbt_packages/ -- no `dbt deps`
-        # network fetch. packages-install-path defaults to `dbt_packages` (dbt_project.yml
-        # carries no override), so copying straight to that default path is the direct
-        # route the scaffold's own GETTING-STARTED.md documents.
+        # network fetch. packages-install-path is fixed at runtime/data/dbt/packages (the
+        # scaffold's own dbt_project.yml projection), so copying straight to that path is
+        # the direct route the scaffold's own GETTING-STARTED.md documents.
         repo_dbt_packages = REPO_ROOT / "dbt_packages"
         assert repo_dbt_packages.is_dir(), "expected this repo's own dbt_packages/ to exist for the offline copy"
-        shutil.copytree(repo_dbt_packages, estate / "dbt_packages")
+        scaffold_packages_dest = estate / "runtime" / "data" / "dbt" / "packages"
+        scaffold_packages_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(repo_dbt_packages, scaffold_packages_dest)
 
         # (4) `ergasterion emit --estate-root <estate>` -- zero engine edits: the engine
         # tree under test is read-only from this call's perspective, only <estate> is
@@ -434,7 +481,17 @@ def test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph() -> None:
         )
         if p.returncode != 0:
             _fail("`dbt parse` against the scaffolded estate failed", p)
-        assert (estate / "target" / "manifest.json").exists(), "dbt parse must produce target/manifest.json"
+        scaffold_target = estate / "runtime" / "data" / "dbt" / "target"
+        assert (scaffold_target / "manifest.json").exists(), (
+            "dbt parse must produce runtime/data/dbt/target/manifest.json (the fixed target-path)"
+        )
+        # ergasterion.estate.EstateContext still defaults manifest_path to the conventional
+        # <root>/target/manifest.json (ergasterion/emit_contracts.py, ergasterion/emit_graph.py
+        # both read through it) even though dbt now writes under the relocated target-path --
+        # GETTING-STARTED.md's "Generating contracts..." section names this exact copy step;
+        # this test performs it the same way a consumer following that doc would.
+        (estate / "target").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(scaffold_target / "manifest.json", estate / "target" / "manifest.json")
 
         # (6) Execute the generated estate locally. A parse proves the SQL is syntactically
         # available to dbt; this build also binds aliases and relations against DuckDB.
@@ -442,17 +499,18 @@ def test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph() -> None:
         for name in tuple(build_env):
             if name.startswith("DPF_SF_"):
                 build_env.pop(name)
-        build_env["DPF_DUCKDB_PATH"] = str(estate / "target" / "consumer_scaffold.duckdb")
+        consumer_duckdb = estate / "runtime" / "data" / "consumer_scaffold.duckdb"
+        build_env["DPF_DUCKDB_PATH"] = str(consumer_duckdb)
         p = subprocess.run(
             [dbt, "build", "--profiles-dir", "profiles", "--no-partial-parse", "-t", "duckdb"],
             cwd=str(estate), capture_output=True, text=True, env=build_env,
         )
         if p.returncode != 0:
             _fail("`dbt build -t duckdb` against the scaffolded estate failed", p)
-        assert (estate / "target" / "consumer_scaffold.duckdb").exists(), (
-            "the consumer build must create its local DuckDB database"
+        assert consumer_duckdb.exists(), (
+            "the consumer build must create its local DuckDB database under runtime/data/"
         )
-        with duckdb.connect(str(estate / "target" / "consumer_scaffold.duckdb"), read_only=True) as con:
+        with duckdb.connect(str(consumer_duckdb), read_only=True) as con:
             rows = con.execute(
                 "select alpha_name, alpha_code "
                 "from main_canonical.canonical_alpha order by alpha_code"
@@ -473,8 +531,10 @@ def test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph() -> None:
         # a separate namespace from odcs.domain ("toyfixture", used by contracts/odps).
         assert list((estate / "graphs" / "fixture").glob("*")), "graph artefact suite must be emitted"
 
-        # Third-party packages and dbt's compiled target are not authored scaffold output.
-        skip_dirs = ("target", "dbt_packages")
+        # Third-party packages and dbt's compiled target/state are not authored scaffold
+        # output -- all under the fixed runtime/data/ root now (see runtime/local.yml),
+        # plus the conventional target/ manifest.json copy the contracts/graph steps need.
+        skip_dirs = ("runtime/data", "target")
         exclude = {
             p.resolve()
             for d in skip_dirs

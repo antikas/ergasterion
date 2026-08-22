@@ -7,7 +7,6 @@ __pycache__/
 *.pyc
 
 # Python package and local runtime outputs.
-dist/
 build/
 *.egg-info/
 streamlit/output/
@@ -26,7 +25,6 @@ service-account*.json
 *.key
 *.pem
 *.p8
-
 
 streamlit/_local_run.py
 

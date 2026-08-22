@@ -91,12 +91,7 @@ fi
 if [ "$EMIT_STATUS" -ne 0 ]; then
   fail "generated model output is not byte-stable"
 fi
-"$PY" tests/python/test_emit.py || exit 1
-"$PY" tests/python/test_dialect_lint.py || exit 1
-"$PY" tests/python/test_er_coverage_gate.py || exit 1
-"$PY" tests/python/test_strict_undefined.py || exit 1
 "$PY" ergasterion/structure_gate.py || fail "structure gate: a declared target budget is breached (see output above)"
-"$PY" tests/python/test_structure_gate.py || exit 1
 "$PY" streamlit/test_scoring_config.py || exit 1
 [ -d dbt_packages ] || "$DBT" deps --profiles-dir profiles || exit 1
 "$DBT" parse --profiles-dir profiles --no-partial-parse -t snowflake || exit 1
@@ -111,32 +106,37 @@ else
   "$DBT" build --profiles-dir profiles -t duckdb || exit 1
 fi
 
-echo "=== package-mode smoke: editable install + entry point + tree-identity (offline) ==="
-"$PY" tests/python/test_package_mode.py || { echo "FAIL: package-mode smoke"; exit 1; }
-
-echo "=== consumer scaffold suite: init structure + toy-domain end-to-end (offline) ==="
-"$PY" tests/python/test_init.py || { echo "FAIL: consumer scaffold suite"; exit 1; }
-
-echo "=== DDL import seeder self-tests (offline) ==="
-"$PY" tests/python/test_import_ddl.py || { echo "FAIL: DDL import seeder self-tests"; exit 1; }
-
-echo "=== ODCS import seeder self-tests (offline) ==="
-"$PY" tests/python/test_import_odcs.py || { echo "FAIL: ODCS import seeder self-tests"; exit 1; }
-
 echo "=== ODCS contract gate: schema-validate + byte-stable (never-hand-edited) ==="
 "$PY" ergasterion/emit_contracts.py --check || { echo "FAIL: ODCS contracts drifted, were hand-edited, or are schema-invalid"; exit 1; }
-"$PY" tests/python/test_emit_contracts.py || exit 1
 
 echo "=== ODPS (Bitol) descriptor gate: schema-validate + byte-stable (never-hand-edited) ==="
 "$PY" ergasterion/emit_odps.py --check || { echo "FAIL: ODPS (Bitol) descriptors drifted, were hand-edited, or are schema-invalid"; exit 1; }
-"$PY" tests/python/test_emit_odps.py || exit 1
 
 echo "=== property-graph projection gate: byte-stable + structural tests ==="
 "$PY" ergasterion/emit_graph.py --check || { echo "FAIL: property-graph artefacts drifted or were hand-edited"; exit 1; }
-"$PY" tests/python/test_emit_graph.py || exit 1
-"$PY" tests/python/test_graph_model.py || { echo "FAIL: graph-model IR self-tests"; exit 1; }
 
-echo "=== wheel-mode arm: init + emit from a non-editable install (network on first run only) ==="
+# Every generator/gate check above has now run and written its state. What is left is each
+# generator/gate's OWN self-test file -- read-only proofs against that state, with no ordering
+# dependency on one another. A single sorted glob discovery pass reads every tests/python/test_*.py
+# file from the tree, exactly once each, in deterministic order.
+echo "=== python test suite: sorted discovery of tests/python/test_*.py (deterministic, exactly once) ==="
+# A caller may provide DPF_FULL_TEST_MANIFEST to pin the exact sorted inventory for an attested
+# run. A standalone public run discovers its own sorted test list.
+if [ -n "${DPF_FULL_TEST_MANIFEST:-}" ] && [ -f "$DPF_FULL_TEST_MANIFEST" ]; then
+  TEST_FILES=$(cat "$DPF_FULL_TEST_MANIFEST")
+  echo "=== using caller-provided DPF_FULL_TEST_MANIFEST ==="
+else
+  TEST_FILES=$(ls tests/python/test_*.py 2>/dev/null | sort)
+fi
+[ -n "$TEST_FILES" ] || fail "no tests/python/test_*.py files discovered -- the discovery glob itself is broken"
+TEST_COUNT=0
+for t in $TEST_FILES; do
+  TEST_COUNT=$((TEST_COUNT + 1))
+  "$PY" "$t" || exit 1
+done
+echo "=== python test suite: $TEST_COUNT test file(s) ran, sorted, exactly once ==="
+
+echo "=== wheel-mode arm: init + emit from a non-editable install (offline only) ==="
 PY="$PY" bash "$SCRIPT_DIR/validate_wheel.sh" || fail "wheel-mode arm (see output above)"
 
 echo "=== offline validator green ==="

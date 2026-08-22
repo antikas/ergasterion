@@ -18,7 +18,9 @@ Usage:
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
+import json
 import sys
 import tempfile
 import traceback
@@ -32,6 +34,16 @@ if __package__ in (None, ""):
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
 from ergasterion import dialect_lint, emit
+from ergasterion.source_delivery import load_typed_declarations
+from ergasterion.translators.dbt import (
+    DbtTranslator,
+    bind_production_sources,
+    bronze_plan_digest,
+    check_casefold_identities,
+    graph_contract_identity,
+    landing_handle,
+    load_runtime_bindings,
+)
 
 
 def _write_declaration(dir_path: Path, filename: str, data: dict) -> Path:
@@ -58,6 +70,15 @@ def _write_structure_minimum(estate: Path) -> None:
 
 def _gp_select(names: list[str]) -> list[dict[str, str]]:
     return [{"name": name, "expression": f"source.{name}"} for name in names]
+
+
+# Every source-backed fixture in this file states its delivery intent explicitly.
+# A source landing carries a Bronze Product Contract or an explicit draft; the
+# typed compiler (ergasterion.source_delivery) reads that block and this loader
+# carries it through as an ordinary dict entry no emitter or template reads. A
+# draft is the right position for these fixtures: they exercise the dbt source()
+# rendering path, not a delivery contract.
+DRAFT_DELIVERY = {"kind": "draft", "reason": "delivery_contract_required"}
 
 
 # gp is the entity with the smallest payload (9 columns) -- convenient for a
@@ -401,6 +422,7 @@ def test_source_landing_renders_source_node_tests_and_staging_source_call() -> N
             "source_name": "warehouse_feed",
             "identifier": "things_live",
         }
+        table["delivery"] = dict(DRAFT_DELIVERY)
         _write_declaration(declarations_dir, "toysrc.yml", declaration)
         ctx = emit.EstateContext.resolve(
             estate_root=tmp_path,
@@ -410,6 +432,9 @@ def test_source_landing_renders_source_node_tests_and_staging_source_call() -> N
 
         domain = emit.load_domains(ctx=ctx)
         declarations = emit.load_declarations(domain, ctx=ctx)
+        assert declarations[0]["tables"]["things"]["delivery"] == DRAFT_DELIVERY, (
+            "the delivery block rides through the legacy loader untouched"
+        )
         files = emit.generate_files(
             declarations, emit.template_env(), domain, ctx=ctx
         )
@@ -434,6 +459,10 @@ def test_source_landing_renders_source_node_tests_and_staging_source_call() -> N
         ], f"expected seed_tests moved to source columns, got: {source_table}"
         assert "{{ source('warehouse_feed', 'things_live') }}" in staging_sql
         assert "ref(" not in staging_sql, f"source landing must not render ref(): {staging_sql}"
+        for content in rendered.values():
+            assert "delivery_contract_required" not in content, (
+                "no emitter or template renders the delivery block"
+            )
 
 
 def test_mixed_seed_and_source_landings_render_separate_tested_nodes() -> None:
@@ -457,6 +486,7 @@ def test_mixed_seed_and_source_landings_render_separate_tested_nodes() -> None:
                 "source_name": "warehouse_feed",
                 "identifier": "things_live",
             },
+            "delivery": dict(DRAFT_DELIVERY),
             "seed_tests": [{"name": "id", "data_tests": ["not_null"]}],
             "projection": [{"name": "id", "expression": "cast(id as string)"}],
         }
@@ -507,12 +537,20 @@ def test_landing_rejects_ignored_fields_and_source_raw_model() -> None:
             },
             "identifer",
         ),
+        (
+            {
+                "kind": "seed",
+                "codec": {"kind": "jsonl"},
+            },
+            "codec",
+        ),
     )
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         for index, (landing, expected) in enumerate(invalid_landings):
             declaration = _fixture_declaration()
             declaration["tables"]["things"]["landing"] = landing
+            declaration["tables"]["things"]["delivery"] = dict(DRAFT_DELIVERY)
             declaration_path = _write_declaration(
                 tmp_path, f"invalid_{index}.yml", declaration
             )
@@ -530,6 +568,7 @@ def test_landing_rejects_ignored_fields_and_source_raw_model() -> None:
             "source_name": "warehouse_feed",
             "identifier": "things_live",
         }
+        declaration["tables"]["things"]["delivery"] = dict(DRAFT_DELIVERY)
         _write_declaration(tmp_path, "orphan_seed.yml", declaration)
         try:
             emit.load_declarations(ctx=_tmp_estate_ctx(tmp_path))
@@ -564,6 +603,7 @@ def test_duplicate_source_landing_fails_loudly_with_both_declarations() -> None:
                 "source_name": "warehouse_feed",
                 "identifier": "things_live",
             }
+            table["delivery"] = dict(DRAFT_DELIVERY)
             _write_declaration(declarations_dir, filename, declaration)
         ctx = emit.EstateContext.resolve(
             estate_root=tmp_path,
@@ -582,6 +622,120 @@ def test_duplicate_source_landing_fails_loudly_with_both_declarations() -> None:
             assert "source('warehouse_feed', 'things_live')" in message, message
         else:
             raise AssertionError("duplicate source relation must fail generation")
+
+
+def test_production_delivery_declaration_renders_through_the_legacy_loader() -> None:
+    """One authored declaration serves both loaders. A table carrying a full
+    Bronze Product Contract -- a typed landing, a product block, a production
+    delivery block and a typed projection -- still renders through this loader
+    exactly as a plain dbt source table: the Bronze fields ride through as dict
+    entries no emitter reads, and a typed projection column's `source` becomes
+    the `expression` the staging template already renders.
+
+    The contract's own semantics are validated by ergasterion.source_delivery
+    (see tests/python/test_source_delivery.py); this loader validates none of
+    them, which is what keeps the two surfaces independent.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        domains_dir = tmp_path / "domains"
+        domains_dir.mkdir()
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(FIXTURE_DOMAIN, sort_keys=False), encoding="utf-8"
+        )
+        declarations_dir = tmp_path / "declarations"
+        declarations_dir.mkdir()
+        declaration = _fixture_declaration()
+        declaration["tables"]["live_things"] = {
+            "staging_model": "stg_toysrc_live_things",
+            "description": "Live fixture relation delivered under a Bronze Product Contract.",
+            "landing": {
+                "kind": "source",
+                "source_name": "warehouse_feed",
+                "identifier": "things_live",
+                "integration": {"kind": "managed"},
+                "content_encodings": ["identity"],
+                "codec": {
+                    "kind": "jsonl", "version": 1, "charset": "utf-8", "newline": "lf",
+                    "top_level": "object", "duplicate_keys": "reject",
+                    "number_mode": "exact_decimal", "allow_blank_lines": False,
+                },
+                "physical_columns": [
+                    {"name": "id", "logical_type": "utf8_string", "nullable": False},
+                    {"name": "loaded_at", "logical_type": "utc_instant", "nullable": False},
+                ],
+            },
+            "product": {
+                "product_version": "1.0.0",
+                "display_name": "Live things",
+                "description": "Synthetic live fixture relation.",
+                "owner": "team-data-platform",
+                "support": "runbook-live-things",
+                "classification": "synthetic",
+                "access_policy_ref": "local-process-user",
+                "retention_policy_ref": "local-ephemeral",
+            },
+            "delivery": {
+                "kind": "production", "mode": "append_only",
+                "progress": {"kind": "opaque_batch"},
+                "delete_strategy": "none",
+                "schedule": {
+                    "kind": "interval", "every_minutes": 60,
+                    "anchor_at": "2026-01-01T00:00:00.000000Z",
+                },
+                "schedule_lateness": {"warn_after_minutes": 15, "error_after_minutes": 60},
+                "timestamps": {"load_field": "loaded_at"},
+                "record_key": {"fields": ["id"]},
+                "quality": {
+                    "publication_mode": "all_or_nothing", "max_error_fraction": "0",
+                    "rules": [{"kind": "not_null", "field": "id", "severity": "error"}],
+                },
+                "retry": {
+                    "max_attempts": 4, "backoff": "exponential",
+                    "base_seconds": 5, "cap_seconds": 300,
+                },
+            },
+            "seed_tests": [{"name": "id", "data_tests": ["not_null"]}],
+            "projection": [
+                {"source": "id", "name": "id", "logical_type": "utf8_string", "nullable": False},
+                {
+                    "source": "loaded_at", "name": "loaded_at",
+                    "logical_type": "utc_instant", "nullable": False,
+                },
+            ],
+        }
+        _write_declaration(declarations_dir, "toysrc.yml", declaration)
+        ctx = emit.EstateContext.resolve(
+            estate_root=tmp_path,
+            domains_dir=domains_dir,
+            declarations_dir=declarations_dir,
+        )
+
+        domain = emit.load_domains(ctx=ctx)
+        declarations = emit.load_declarations(domain, ctx=ctx)
+        table = declarations[0]["tables"]["live_things"]
+        assert [column["expression"] for column in table["projection"]] == ["id", "loaded_at"], (
+            f"a typed projection column's source must become its legacy expression: {table['projection']}"
+        )
+        assert table["delivery"]["mode"] == "append_only", "delivery rides through untouched"
+        assert table["product"]["owner"] == "team-data-platform", "product rides through untouched"
+
+        rendered = {
+            file.path.name: file.content
+            for file in emit.generate_files(declarations, emit.template_env(), domain, ctx=ctx)
+        }
+        staging_sql = rendered["stg_toysrc_live_things.sql"]
+        assert "{{ source('warehouse_feed', 'things_live') }}" in staging_sql, staging_sql
+        assert "id as id" in staging_sql, staging_sql
+        assert "loaded_at as loaded_at" in staging_sql, staging_sql
+        parsed = yaml.safe_load(rendered["_sources.yml"])
+        source_table = parsed["sources"][0]["tables"][0]
+        assert source_table["name"] == "things_live", parsed
+        for name, content in rendered.items():
+            for leaked in ("append_only", "all_or_nothing", "utc_instant", "local-ephemeral"):
+                assert leaked not in content, (
+                    f"{name} rendered the Bronze contract fact {leaked!r}; no template reads it"
+                )
 
 
 # --- --strict-openim + summary warnings count --------------------------------------
@@ -895,6 +1049,354 @@ def test_write_files_refuses_escape_from_root() -> None:
         assert not (tmp_path.parent / "escaped.sql").exists(), "nothing may be written"
 
 
+# --- Bronze declaration emission ----------------------------------------------------
+
+_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+_TELEMETRY_TOKENS = (
+    "heartbeat",
+    "committed_at",
+    "attempt_id",
+    "run_id",
+    "evaluated_through",
+    "last_heartbeat",
+)
+
+
+def _vector_payload(case: str) -> dict:
+    data = json.loads((_FIXTURES / "source_delivery_vectors.json").read_text(encoding="utf-8"))
+    for entry in data["positive"]:
+        if entry["case"] == case:
+            return copy.deepcopy(entry["payload"])
+    raise AssertionError(f"missing vector {case}")
+
+
+def _binding_template() -> dict:
+    data = json.loads((_FIXTURES / "bronze_schema_vectors.json").read_text(encoding="utf-8"))
+    for entry in data["positive"]:
+        if entry.get("record") == "RuntimeBinding":
+            return copy.deepcopy(entry["payload"])
+    raise AssertionError("RuntimeBinding fixture missing")
+
+
+def _declaration_from_payload(payload: dict) -> dict:
+    ident = payload["logical_identity"]
+    source_name = ident["source"]
+    table_name = ident["table"]
+    product = {key: value for key, value in payload["product"].items() if key != "domain"}
+    return {
+        "source": {"name": source_name, "display_name": source_name.upper(), "priority": 10},
+        "tables": {
+            table_name: {
+                "staging_model": f"stg_{source_name}_{table_name}",
+                "description": payload["product"]["description"],
+                "landing": payload["landing"],
+                "product": product,
+                "delivery": payload["delivery"],
+                "projection": payload["projection"],
+            }
+        },
+    }
+
+
+def _write_production_estate(root: Path, payload: dict) -> emit.EstateContext:
+    ident = payload["logical_identity"]
+    (root / "estate.yml").write_text(
+        yaml.safe_dump({"estate": {"namespace": ident["estate_namespace"]}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    domains_dir = root / "domains"
+    domains_dir.mkdir(parents=True)
+    domain = copy.deepcopy(FIXTURE_DOMAIN)
+    domain["bronze"] = {
+        "domain": {"name": "operations", "display_name": "Operations"},
+        "products": [{"source": ident["source"], "table": ident["table"]}],
+    }
+    (domains_dir / "fixture.yml").write_text(
+        yaml.safe_dump(domain, sort_keys=False), encoding="utf-8"
+    )
+    decls = root / "declarations"
+    decls.mkdir(parents=True)
+    _write_declaration(decls, f"{ident['source']}.yml", _declaration_from_payload(payload))
+    return emit.EstateContext.resolve(estate_root=root)
+
+
+def _write_binding_for(typed_table, path: Path, *, environment: str = "local") -> Path:
+    payload = _binding_template()
+    ident = typed_table.contract.logical_identity
+    handle = landing_handle(typed_table.contract)
+    payload["logical_identity"] = {
+        "estate_namespace": ident.estate_namespace,
+        "source": ident.source,
+        "table": ident.table,
+    }
+    payload["contract_digest"] = typed_table.contract_digest
+    payload["execution_plan_digest"] = bronze_plan_digest()
+    payload["environment"] = environment
+    payload["landing_ports"] = {handle: payload["landing_ports"]["raw"]}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def _render_production(root: Path, case: str):
+    payload = _vector_payload(case)
+    ctx = _write_production_estate(root, payload)
+    typed = load_typed_declarations(ctx)
+    key = next(iter(typed.tables))
+    binding_path = _write_binding_for(typed.tables[key], root / "bindings" / "runtime.yml")
+    bound = bind_production_sources(typed, load_runtime_bindings(binding_path, "local"))
+    domain = emit.load_domains(ctx=ctx)
+    declarations = emit.load_declarations(domain, ctx=ctx)
+    files = emit.generate_files(
+        declarations,
+        emit.template_env(),
+        domain,
+        ctx=ctx,
+        typed=typed,
+        bound=bound,
+        plan_digest=bronze_plan_digest(),
+    )
+    return ctx, typed, bound, files, key
+
+
+def test_managed_and_external_share_one_graph_contract_identity() -> None:
+    """Managed and external production declarations project one identity into
+    the durable contract, dbt sources/staging, and the dbt translator."""
+    for case in ("append_only_managed_opaque_batch", "csv_external_append_only"):
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx, typed, bound, files, key = _render_production(Path(tmp), case)
+            table = typed.tables[key]
+            identity = graph_contract_identity(table)
+            rendered = {file.path.relative_to(ctx.root).as_posix(): file.content for file in files}
+            product_path = (
+                f"contracts/bronze/{identity['estate_namespace']}/"
+                f"{identity['source']}/{identity['table']}/bronze-product.json"
+            )
+            assert product_path in rendered, sorted(rendered)
+            document = json.loads(rendered[product_path])
+            assert document["schema"] == "ergasterion.bronze-product/v1"
+            assert document["contract"]["logical_identity"]["source"] == identity["source"]
+            sources = yaml.safe_load(rendered["models/staging/_sources.yml"])
+            source_table = sources["sources"][0]["tables"][0]
+            assert source_table["meta"]["dpf.identity"] == identity
+            tests = [item for item in source_table["data_tests"] if isinstance(item, dict)]
+            assert any("dpf_projection_integrity" in item for item in tests), source_table
+            assert any("dpf_schedule_timeliness" in item for item in tests), source_table
+            has_age = table.contract.delivery.maximum_age is not None
+            freshness = (source_table.get("config") or {}).get("freshness")
+            if has_age:
+                assert freshness, "authored maximum_age must project native freshness"
+            else:
+                assert not freshness, "freshness is an adapter extension of authored maximum_age"
+            staging_name = f"models/staging/stg_{key[0]}_{key[1]}.sql"
+            staging = rendered[staging_name]
+            assert "inner join" in staging
+            assert "published.visibility_id" in staging
+            if table.contract.landing.integration.kind == "managed":
+                assert "_ergasterion_visibility_id" in staging
+            else:
+                assert "source.visibility_id" in staging
+            for content in rendered.values():
+                for token in _TELEMETRY_TOKENS:
+                    assert token not in content, f"{case} leaked {token!r}"
+            translator = DbtTranslator(
+                typed=typed,
+                bound=bound,
+                declarations=emit.load_declarations(emit.load_domains(ctx=ctx), ctx=ctx),
+            )
+            assert translator.owned_occurrences() == frozenset()
+            assert translator.observed_occurrences() == frozenset(
+                {
+                    "bronze.contract",
+                    "bronze.schema",
+                    "bronze.publish",
+                    "bronze.lineage",
+                    "bronze.metadata",
+                }
+            )
+            from ergasterion.framework.models import Layer, compute_plan_digest
+            from ergasterion.framework.resolver import resolve
+
+            bronze = resolve(Layer.BRONZE)
+            assert translator.plan_digest() == compute_plan_digest(bronze)
+            result = translator.translate(bronze)
+            assert result.metadata["identities"][f"{key[0]}.{key[1]}"] == identity
+            assert bound[key].execution_plan_digest == identity["execution_plan_digest"]
+
+
+def test_required_product_facts_fail_closed() -> None:
+    payload = _vector_payload("append_only_managed_opaque_batch")
+    del payload["product"]["owner"]
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _write_production_estate(Path(tmp), payload)
+        try:
+            load_typed_declarations(ctx)
+        except ValueError as exc:
+            assert "owner" in str(exc).lower() or "product" in str(exc).lower(), str(exc)
+        else:
+            raise AssertionError("missing owner must fail closed")
+
+
+def test_draft_fails_generation_with_delivery_contract_required() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        domains_dir = tmp_path / "domains"
+        domains_dir.mkdir()
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(FIXTURE_DOMAIN, sort_keys=False), encoding="utf-8"
+        )
+        decls = tmp_path / "declarations"
+        decls.mkdir()
+        declaration = _fixture_declaration()
+        table = declaration["tables"]["things"]
+        table.pop("raw_model")
+        table["landing"] = {
+            "kind": "source",
+            "source_name": "warehouse_feed",
+            "identifier": "things_live",
+        }
+        table["delivery"] = dict(DRAFT_DELIVERY)
+        _write_declaration(decls, "toysrc.yml", declaration)
+        _write_structure_minimum(tmp_path)
+        exit_code, out, _err = _run_main_capturing(["--estate-root", str(tmp_path)])
+        assert exit_code == 1, f"draft must fail generation, got {exit_code}: {out}"
+        assert "delivery_contract_required" in out, out
+
+
+def test_seed_plus_draft_fails_generation_with_delivery_contract_required() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        domains_dir = tmp_path / "domains"
+        domains_dir.mkdir()
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(FIXTURE_DOMAIN, sort_keys=False), encoding="utf-8"
+        )
+        decls = tmp_path / "declarations"
+        decls.mkdir()
+        declaration = _fixture_declaration()
+        declaration["tables"]["live_things"] = {
+            "staging_model": "stg_toysrc_live_things",
+            "description": "Live fixture relation.",
+            "landing": {
+                "kind": "source",
+                "source_name": "warehouse_feed",
+                "identifier": "things_live",
+            },
+            "delivery": dict(DRAFT_DELIVERY),
+            "seed_tests": [{"name": "id", "data_tests": ["unique", "not_null"]}],
+            "projection": [
+                {"name": "source_system", "expression": "'toysrc'"},
+                {"name": "source_id", "expression": "cast(id as string)"},
+            ],
+        }
+        _write_declaration(decls, "toysrc.yml", declaration)
+        _write_structure_minimum(tmp_path)
+        exit_code, out, _err = _run_main_capturing(["--estate-root", str(tmp_path)])
+        assert exit_code == 1, f"seed-plus-draft must fail generation, got {exit_code}: {out}"
+        assert "delivery_contract_required" in out, out
+
+
+def test_physical_inputs_must_bind() -> None:
+    payload = _vector_payload("append_only_managed_opaque_batch")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        ctx = _write_production_estate(root, payload)
+        typed = load_typed_declarations(ctx)
+        table = next(iter(typed.tables.values()))
+        binding_path = _write_binding_for(table, root / "bindings" / "runtime.yml")
+        data = yaml.safe_load(binding_path.read_text(encoding="utf-8"))
+        data["landing_ports"] = {"missing.handle": next(iter(data["landing_ports"].values()))}
+        binding_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        try:
+            bind_production_sources(typed, load_runtime_bindings(binding_path, "local"))
+        except ValueError as exc:
+            assert "physical inputs bind" in str(exc), str(exc)
+        else:
+            raise AssertionError("a missing landing handle must fail bind")
+
+
+def test_bind_rejects_mismatched_execution_plan_digest() -> None:
+    payload = _vector_payload("append_only_managed_opaque_batch")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        ctx = _write_production_estate(root, payload)
+        typed = load_typed_declarations(ctx)
+        table = next(iter(typed.tables.values()))
+        binding_path = _write_binding_for(table, root / "bindings" / "runtime.yml")
+        data = yaml.safe_load(binding_path.read_text(encoding="utf-8"))
+        data["execution_plan_digest"] = "0" * 64
+        binding_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        try:
+            bind_production_sources(typed, load_runtime_bindings(binding_path, "local"))
+        except ValueError as exc:
+            assert "execution_plan_digest" in str(exc), str(exc)
+            assert "resolved Bronze graph" in str(exc), str(exc)
+        else:
+            raise AssertionError("a mismatched execution_plan_digest must fail bind")
+
+
+def test_case_fold_identities_fail() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        domains_dir = tmp_path / "domains"
+        domains_dir.mkdir()
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(FIXTURE_DOMAIN, sort_keys=False), encoding="utf-8"
+        )
+        decls = tmp_path / "declarations"
+        decls.mkdir()
+        first = _fixture_declaration()
+        first["source"]["name"] = "Feed"
+        first["tables"]["things"].pop("raw_model")
+        first["tables"]["things"]["landing"] = {
+            "kind": "source", "source_name": "Feed", "identifier": "things",
+        }
+        first["tables"]["things"]["delivery"] = dict(DRAFT_DELIVERY)
+        second = _fixture_declaration()
+        second["source"]["name"] = "feed"
+        second["source"]["priority"] = 11
+        second["tables"]["things"].pop("raw_model")
+        second["tables"]["things"]["landing"] = {
+            "kind": "source", "source_name": "feed", "identifier": "things",
+        }
+        second["tables"]["things"]["delivery"] = dict(DRAFT_DELIVERY)
+        _write_declaration(decls, "feed_upper.yml", first)
+        _write_declaration(decls, "feed_lower.yml", second)
+        ctx = emit.EstateContext.resolve(estate_root=tmp_path)
+        declarations = emit.load_declarations(emit.load_domains(ctx=ctx), ctx=ctx)
+        try:
+            check_casefold_identities(declarations)
+        except ValueError as exc:
+            assert "case-fold" in str(exc), str(exc)
+        else:
+            raise AssertionError("case-folded source names must fail")
+
+
+def test_production_needs_binding_and_environment() -> None:
+    payload = _vector_payload("append_only_managed_opaque_batch")
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        _write_production_estate(tmp_path, payload)
+        _write_structure_minimum(tmp_path)
+        exit_code, out, _err = _run_main_capturing(["--estate-root", str(tmp_path)])
+        assert exit_code == 2, f"production without binding must exit 2, got {exit_code}: {out}"
+        assert "--binding" in out and "--environment" in out, out
+
+
+def test_legacy_projection_expression_still_renders_for_production() -> None:
+    """Neutral schema/derived lineage match; a leftover expression is an adapter
+    extension the legacy loader still honours."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _ctx, typed, _bound, files, key = _render_production(
+            Path(tmp), "append_only_managed_opaque_batch"
+        )
+        staging = next(file.content for file in files if file.path.name == f"stg_{key[0]}_{key[1]}.sql")
+        assert "order_id as order_id" in staging
+        contract = typed.tables[key].contract
+        assert contract.projection[0].source == "order_id"
+        assert contract.projection[0].name == "order_id"
+
+
 # --- orphan-signal binding regression --------------------------------------------
 
 def test_removed_declaration_turns_the_orphan_signal_on() -> None:
@@ -963,6 +1465,7 @@ TESTS = [
     test_mixed_seed_and_source_landings_render_separate_tested_nodes,
     test_landing_rejects_ignored_fields_and_source_raw_model,
     test_duplicate_source_landing_fails_loudly_with_both_declarations,
+    test_production_delivery_declaration_renders_through_the_legacy_loader,
     test_canonical_mapping_missing_openim_root_warns_and_counts_one,
     test_canonical_mapping_nonexistent_openim_root_warns_and_counts_one,
     test_canonical_mapping_omitted_business_keys_uses_pre_f6_default,
@@ -984,6 +1487,15 @@ TESTS = [
     test_shared_source_priority_for_same_entity_rejected,
     test_committed_source_priorities_pass,
     test_write_files_refuses_escape_from_root,
+    test_managed_and_external_share_one_graph_contract_identity,
+    test_required_product_facts_fail_closed,
+    test_draft_fails_generation_with_delivery_contract_required,
+    test_seed_plus_draft_fails_generation_with_delivery_contract_required,
+    test_physical_inputs_must_bind,
+    test_bind_rejects_mismatched_execution_plan_digest,
+    test_case_fold_identities_fail,
+    test_production_needs_binding_and_environment,
+    test_legacy_projection_expression_still_renders_for_production,
 ]
 
 

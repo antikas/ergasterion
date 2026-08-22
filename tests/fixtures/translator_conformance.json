@@ -1,0 +1,227 @@
+{
+  "schema": "ergasterion.translator-conformance-vectors/v1",
+  "description": "Data-only vectors for ergasterion/framework/translator_conformance.py. Each vector names a set of translator declarations and the router error code, or null for the positive case, that routing against the resolved Bronze plan must produce. See docs/architecture/bronze-ingestion.md and tests/python/test_framework_core.py.",
+  "vectors": [
+    {
+      "id": "valid_single_owner",
+      "description": "One translator owns all eight Bronze occurrences in a dependency-respecting execution order and pins no digest. The router routes cleanly with one assignment per occurrence.",
+      "expected_error_code": null,
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "missing_execution_owner",
+      "description": "The lone translator drops bronze.metadata from its owned set: the occurrence requires an execution owner and gets none.",
+      "expected_error_code": "missing_execution_owner",
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duplicate_execution_owner",
+      "description": "Two translators both claim bronze.publish as execution owner.",
+      "expected_error_code": "duplicate_execution_owner",
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ]
+        },
+        {
+          "target_name": "rival_publisher",
+          "owned_occurrences": ["bronze.publish"],
+          "execution_order": ["bronze.publish"]
+        }
+      ]
+    },
+    {
+      "id": "reordered_ownership",
+      "description": "The translator's execution_order places bronze.publish before bronze.validate, bronze.contract and bronze.schema, violating their barrier edges into bronze.publish.",
+      "expected_error_code": "reordered_ownership",
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.publish",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.lineage",
+            "bronze.metadata"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "digest_mismatch",
+      "description": "The translator pins a plan_digest that does not equal the routed plan's computed digest -- it was built against a different (or stale) plan shape.",
+      "expected_error_code": "digest_mismatch",
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "plan_digest": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        }
+      ]
+    },
+    {
+      "id": "observe_only_translator",
+      "description": "A second translator observes bronze.publish without owning any occurrence. The router still calls its translate() and carries its artefacts in the routing result, alongside the owning translator's.",
+      "expected_error_code": null,
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ]
+        },
+        {
+          "target_name": "docs_projection",
+          "owned_occurrences": [],
+          "observed_occurrences": ["bronze.publish"],
+          "execution_order": []
+        }
+      ]
+    },
+    {
+      "id": "bad_handoff",
+      "description": "The translator owns bronze.publish but rejects the ergasterion.validation-result/v1 handoff schema carried on the bronze.validate -> bronze.publish barrier edge.",
+      "expected_error_code": "bad_handoff",
+      "translators": [
+        {
+          "target_name": "local_ingestion",
+          "owned_occurrences": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "execution_order": [
+            "bronze.checkpoint",
+            "bronze.ingest",
+            "bronze.validate",
+            "bronze.contract",
+            "bronze.schema",
+            "bronze.publish",
+            "bronze.lineage",
+            "bronze.metadata"
+          ],
+          "rejected_handoffs": [["bronze.validate", "bronze.publish"]]
+        }
+      ]
+    }
+  ]
+}

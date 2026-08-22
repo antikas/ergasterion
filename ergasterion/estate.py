@@ -11,9 +11,10 @@ it):
     ``TEMPLATES_DIR`` / ``SCHEMA_PATH`` = ``Path(__file__).resolve().parent / ...``.
 
   * ESTATE PATHS -- the data-product estate the engine operates on: declarations, domains,
-    the emitted models/contracts/graphs trees, the compiled manifest, the LICENSE, and
-    (optionally) an external model repo for canonical-mapping validation. Every one of
-    these rides this object.
+    the emitted models/contracts/graphs trees, the compiled manifest, the target-neutral
+    root ``estate.yml`` (``ergasterion.source_delivery.load_estate_namespace`` reads its
+    ``estate.namespace``), the LICENSE, and (optionally) an external model repo for
+    canonical-mapping validation. Every one of these rides this object.
 
 The two classes never mix. Threading an estate path into engine-data resolution (loading a
 template from the estate) or vice versa (loading declarations from the package) is the named
@@ -95,6 +96,7 @@ class EstateContext:
     tests_dir: Path
     license_path: Path
     manifest_path: Path
+    estate_file: Path
     openim_root: Path | None
 
     @classmethod
@@ -113,6 +115,7 @@ class EstateContext:
         tests_dir: Path | None = None,
         license_path: Path | None = None,
         manifest_path: Path | None = None,
+        estate_file: Path | None = None,
     ) -> "EstateContext":
         """Resolve the root, derive every estate path from it, then
         apply any per-field override the caller supplied (each defaults to root-relative)."""
@@ -127,6 +130,7 @@ class EstateContext:
             tests_dir=tests_dir if tests_dir is not None else root / "tests",
             license_path=license_path if license_path is not None else root / "LICENSE",
             manifest_path=manifest_path if manifest_path is not None else root / "target" / "manifest.json",
+            estate_file=estate_file if estate_file is not None else root / "estate.yml",
             openim_root=Path(openim_root) if openim_root is not None else None,
         )
 

@@ -1,8 +1,10 @@
 """Package-mode smoke for the pip-installable Ergasterion engine.
 
 The test proves source-tree imports, an editable installation, both command entry
-points, estate-root resolution, and root discovery from a nested directory. It runs
-without contacting a package index.
+points, estate-root resolution, and root discovery from a nested directory. It also
+reads pyproject.toml directly to prove the optional-dependencies extras keys the
+install and validator gates depend on by name still exist and stay consistent with
+each other. It runs without contacting a package index.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 
 # Run directly as ``python tests/python/test_package_mode.py``.
 if __package__ in (None, ""):
@@ -47,11 +50,65 @@ def _venv_bin(venv_dir: str, name: str) -> str:
     return os.path.join(venv_dir, "bin", name)
 
 
+def _venv_site_packages(venv_dir: str) -> str:
+    # Windows: <venv>/Lib/site-packages. POSIX: <venv>/lib/pythonX.Y/site-packages.
+    win = os.path.join(venv_dir, "Lib", "site-packages")
+    if os.path.isdir(win):
+        return win
+    lib = os.path.join(venv_dir, "lib")
+    for entry in os.listdir(lib) if os.path.isdir(lib) else []:
+        candidate = os.path.join(lib, entry, "site-packages")
+        if os.path.isdir(candidate):
+            return candidate
+    raise FileNotFoundError(f"no site-packages directory found under {venv_dir}")
+
+
 def _same_path(a: str, b: str) -> bool:
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
+def _check_extras_by_name() -> str | None:
+    """Read pyproject.toml directly and confirm the extras keys every install
+    and gate script names literally -- ``local-ingestion`` and its ``duckdb``
+    compatibility alias -- exist, and that ``all`` is exactly their union with
+    the ``snowflake``/``bigquery`` adapters. No script installs by extra name
+    today (every gate lists the pinned packages instead), so a typo or rename
+    of an extras key in pyproject.toml would otherwise pass every gate
+    unnoticed. Returns an error string, or ``None`` when the keys agree.
+    """
+    pyproject_path = os.path.join(TREE_ROOT, "pyproject.toml")
+    with open(pyproject_path, "rb") as fh:
+        data = tomllib.load(fh)
+    extras = data.get("project", {}).get("optional-dependencies", {})
+
+    for key in ("local-ingestion", "duckdb", "snowflake", "bigquery", "all"):
+        if key not in extras:
+            return f"pyproject.toml [project.optional-dependencies] is missing the '{key}' extra"
+
+    local_ingestion = set(extras["local-ingestion"])
+    duckdb_alias = set(extras["duckdb"])
+    if local_ingestion != duckdb_alias:
+        return (
+            "the 'duckdb' extra is not an identical alias of 'local-ingestion': "
+            f"local-ingestion={sorted(local_ingestion)!r}, duckdb={sorted(duckdb_alias)!r}"
+        )
+
+    expected_all = local_ingestion | set(extras["snowflake"]) | set(extras["bigquery"])
+    actual_all = set(extras["all"])
+    if actual_all != expected_all:
+        return (
+            "the 'all' extra is not the union of local-ingestion, snowflake and bigquery: "
+            f"all={sorted(actual_all)!r}, expected={sorted(expected_all)!r}"
+        )
+    return None
+
+
 def main() -> int:
+    # Extras-key-by-name assertion: fast, no venv needed, runs first.
+    extras_error = _check_extras_by_name()
+    if extras_error:
+        return _fail(extras_error)
+
     # Script-mode tree identity: `import ergasterion` above ran under the shim,
     # so it must have bound to THIS tree even if the carries a
     # sibling-tree editable install.
@@ -68,13 +125,28 @@ def main() -> int:
         neutral = os.path.join(tmp, "neutral")  # a cwd with NO ergasterion/ in it
         os.makedirs(neutral, exist_ok=True)
 
-        # scratch venv, borrowing this interpreter's toolchain offline
-        p = _run([sys.executable, "-m", "venv", "--system-site-packages", venv_dir], cwd=tmp)
+        # Scratch venv, borrowing THIS interpreter's toolchain offline. `--system-site-packages`
+        # cannot do that borrowing when sys.executable is itself a venv: Python's venv module
+        # always resolves a new venv's system site-packages back to the ULTIMATE base
+        # interpreter (pyvenv.cfg's `home`), skipping any intermediate venv entirely -- so a
+        # scratch venv built from the source checkout's bootstrapped .venv would silently see
+        # whatever (if anything) is globally installed, not this venv's pinned dependency set.
+        # A .pth file injecting this interpreter's own site-packages directory borrows it for
+        # real, regardless of how many venvs deep sys.executable sits.
+        p = _run([sys.executable, "-m", "venv", venv_dir], cwd=tmp)
         if p.returncode != 0:
             return _fail("could not create scratch venv", p)
 
         vpy = _venv_bin(venv_dir, "python")
         erg_cli = _venv_bin(venv_dir, "ergasterion")
+
+        parent_site_packages = [p for p in sys.path if p and os.path.isdir(p) and os.path.basename(p) == "site-packages"]
+        if not parent_site_packages:
+            return _fail(f"could not locate this interpreter's own site-packages in sys.path: {sys.path!r}")
+        scratch_site = _venv_site_packages(venv_dir)
+        with open(os.path.join(scratch_site, "_parent_venv.pth"), "w", encoding="utf-8") as f:
+            for site_dir in parent_site_packages:
+                f.write(site_dir + "\n")
 
         # editable install of THIS tree -- offline, no build isolation (setuptools borrowed)
         p = _run(
@@ -104,6 +176,34 @@ def main() -> int:
                 f"ergasterion resolved to {installed_root!r}, expected {TREE_ROOT!r}",
                 p,
             )
+
+        # Namespace-package discovery: ergasterion.schemas, .scaffold, .scaffold.macros,
+        # .scaffold.targets, and .templates carry no __init__.py of their own -- they are
+        # admitted by [tool.setuptools.packages.find] namespaces=true, not a hard-coded package
+        # list, so a future ergasterion.* subpackage is picked up the same way with no
+        # pyproject.toml edit. This is the regression proof for that discovery switch.
+        namespace_probe = (
+            "import ergasterion.schemas, ergasterion.scaffold, ergasterion.scaffold.macros, "
+            "ergasterion.scaffold.targets, ergasterion.templates\n"
+            "print('namespace packages OK')\n"
+        )
+        np = _run([vpy, "-c", namespace_probe], cwd=neutral)
+        if np.returncode != 0:
+            return _fail("editable install did not admit the ergasterion.* namespace subpackages", np)
+
+        # Base-dependency pins: pydantic, rfc8785, tzdata, and cryptography are unconditional
+        # `dependencies`, not an optional extra, so an editable install of this tree must resolve
+        # every one of them at the exact pin from pyproject.toml.
+        pins_probe = (
+            "from importlib import metadata as im\n"
+            "want = {'pydantic': '2.13.4', 'rfc8785': '0.1.4', 'tzdata': '2026.2', 'cryptography': '49.0.0'}\n"
+            "bad = [f'{n}: installed {im.version(n)}, want {v}' for n, v in want.items() if im.version(n) != v]\n"
+            "import sys\n"
+            "sys.exit('; '.join(bad)) if bad else print('pinned base dependency versions OK')\n"
+        )
+        pp = _run([vpy, "-c", pins_probe], cwd=neutral)
+        if pp.returncode != 0:
+            return _fail("editable install did not resolve the pinned base dependency versions", pp)
 
         # console entry point: multiplexer help + a subcommand's own help
         p = _run([erg_cli, "--help"], cwd=neutral)

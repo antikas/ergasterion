@@ -20,9 +20,13 @@ Usage:
 
 from __future__ import annotations
 
+import copy
+import json
 import re
 import sys
+import tempfile
 import traceback
+from pathlib import Path
 
 import yaml
 
@@ -31,7 +35,17 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
+from ergasterion import emit
 from ergasterion import emit_contracts as ec
+from ergasterion.source_delivery import load_typed_declarations
+from ergasterion.translators.dbt import (
+    bind_production_sources,
+    bronze_odcs_id,
+    bronze_plan_digest,
+    graph_contract_identity,
+    landing_handle,
+    load_runtime_bindings,
+)
 
 
 def test_determinism_byte_identical() -> None:
@@ -134,6 +148,230 @@ def test_every_served_table_has_one_contract() -> None:
     assert emitted == served, (
         f"served/emitted mismatch: missing={sorted(served - emitted)} extra={sorted(emitted - served)}"
     )
+
+
+_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+_TELEMETRY = ("heartbeat", "committed_at", "attempt_id", "run_id", "evaluated_through")
+
+
+def _vector_payload(case: str) -> dict:
+    data = json.loads((_FIXTURES / "source_delivery_vectors.json").read_text(encoding="utf-8"))
+    for entry in data["positive"]:
+        if entry["case"] == case:
+            return copy.deepcopy(entry["payload"])
+    raise AssertionError(case)
+
+
+def _binding_template() -> dict:
+    data = json.loads((_FIXTURES / "bronze_schema_vectors.json").read_text(encoding="utf-8"))
+    for entry in data["positive"]:
+        if entry.get("record") == "RuntimeBinding":
+            return copy.deepcopy(entry["payload"])
+    raise AssertionError("RuntimeBinding")
+
+
+def _write_production_estate(root: Path, payload: dict):
+    ident = payload["logical_identity"]
+    (root / "estate.yml").write_text(
+        yaml.safe_dump({"estate": {"namespace": ident["estate_namespace"]}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    domains = root / "domains"
+    domains.mkdir()
+    (domains / "ops.yml").write_text(
+        yaml.safe_dump(
+            {
+                "bronze": {
+                    "domain": {"name": "operations", "display_name": "Operations"},
+                    "products": [{"source": ident["source"], "table": ident["table"]}],
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    decls = root / "declarations"
+    decls.mkdir()
+    product = {key: value for key, value in payload["product"].items() if key != "domain"}
+    (decls / f"{ident['source']}.yml").write_text(
+        yaml.safe_dump(
+            {
+                "source": {"name": ident["source"], "display_name": ident["source"].upper(), "priority": 10},
+                "tables": {
+                    ident["table"]: {
+                        "landing": payload["landing"],
+                        "product": product,
+                        "delivery": payload["delivery"],
+                        "projection": payload["projection"],
+                    }
+                },
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return emit.EstateContext.resolve(estate_root=root)
+
+
+def _bind(root: Path, ctx, environment: str = "local"):
+    typed = load_typed_declarations(ctx)
+    table = next(iter(typed.tables.values()))
+    payload = _binding_template()
+    ident = table.contract.logical_identity
+    handle = landing_handle(table.contract)
+    payload["logical_identity"] = {
+        "estate_namespace": ident.estate_namespace,
+        "source": ident.source,
+        "table": ident.table,
+    }
+    payload["contract_digest"] = table.contract_digest
+    payload["execution_plan_digest"] = bronze_plan_digest()
+    payload["environment"] = environment
+    payload["landing_ports"] = {handle: payload["landing_ports"]["raw"]}
+    binding_path = root / "runtime.yml"
+    binding_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    bound = bind_production_sources(typed, load_runtime_bindings(binding_path, environment))
+    return typed, bound, binding_path
+
+
+def test_committed_generate_does_not_touch_bronze_or_served_layout() -> None:
+    files = ec.generate()
+    for path in files:
+        rel = path.as_posix()
+        assert "/bronze/" not in rel, rel
+        assert "/odps/" not in rel, rel
+    assert ec.generate_bronze() == {}
+
+
+def test_bronze_odcs_identity_and_schema_for_managed_and_external() -> None:
+    validator = ec.load_schema_validator()
+    for case in ("append_only_managed_opaque_batch", "csv_external_append_only"):
+        payload = _vector_payload(case)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ctx = _write_production_estate(root, payload)
+            typed, _bound, binding_path = _bind(root, ctx)
+            files = ec.generate_bronze(ctx, binding_path=binding_path, environment="local")
+            assert len(files) == 1, files
+            errors = ec.validate_all(files, validator, ctx=ctx)
+            assert not errors, "\n".join(errors)
+            path, text = next(iter(files.items()))
+            assert path.as_posix().endswith("/bronze.odcs.yml"), path
+            assert "/contracts/bronze/" in path.as_posix().replace("\\", "/")
+            for token in _TELEMETRY:
+                assert token not in text, f"{case} leaked {token}"
+            doc = yaml.safe_load(text)
+            table = next(iter(typed.tables.values()))
+            identity = graph_contract_identity(table)
+            assert doc["id"] == bronze_odcs_id(identity)
+            found = next(item["value"] for item in doc["customProperties"] if item["property"] == "dpf.identity")
+            assert found == identity
+            assert doc["customProperties"]
+            assert all(
+                item["property"] in {
+                    "dpf.identity",
+                    "dpf.classification",
+                    "dpf.accessPolicyRef",
+                    "dpf.retentionPolicyRef",
+                    "dpf.fieldLineage",
+                }
+                for item in doc["customProperties"]
+            )
+
+
+def _write_draft_estate(root: Path, *, with_seed: bool = False):
+    (root / "estate.yml").write_text(
+        yaml.safe_dump({"estate": {"namespace": "scratch.estate"}}, sort_keys=False),
+        encoding="utf-8",
+    )
+    domains = root / "domains"
+    domains.mkdir()
+    (domains / "ops.yml").write_text("{}\n", encoding="utf-8")
+    decls = root / "declarations"
+    decls.mkdir()
+    tables = {
+        "live_things": {
+            "landing": {
+                "kind": "source",
+                "source_name": "warehouse_feed",
+                "identifier": "things_live",
+            },
+            "delivery": {"kind": "draft", "reason": "delivery_contract_required"},
+        }
+    }
+    if with_seed:
+        tables["seed_things"] = {
+            "raw_model": "raw_scratch_seed_things",
+            "landing": {"kind": "seed"},
+            "projection": [{"name": "id", "expression": "id"}],
+        }
+    (decls / "scratch.yml").write_text(
+        yaml.safe_dump(
+            {
+                "source": {"name": "scratch", "display_name": "SCRATCH", "priority": 10},
+                "tables": tables,
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return emit.EstateContext.resolve(estate_root=root)
+
+
+def test_bronze_odcs_requires_binding_when_production_exists() -> None:
+    payload = _vector_payload("append_only_managed_opaque_batch")
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _write_production_estate(Path(tmp), payload)
+        try:
+            ec.generate_bronze(ctx)
+        except ValueError as exc:
+            assert "--binding" in str(exc), str(exc)
+        else:
+            raise AssertionError("production ODCS generation must require a binding")
+
+
+def test_bronze_odcs_draft_only_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _write_draft_estate(Path(tmp))
+        try:
+            files = ec.generate_bronze(ctx)
+        except ValueError as exc:
+            assert "delivery_contract_required" in str(exc), str(exc)
+            assert "draft delivery cannot generate" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"draft-only ODCS generation must fail closed, got {files!r}")
+
+
+def test_bronze_odcs_seed_plus_draft_fails_closed() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _write_draft_estate(Path(tmp), with_seed=True)
+        try:
+            files = ec.generate_bronze(ctx)
+        except ValueError as exc:
+            assert "delivery_contract_required" in str(exc), str(exc)
+            assert "draft delivery cannot generate" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"seed-plus-draft ODCS generation must fail closed, got {files!r}")
+
+
+def test_bronze_odcs_mismatched_plan_digest_fails_bind() -> None:
+    payload = _vector_payload("append_only_managed_opaque_batch")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        ctx = _write_production_estate(root, payload)
+        _typed, _bound, binding_path = _bind(root, ctx)
+        data = yaml.safe_load(binding_path.read_text(encoding="utf-8"))
+        data["execution_plan_digest"] = "0" * 64
+        binding_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+        try:
+            files = ec.generate_bronze(ctx, binding_path=binding_path, environment="local")
+        except ValueError as exc:
+            assert "execution_plan_digest" in str(exc), str(exc)
+            assert "resolved Bronze graph" in str(exc), str(exc)
+        else:
+            raise AssertionError(
+                f"mismatched execution_plan_digest must fail Bronze ODCS bind, got {files!r}"
+            )
 
 
 def main() -> int:

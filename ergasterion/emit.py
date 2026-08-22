@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import os
 import pprint
 import re
@@ -34,10 +35,25 @@ if __package__ in (None, ""):
 
 from ergasterion.estate import EstateContext
 from ergasterion.dialect_lint import DENY_LISTS, lint_models, _is_generated
+from ergasterion.source_delivery import (
+    canonical_contract_document,
+    load_typed_declarations,
+)
 from ergasterion.structure_gate import (
     check_structure,
     load_structure_declarations,
     normalise_landing,
+)
+from ergasterion.translators.dbt import (
+    annotate_production_tables,
+    attach_source_physical_coords,
+    bind_production_sources,
+    bronze_plan_digest,
+    bronze_product_dir,
+    check_casefold_identities,
+    load_runtime_bindings,
+    production_projection_groups,
+    reject_draft_generation,
 )
 
 # The ambient estate context is resolved from the working directory or environment. Functions default to it;
@@ -453,8 +469,25 @@ def load_declarations(
                 _require_identifier(table["raw_model"], f"{path}:{table_name}.raw_model")
             _require_identifier(table["staging_model"], f"{path}:{table_name}.staging_model")
             for column in table.get("projection", []):
-                if "name" not in column or "expression" not in column:
+                if "name" not in column:
                     raise ValueError(f"{path}:{table_name}: projection columns need name/expression")
+                if "expression" not in column:
+                    # A Bronze Product Contract's typed projection column names the physical
+                    # column it publishes as `source` and applies no transform, so this loader
+                    # projects it onto the legacy `expression` every template already reads.
+                    # One authored list therefore serves both consumers: the typed compiler
+                    # (ergasterion.source_delivery) reads source/logical_type/nullable and this
+                    # loader reads name/expression. A column declaring neither `expression` nor
+                    # `source` still fails with the message it has always failed with.
+                    source_column = column.get("source")
+                    if source_column is None:
+                        raise ValueError(
+                            f"{path}:{table_name}: projection columns need name/expression"
+                        )
+                    _require_identifier(
+                        source_column, f"{path}:{table_name}.projection.source"
+                    )
+                    column["expression"] = source_column
                 _require_identifier(column["name"], f"{path}:{table_name}.projection")
             for vault in table["vault_entities"]:
                 entity_name = vault["entity"]
@@ -563,12 +596,34 @@ def as_template_columns(names: list[str]) -> list[dict[str, str]]:
     return [{"name": name, "expression": name} for name in names]
 
 
+def bronze_product_files(
+    typed: Any, *, ctx: EstateContext | None = None
+) -> list[GeneratedFile]:
+    """Durable canonical Bronze Product Contract artefacts. Binding-specific
+    ODCS/ODPS projections are emitted by emit_contracts / emit_odps."""
+    ctx = ctx or _DEFAULT_CTX
+    files: list[GeneratedFile] = []
+    for table in typed.production_contracts():
+        document = canonical_contract_document(table)
+        path = bronze_product_dir(ctx.contracts_dir, table.logical_identity) / "bronze-product.json"
+        files.append(
+            GeneratedFile(
+                path,
+                json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+            )
+        )
+    return files
+
+
 def generate_files(
     declarations: list[dict[str, Any]],
     env: Environment,
     domain: dict[str, Any],
     *,
     ctx: EstateContext | None = None,
+    typed: Any | None = None,
+    bound: dict | None = None,
+    plan_digest: str | None = None,
 ) -> list[GeneratedFile]:
     # Local estate root binds this run's context; every emitted path is anchored on it.
     REPO_ROOT = (ctx or _DEFAULT_CTX).root
@@ -583,7 +638,15 @@ def generate_files(
         for declaration in declarations
         for table in declaration.get("tables", {}).values()
     ]
+    for table in all_tables:
+        table.setdefault("visibility_join", "")
+        table.setdefault("bronze_source_yaml", "")
     vaults = select_vaults(declarations)
+
+    if typed is not None and bound:
+        annotate_production_tables(
+            declarations, typed, bound, plan_digest=plan_digest or bronze_plan_digest()
+        )
 
     for table in all_tables:
         files.append(
@@ -738,6 +801,10 @@ def generate_files(
             )
             source_group["tables"].append(table)
             source_relation_origins[source_relation] = origin
+    attach_source_physical_coords(list(source_groups_by_name.values()))
+    projection_groups = (
+        production_projection_groups(typed, bound) if typed is not None and bound else []
+    )
     files.append(
         GeneratedFile(
             REPO_ROOT / "models" / "staging" / "_sources.yml",
@@ -747,10 +814,13 @@ def generate_files(
                 generated_header=YAML_HEADER,
                 seed_tables=seed_tables,
                 source_groups=list(source_groups_by_name.values()),
+                projection_source_groups=projection_groups,
                 staging_tables=all_tables,
             ),
         )
     )
+    if typed is not None:
+        files.extend(bronze_product_files(typed, ctx=ctx or _DEFAULT_CTX))
     return files
 
 
@@ -776,7 +846,10 @@ def write_files(
             print(diff)
             continue
         file.path.parent.mkdir(parents=True, exist_ok=True)
-        file.path.write_text(file.content, encoding="utf-8")
+        if file.path.suffix == ".json":
+            file.path.write_bytes(file.content.encode("utf-8"))
+        else:
+            file.path.write_text(file.content, encoding="utf-8")
     return changed
 
 
@@ -811,6 +884,15 @@ def prune_orphaned_files(
             if path in generated_paths:
                 continue
             # This file was generated but is no longer in the set
+            deleted.append(path.relative_to(REPO_ROOT))
+            if not check:
+                path.unlink()
+
+    bronze_root = ctx.contracts_dir / "bronze"
+    if bronze_root.exists():
+        for path in bronze_root.rglob("bronze-product.json"):
+            if path in generated_paths:
+                continue
             deleted.append(path.relative_to(REPO_ROOT))
             if not check:
                 path.unlink()
@@ -874,6 +956,21 @@ def main() -> int:
             "linted; a requested registered adapter is added when it is not declared."
         ),
     )
+    parser.add_argument(
+        "--binding",
+        type=Path,
+        default=None,
+        help=(
+            "RuntimeBinding YAML file or directory. Required when any production "
+            "Bronze source is declared; --environment must equal each binding's "
+            "environment."
+        ),
+    )
+    parser.add_argument(
+        "--environment",
+        default=None,
+        help="Mandatory matching assertion against RuntimeBinding.environment.",
+    )
     args = parser.parse_args()
 
     ctx = EstateContext.resolve(
@@ -889,9 +986,34 @@ def main() -> int:
     declarations = load_declarations(domain, ctx=ctx)
     validate_unique_source_priorities(declarations)
     validate_er_branch_coverage(declarations, domain["res_configs"], ctx=ctx)
+    try:
+        check_casefold_identities(declarations)
+        typed = load_typed_declarations(ctx)
+        reject_draft_generation(typed)
+    except ValueError as error:
+        print(f"FAIL: {error}")
+        return 1
+    bound = {}
+    plan_digest = None
+    if typed.production_contracts():
+        if args.binding is None or args.environment is None:
+            print(
+                "FAIL: production Bronze generation needs --binding PATH and "
+                "--environment NAME"
+            )
+            return 2
+        try:
+            bindings = load_runtime_bindings(args.binding, args.environment)
+            plan_digest = bronze_plan_digest()
+            bound = bind_production_sources(typed, bindings)
+        except ValueError as error:
+            print(f"FAIL: {error}")
+            return 2
     warning_count = validate_canonical_mappings(declarations, ctx.openim_root)
     env = template_env()
-    files = generate_files(declarations, env, domain, ctx=ctx)
+    files = generate_files(
+        declarations, env, domain, ctx=ctx, typed=typed, bound=bound, plan_digest=plan_digest
+    )
     changed = write_files(files, check=args.check, root=ctx.root)
     action = "would change" if args.check else "generated"
     summary = f"{action} {len(changed)} of {len(files)} files"

@@ -14,6 +14,15 @@ raw tables, typed staging projections, deterministic ER branches, bridge joins, 
 the raw-vault entities the source feeds. The Python emitter is deterministic:
 templates plus declarations produce dbt SQL, with no LLM in the generation path.
 
+This declaration describes a source's shape to the domain generator: which columns
+it has and which real-world thing each one refers to. It is a separate concern from
+a source's **Bronze Product Contract**, the earlier-stage declaration that governs
+how a delivered batch is received, checked, and published before the domain
+generator ever reads it. [`docs/architecture/bronze-ingestion.md`](docs/architecture/bronze-ingestion.md)
+covers that mechanism and [`docs/specifications/bronze-product-v1.md`](docs/specifications/bronze-product-v1.md)
+is its field-by-field reference; [`RUNBOOK.md`](RUNBOOK.md) section 3 is the Bronze
+operator command sequence.
+
 A single source per entity is the normal, complete case. You describe your sources and
 the factory builds the warehouse from them: typed staging, the append-only history
 vault, golden records, the served tables, contracts, and the graph map, all from one
@@ -28,22 +37,19 @@ not. If the source declares an `entity_resolution` branch, the pipeline can reso
 its records against existing funds, but scoring how well it resolved them needs a
 human-labelled answer key: `seeds/entity_resolution_overlap_manifest.csv`. That
 manifest is a labelled-data input the pipeline reads, not pipeline code the emitter
-produces, and it is hand-authored, one row per source record whose true fund
-identity is already known. Adding an ER-participating source without adding its
-rows to the manifest is still a valid emit, but the build will fail: the precision
-test that scores entity resolution treats an unlabelled resolved record as ground
-truth gone missing, on purpose, and stops the pipeline rather than pass silently.
+produces. A person adds one row per source record whose true fund identity is already
+known. You can emit an ER-participating source without adding its rows to the manifest,
+but the build will fail. The precision test treats an unlabelled resolved record as
+missing ground truth and stops the pipeline.
 
 A declaration in the **investment domain** can also carry a `canonical_mappings`
 block per entity -- an **optional, investment-domain-specific** onboarding aid, not a
-factory-wide requirement. That block is descriptive-only: it documents the intended
-attribute lineage to the OpenIM canonical model for onboarding review, and
-`ergasterion/emit.py` validates it for spelling and schema drift against the canonical
-model *when one is present on disk* (`--openim-root`), skipping with a warning rather
-than failing when it is not. It does not generate or drive anything: the canonical
-layer itself (`models/canonical/*.sql`) is hand-authored, not templated from the
-declaration. A domain with no external model to validate against simply omits the
-block; the e-commerce domain's declarations do exactly that (see "Worked example:
+factory-wide requirement. The block documents the intended attribute lineage to the
+OpenIM canonical model for onboarding review. When `--openim-root` points to a local
+model checkout, `ergasterion/emit.py` checks spelling and schema drift. Without a valid
+checkout it records a warning and continues. The block does not generate the canonical
+layer: `models/canonical/*.sql` remains hand-authored. A domain with no external model
+simply omits the block; the e-commerce declarations do exactly that (see "Worked example:
 adding a whole new domain," below).
 
 The fourth-source proof is `CHRONO`, declared in `declarations/chrono.yml` with
@@ -58,9 +64,9 @@ The e-commerce customer view shows how to define a domain whose vocabulary is co
 The repository contains two worked domains, so the example directories are populated. A new estate created with `ergasterion init <directory>` contains the same directory structure, the shared macros, and an empty project ready for its first domain. Use `domains/ecommerce.yml` as the concrete example for your own `domains/<your-domain>.yml`.
 
 1. **Domain model config** (`domains/<domain>.yml`, e.g. `domains/ecommerce.yml`): define the payload and hashed keys for `customer`, `product`, `order`, and `order_line`; then define the hubs, links, golden records, and deterministic customer match keys. Customers match first on a shared loyalty id and then on a normalised email. All domain files are merged at generation time, and the loader rejects duplicate section keys.
-2. **Declarations**, one per source (`declarations/cartivo.yml` the web storefront, `declarations/mercaro.yml` the marketplace, `declarations/relatio.yml` the CRM with only partial customer coverage): the same `vault_entities` shape every investment-domain declaration uses, pointing at the new domain's entities instead. A domain needs no `canonical_mappings` block at all if it has no external model to validate against -- e-commerce has none, which is itself part of the proof that the OpenIM-facing validation is optional and investment-specific (see the README's "What this is not").
-3. **Seeds**: invented source data per feed (customers/products/orders), with deliberate cross-source overlaps and disagreements seeded on purpose, the same convention every investment-domain source follows -- a shared loyalty id in two feeds, a case-different email in two others, a customer visible in only one feed (the partial-coverage CRM case).
-4. **The entity-resolution manifest, staged BEFORE the first build**: `seeds/<domain>_er_overlap_manifest.csv` (e-commerce: `seeds/customer_er_overlap_manifest.csv`), one row per source record whose true customer identity is already known by hand. Exactly the same rule DEMO's opening section states for the investment domain applies here: an ER-participating entity with no manifest rows is a valid emit that fails the build, on purpose, because the precision test that scores resolution treats an unlabelled resolved record as ground truth gone missing.
+2. **Declarations**, one per source: `declarations/cartivo.yml` for the storefront, `declarations/mercaro.yml` for the marketplace, and `declarations/relatio.yml` for the partial-coverage CRM. Each uses the same `vault_entities` shape as an investment declaration and points it at the e-commerce entities. E-commerce has no external reference model, so its declarations omit `canonical_mappings` (see the README's "What this is not").
+3. **Seeds**: invented customer, product, and order data for each feed. The fixtures include a shared loyalty id, an email that differs only by case, and a customer visible in only one feed. These ordinary disagreements exercise the same cross-source mechanism as the investment fixtures.
+4. **The entity-resolution manifest, staged BEFORE the first build**: `seeds/<domain>_er_overlap_manifest.csv` (e-commerce: `seeds/customer_er_overlap_manifest.csv`). It contains one row per source record whose true customer identity is already known by hand. An entity that participates in resolution with no manifest rows can be emitted, but its build fails. The precision test treats an unlabelled resolved record as missing ground truth.
 5. Run `python ergasterion/emit.py`, then `dbt parse --profiles-dir profiles --no-partial-parse` for the structural check, then `dbt build` against a configured warehouse target.
 
 **What stays hand-authored:** the clean consumable layer, including `canonical_customer`, `canonical_product`, the dimensions, and `fact_order`, is designed by a person on top of the generated source-facing pipeline. The investment domain follows the same boundary.
@@ -70,17 +76,15 @@ Customer resolution is deterministic in this domain. Records that share neither 
 ## Worked example: hand me your data contract
 
 Every source onboarded above started from a blank `declarations/<source>.yml`, written
-column by column, by hand. If a supplier can instead hand you an **ODCS contract** --
-a YAML document following the Bitol Open Data Contract Standard (ODCS), a
-vendor-neutral way of describing a dataset's schema that a growing set of
-data-catalogue and governance tools already speak (Databricks, Collibra,
-OpenMetadata, `datacontract-cli`) -- `ergasterion/import_odcs.py` turns it into a
-declaration skeleton mechanically, in seconds, instead of by hand.
+column by column. A supplier may already have an **ODCS contract**, a YAML document that
+follows the Bitol Open Data Contract Standard. ODCS describes a dataset's schema in a
+vendor-neutral format understood by tools including Databricks, Collibra, OpenMetadata,
+and `datacontract-cli`. `ergasterion/import_odcs.py` turns that contract into a declaration
+skeleton.
 
-What it does: reads the contract's schema section (each column's name, type, and
-whether it is required, unique, or a primary key) and writes out a
-`declarations/<source>.yml` with the projection stubs and `seed_tests`/`model_tests`
-already filled in from that. What it deliberately does **not** do: guess how this
+It reads each column's name, type, and required, unique, or primary-key status. It writes
+a `declarations/<source>.yml` with projection stubs and the corresponding
+`seed_tests` and `model_tests`. It does **not** guess how this
 source's records map onto this factory's vault entities, how they resolve against
 other sources, or how they should be prioritised in survivorship if two sources
 disagree about the same fact. No ODCS contract carries that information -- it is
@@ -104,10 +108,10 @@ has one entry per column, cast to the right type (`cast(... as string)`, or
 declared a column required or unique. The `vault_entities: []` at the bottom of each
 table is empty on purpose, with a commented-out worked example directly above it
 showing the shape to fill in -- see `declarations/cartivo.yml` for a complete one.
-Fill that in (and the two `# TODO` blocks at the end of the file, `entity_resolution`
-and `canonical_mappings`, if they apply to this source), then run
-`python ergasterion/emit.py` as usual -- the file the seeder wrote is a normal,
-hand-editable declaration from that point on, not a generated artefact.
+Fill in `vault_entities` and, where they apply, the `entity_resolution` and
+`canonical_mappings` TODO blocks at the end. Then run `python ergasterion/emit.py` as
+usual. The imported file is now a normal, hand-editable declaration, not a generated
+artefact.
 
 The seeder refuses a contract it cannot safely read, naming the exact problem instead
 of guessing:

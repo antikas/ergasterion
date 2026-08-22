@@ -11,5 +11,4 @@ select
 {%- for column in table.projection %}
     {{ column.expression }} as {{ column.name }}{{ "," if not loop.last }}
 {%- endfor %}
-from source
-
+from source{{ table.visibility_join | default('', true) }}

@@ -1,4 +1,4 @@
-"""``ergasterion`` console entry point -- multiplexes the factory's emitters as subcommands.
+"""``ergasterion`` console entry point -- multiplexes factory emitters and Bronze commands.
 
     ergasterion emit [args...]          ->  ergasterion.emit:main
     ergasterion contracts [args...]     ->  ergasterion.emit_contracts:main
@@ -10,16 +10,20 @@
     ergasterion structure [args...]     ->  ergasterion.structure_gate:main
     ergasterion init <dir>              ->  ergasterion.init:main
 
-Each subcommand delegates to that module's existing ``main()``, which owns its own
-``argparse`` surface. The multiplexer strips the subcommand token and hands the remaining
-argv to that ``main`` (via ``sys.argv``), so ``ergasterion emit --help`` prints the
-emitter's own help verbatim. The subcommand map is the only engine-side seam; the emitters
-are untouched by the entry point.
+Bronze local-ingestion commands (lazy-imported so ``--help`` works without DuckDB):
+
+    plan, contract, deployment, ingest, reconcile, local-backup, status, inspect, quarantine
+
+Each emitter subcommand delegates to that module's existing ``main()``. Bronze
+commands live in ``ergasterion.ingestion.commands`` and share
+``--project-dir --source --table --binding --environment``.
 """
 from __future__ import annotations
 
 import importlib
 import sys
+
+from ergasterion.ingestion.settings import MISSING_EXTRA_REMEDY
 
 # subcommand token -> the module whose main() implements it.
 SUBCOMMANDS: dict[str, str] = {
@@ -32,15 +36,46 @@ SUBCOMMANDS: dict[str, str] = {
     "lint": "ergasterion.dialect_lint",
     "structure": "ergasterion.structure_gate",
     "init": "ergasterion.init",
+    "plan": "ergasterion.ingestion.commands",
+    "contract": "ergasterion.ingestion.commands",
+    "deployment": "ergasterion.ingestion.commands",
+    "ingest": "ergasterion.ingestion.commands",
+    "reconcile": "ergasterion.ingestion.commands",
+    "local-backup": "ergasterion.ingestion.commands",
+    "status": "ergasterion.ingestion.commands",
+    "inspect": "ergasterion.ingestion.commands",
+    "quarantine": "ergasterion.ingestion.commands",
 }
+
+INGESTION_COMMANDS = frozenset({
+    "plan", "contract", "deployment", "ingest", "reconcile",
+    "local-backup", "status", "inspect", "quarantine",
+})
 
 
 def _usage() -> str:
     names = ", ".join(SUBCOMMANDS)
     return (
         "usage: ergasterion <subcommand> [args...]\n\n"
+        "Bronze is the source-aligned product layer: an immutable received-batch "
+        "receipt, typed records with validation disposition, an accepted downstream "
+        "projection, quarantine, and lineage. The file connector consumes a sidecar "
+        "manifest plus payload at the received-batch boundary. A direct connector is "
+        "another implementation of the same source-connector port; it does not change "
+        "the Bronze contract or downstream interfaces.\n\n"
+        "Read-only inspection: plan, status, inspect, quarantine --action list, "
+        "ingest due --dry-run.\n"
+        "Mutating commands: contract register/activate, deployment register/activate, "
+        "ingest file, ingest due, reconcile, quarantine revalidate/release, local-backup.\n\n"
+        "Bronze commands require --project-dir PATH --source NAME --table KEY "
+        "--binding PATH --environment NAME. RuntimeBinding.environment is the source "
+        "of truth; --environment is a mandatory assertion.\n"
+        "Safe next actions: plan, then contract register/activate, then deployment "
+        "register/activate, then ingest file. Use status and inspect to read evidence. "
+        "Use local-backup only when the runtime is quiescent.\n\n"
         f"subcommands: {names}\n"
-        "run `ergasterion <subcommand> --help` for a subcommand's own options\n"
+        "run `ergasterion <subcommand> --help` for a subcommand's own options "
+        "(command syntax is defined by those parsers).\n"
     )
 
 
@@ -54,10 +89,16 @@ def main(argv: list[str] | None = None) -> int:
     if module_name is None:
         sys.stderr.write(f"ergasterion: unknown subcommand {sub!r}\n\n{_usage()}")
         return 2
-    module = importlib.import_module(module_name)
-    # Hand the delegate its own clean argv: prog name + the remaining tokens. Each
-    # emitter's main() reads sys.argv through argparse; `--help` there exits via argparse.
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError:
+        if sub in INGESTION_COMMANDS:
+            sys.stderr.write(f"missing_extra: {MISSING_EXTRA_REMEDY}\n")
+            return 2
+        raise
     sys.argv = [f"ergasterion {sub}", *rest]
+    if sub in INGESTION_COMMANDS:
+        return int(module.main([sub, *rest]))
     return int(module.main())
 
 

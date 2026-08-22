@@ -1,0 +1,3 @@
+# The runtime data root (SQLite, DuckDB, raw objects/receipts, scratch, dbt's own
+# target/logs/packages) -- never the binding above it. See runtime/local.yml.
+runtime/data/

@@ -21,7 +21,7 @@ For local DuckDB use:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "ergasterion-factory[duckdb]==0.3.2"
+python -m pip install "ergasterion-factory[local-ingestion]==0.4.0"
 ```
 
 In Windows Git Bash, activate the environment with:
@@ -33,13 +33,14 @@ source .venv/Scripts/activate
 Install a different adapter only when you need it:
 
 ```bash
-python -m pip install "ergasterion-factory[snowflake]==0.3.2"
-python -m pip install "ergasterion-factory[bigquery]==0.3.2"
-python -m pip install "ergasterion-factory[all]==0.3.2"
+python -m pip install "ergasterion-factory[snowflake]==0.4.0"
+python -m pip install "ergasterion-factory[bigquery]==0.4.0"
+python -m pip install "ergasterion-factory[all]==0.4.0"
 ```
 
-The base package contains the declaration engine. Adapter extras add the pinned dbt
-runtime used by this release.
+The base package contains the declaration engine. Adapter extras install the pinned dbt
+runtime for their target. The `duckdb` extra remains as an alias of `local-ingestion` for
+existing installations.
 
 ### Work from the source repository
 
@@ -97,7 +98,95 @@ bash scripts/validate_offline.sh
 
 Neither command reads Snowflake credentials or opens a Snowflake connection.
 
-## 3. Create your own estate
+## 3. Bronze: receive and check a source delivery
+
+Bronze is the layer that receives a source's delivered batch, checks it against a
+written contract, and publishes the accepted rows or quarantines the rejected ones.
+[`docs/architecture/bronze-ingestion.md`](docs/architecture/bronze-ingestion.md) is the
+full mechanism. This section is the operator's command sequence against the local
+reference platform: SQLite for state, DuckDB for the projection, both stored beneath
+an estate's own `runtime/data/`. No warehouse account or network call is needed.
+
+Every Bronze command shares the same required arguments:
+
+```bash
+ergasterion <command> --project-dir PATH --source NAME --table KEY --binding PATH --environment NAME
+```
+
+`--binding` names a runtime binding YAML file (relative to `--project-dir` or
+absolute), declaring which local adapter implements each of Bronze's nine ports and
+which target relations the projection writes to.
+
+Compile and check the Bronze execution graph and runtime manifest for one product
+(read-only):
+
+```bash
+ergasterion plan --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local
+```
+
+Register and activate the contract, then register and activate its binding-only
+deployment:
+
+```bash
+ergasterion contract register --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local
+ergasterion contract activate --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local \
+  --candidate-digest CONTRACT_DIGEST --migration carry
+ergasterion deployment register --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local
+ergasterion deployment activate --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local \
+  --manifest-digest MANIFEST_DIGEST
+```
+
+A `carry` migration keeps a product's visibility progress across the activation; a
+`reset` migration authorises a new baseline. Both digests are read from the JSON a
+prior command already printed (`--json` on any command prints one machine-readable
+envelope with every digest it produced).
+
+Submit a delivery, its payload and sidecar manifest together:
+
+```bash
+ergasterion ingest file --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local \
+  --manifest path/to/delivery.manifest.json --payload path/to/delivery.csv
+```
+
+Replaying the same manifest and payload is idempotent: the second call reports
+`noop`, which prevents accepted rows from being duplicated.
+
+Read a product's operational status, its evidence, and its quarantined rows:
+
+```bash
+ergasterion status --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local
+ergasterion inspect --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local --delivery-id DELIVERY_ID
+ergasterion quarantine --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local --action list
+```
+
+Release a quarantined row once its underlying cause is fixed:
+
+```bash
+ergasterion quarantine --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local \
+  --action release --disposition-id DISPOSITION_ID
+```
+
+Resume a commit-blocked projection or rebuild a lagging target cursor:
+
+```bash
+ergasterion reconcile --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local
+```
+
+Create a verified backup of the complete local runtime root, and restore from it:
+
+```bash
+ergasterion local-backup --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local \
+  --action create --destination /path/outside/the/project/and/runtime/roots
+ergasterion local-backup --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local \
+  --action restore --manifest /path/to/backup/backup-manifest.json
+```
+
+`bash demo/bronze-ingestion/run_bronze_demo.sh` runs this whole sequence end to end,
+against three worked scenarios (a normal publication, a source-complete but
+acceptance-incomplete snapshot, and a backup/restore cycle), account-free and
+network-free.
+
+## 4. Create your own estate
 
 After installing the package:
 
@@ -152,7 +241,7 @@ ergasterion import-ddl model-tables.sql --mode model --domain domain_name
 These import commands transcribe structure only. They leave business decisions such
 as survivorship, identity resolution, and relationship meaning for a human to complete.
 
-## 4. Generated architecture
+## 5. Generated architecture
 
 The emitted dbt project follows a stable sequence:
 
@@ -166,14 +255,13 @@ source seeds or external tables
   -> ODCS contracts, ODPS descriptors, and property-graph projections
 ```
 
-Here, “staging layer” is a data-model term. It is the first transformation layer in
-the running product, not a statement about release readiness.
+The staging layer is the first transformation layer in the running product.
 
 The generator uses declarations as the source of truth. A source-system change is
 made in its declaration and regenerated through the same path. Hand-authored business
 logic remains in the domain configuration, canonical models, marts, and singular tests.
 
-## 5. Snowflake deployment
+## 6. Snowflake deployment
 
 This path uses a real Snowflake account. It creates database objects and consumes
 warehouse credits. The supplied warehouse is extra-small and auto-suspends after
@@ -184,7 +272,7 @@ warehouse credits. The supplied warehouse is extra-small and auto-suspends after
 Install the Snowflake CLI and the Snowflake package extra:
 
 ```bash
-python -m pip install "ergasterion-factory[snowflake]==0.3.2"
+python -m pip install "ergasterion-factory[snowflake]==0.4.0"
 snow --version
 ```
 
@@ -278,12 +366,12 @@ DROP WAREHOUSE IF EXISTS DPF_WH;
 DROP ROLE IF EXISTS DPF_BUILDER;
 ```
 
-## 6. BigQuery static validation
+## 7. BigQuery static validation
 
 Install the BigQuery extra and set a project and dataset:
 
 ```bash
-python -m pip install "ergasterion-factory[bigquery]==0.3.2"
+python -m pip install "ergasterion-factory[bigquery]==0.4.0"
 export DPF_BQ_PROJECT="your-project"
 export DPF_BQ_DATASET="ergasterion_dev"
 dbt parse --profiles-dir profiles -t bigquery --no-partial-parse
@@ -292,7 +380,7 @@ dbt parse --profiles-dir profiles -t bigquery --no-partial-parse
 This confirms that the generated project parses for dbt-bigquery. It does not validate
 credentials, permissions, cost controls, or execution against a live BigQuery project.
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 ### A command resolves outside `.venv`
 
@@ -339,7 +427,7 @@ Test the named Snow CLI connection first. Then verify the absolute key path, the
 role, and the account identifier. Do not print private-key contents or passphrases while
 diagnosing the connection.
 
-## 8. Security boundary
+## 9. Security boundary
 
 - The local DuckDB path needs no cloud credentials.
 - Snowflake and BigQuery credentials are supplied at runtime and remain outside Git.

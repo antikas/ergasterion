@@ -39,6 +39,8 @@ if __package__ in (None, ""):
 
 from ergasterion import emit
 from ergasterion import import_odcs as io_mod
+from ergasterion.estate import EstateContext
+from ergasterion.source_delivery import load_typed_declarations
 
 REPO_ROOT = emit.REPO_ROOT
 # A generated ODCS v3.1.0 contract from ergasterion/emit_contracts.py.
@@ -307,6 +309,141 @@ def test_v2_never_touches_disk() -> None:
         assert not (tmp_path / "never_written.yml").exists()
 
 
+# --- explicit source mode: --landing source -----------------------------------------
+
+_SOURCE_MODE_DOC = {
+    "apiVersion": "v3.1.0",
+    "kind": "DataContract",
+    "id": "acme:orders",
+    "version": "1.0.0",
+    "domain": "operations",
+    "schema": [{
+        "name": "orders",
+        "properties": [
+            {"name": "ID", "physicalType": "VARCHAR(36)", "required": True},
+            {"name": "amount", "physicalType": "NUMERIC(10,2)", "required": True},
+            {"name": "created_at", "physicalType": "TIMESTAMPTZ", "required": True},
+            {"name": "note", "logicalType": "string", "required": False},
+        ],
+    }],
+}
+
+
+def test_landing_seed_is_still_the_default() -> None:
+    """seed importer defaults are preserved: calling seed_declaration() with no
+    --landing argument stays byte-identical to before this module gained a second mode."""
+    _, text = io_mod.seed_declaration(ROUND_TRIP_FIXTURE, source_name="dpf_round_trip_fixture")
+    seeded = yaml.safe_load(text)
+    table = seeded["tables"]["dim_customer_segment"]
+    assert "raw_model" in table
+    assert "landing" not in table and "delivery" not in table
+
+
+def test_landing_source_carries_physical_schema_and_draft_status() -> None:
+    """Acceptance: source mode carries the physical schema and draft status without
+    guessing owner, support, access, schedule or progress."""
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp), "acme.odcs.yml", yaml.safe_dump(_SOURCE_MODE_DOC))
+        source_name, text = io_mod.seed_declaration(
+            path, source_name="acme", landing_kind="source", codec_kind="jsonl",
+        )
+        seeded = yaml.safe_load(text)
+        table = seeded["tables"]["orders"]
+
+        assert "raw_model" not in table, "landing.kind: source forbids raw_model"
+        assert "seed_tests" not in table and "model_tests" not in table
+        assert "vault_entities" not in table
+
+        landing = table["landing"]
+        assert landing["kind"] == "source"
+        assert landing["source_name"] == "acme"
+        assert landing["identifier"] == "orders"
+        assert landing["integration"] == {"kind": "managed"}
+        assert landing["content_encodings"] == ["identity"]
+        assert landing["codec"]["kind"] == "jsonl"
+
+        columns = {c["name"]: c for c in landing["physical_columns"]}
+        assert columns["id"]["logical_type"] == "utf8_string"
+        assert columns["id"]["nullable"] is False
+        assert columns["amount"]["logical_type"] == {"kind": "decimal", "precision": 10, "scale": 2}
+        assert columns["created_at"]["logical_type"] == "utc_instant"
+        assert columns["note"]["logical_type"] == "utf8_string"
+        assert columns["note"]["nullable"] is True
+
+        assert table["delivery"] == {"kind": "draft", "reason": "delivery_contract_required"}
+        for guessed in ("product", "owner", "support", "schedule", "progress", "access_policy_ref"):
+            assert guessed not in table and guessed not in table["delivery"], (
+                f"source mode must never guess {guessed!r}"
+            )
+
+
+def test_landing_source_physical_type_preferred_over_logical_type() -> None:
+    """physicalType, when present, is the more exact physical shape and wins over the
+    coarser ODCS logicalType bucket."""
+    doc = {
+        "apiVersion": "v3.1.0", "kind": "DataContract",
+        "schema": [{
+            "name": "events",
+            "properties": [
+                # ODCS logicalType says "string", but the supplier's own physicalType says
+                # this is really a boolean flag column.
+                {"name": "flag", "logicalType": "string", "physicalType": "BOOLEAN", "required": True},
+            ],
+        }],
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp), "events.odcs.yml", yaml.safe_dump(doc))
+        _, text = io_mod.seed_declaration(path, source_name="events_src", landing_kind="source")
+        seeded = yaml.safe_load(text)
+        column = seeded["tables"]["events"]["landing"]["physical_columns"][0]
+        assert column["logical_type"] == "boolean"
+
+
+def test_landing_source_loads_as_a_draft_through_source_delivery() -> None:
+    """The seeded landing/delivery block round-trips through both consumers: the legacy
+    emit.py loader (structural gate only) and ergasterion.source_delivery's typed loader
+    (resolves to an explicit draft placeholder, never a guessed production contract)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        path = _write(tmp_path, "acme.odcs.yml", yaml.safe_dump(_SOURCE_MODE_DOC))
+        source_name, text = io_mod.seed_declaration(path, source_name="acme", landing_kind="source")
+
+        decls_dir = tmp_path / "declarations"
+        decls_dir.mkdir()
+        _write(decls_dir, f"{source_name}.yml", text)
+
+        emit_ctx = emit.EstateContext.resolve(estate_root=emit.REPO_ROOT, declarations_dir=decls_dir)
+        declarations = emit.load_declarations(ctx=emit_ctx)
+        assert declarations[0]["tables"]["orders"]["landing"]["kind"] == "source"
+
+        (tmp_path / "domains").mkdir()
+        typed_ctx = EstateContext.resolve(estate_root=tmp_path, declarations_dir=decls_dir)
+        typed = load_typed_declarations(typed_ctx)
+        table = typed.tables[(source_name, "orders")]
+        assert table.kind == "draft"
+        assert table.draft_reason == "delivery_contract_required"
+        assert table.contract is None
+
+
+def test_landing_source_is_deterministic() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp), "acme.odcs.yml", yaml.safe_dump(_SOURCE_MODE_DOC))
+        _, first = io_mod.seed_declaration(path, source_name="acme", landing_kind="source")
+        _, second = io_mod.seed_declaration(path, source_name="acme", landing_kind="source")
+        assert first == second, "source-mode seeding produced non-identical output for the same input"
+
+
+def test_landing_source_rejects_unknown_codec() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write(Path(tmp), "acme.odcs.yml", yaml.safe_dump(_SOURCE_MODE_DOC))
+        try:
+            io_mod.seed_declaration(path, source_name="acme", landing_kind="source", codec_kind="parquet")
+        except ValueError as exc:
+            assert "parquet" in str(exc)
+        else:
+            raise AssertionError("expected an unsupported codec to be rejected")
+
+
 TESTS = [
     test_v2_contract_rejected_with_upgrade_message,
     test_missing_apiversion_rejected,
@@ -321,6 +458,12 @@ TESTS = [
     test_supplier_column_with_sql_punctuation_fails_seed_gate,
     test_planted_warehouse_native_cast_fails_seed_gate,
     test_v2_never_touches_disk,
+    test_landing_seed_is_still_the_default,
+    test_landing_source_carries_physical_schema_and_draft_status,
+    test_landing_source_physical_type_preferred_over_logical_type,
+    test_landing_source_loads_as_a_draft_through_source_delivery,
+    test_landing_source_is_deterministic,
+    test_landing_source_rejects_unknown_codec,
 ]
 
 

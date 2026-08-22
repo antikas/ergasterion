@@ -1,0 +1,4 @@
+{"acct_id":1,"flag":true,"n":1,"amount":12.5,"on_date":"2026-01-02","at_utc":"2026-01-02T03:04:05.000000Z","at_local":"2026-01-02T03:04:05.000000","blob":"Zg"}
+{"acct_id":"a","flag":true,"n":1,"amount":12.5,"on_date":20260102,"at_utc":"2026-01-02T03:04:05.000000Z","at_local":"2026-01-02T03:04:05.000000","blob":"Zg"}
+{"acct_id":"a","flag":true,"n":1,"amount":12.5,"on_date":"2026-01-02","at_utc":1,"at_local":"2026-01-02T03:04:05.000000","blob":"Zg"}
+{"acct_id":"a","flag":true,"n":1,"amount":12.5,"on_date":"2026-01-02","at_utc":"2026-01-02T03:04:05.000000Z","at_local":"2026-01-02T03:04:05.000000","blob":1}
