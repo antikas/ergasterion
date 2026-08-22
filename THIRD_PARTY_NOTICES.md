@@ -23,3 +23,27 @@ Both upstream projects are maintained by the Bitol community under LF AI & Data.
 The complete Apache License 2.0 text is distributed in
 `LICENSES/Apache-2.0.txt`. Ergasterion's own source code remains available under
 the MIT License in `LICENSE`.
+
+## Pinned runtime dependencies
+
+The dependencies pinned in `pyproject.toml` carry their own licences, distributed with each
+package and reproduced here by licence family. The full text of every family in use lives in
+`LICENSES/`.
+
+- pydantic 2.13.4 -- MIT. `LICENSES/MIT.txt`.
+- duckdb 1.5.5 (the `local-ingestion` and `duckdb` extras) -- MIT. `LICENSES/MIT.txt`.
+- rfc8785 0.1.4 -- Apache License 2.0. `LICENSES/Apache-2.0.txt`.
+- tzdata 2026.2 -- Apache License 2.0. `LICENSES/Apache-2.0.txt`.
+- dbt-core 1.11.12, dbt-duckdb 1.11.0, dbt-snowflake 1.11.6, dbt-bigquery 1.11.3 -- Apache
+  License 2.0. `LICENSES/Apache-2.0.txt`.
+- cryptography 49.0.0 -- dual-licensed Apache License 2.0 OR BSD 3-Clause; recorded here under
+  the BSD 3-Clause option. `LICENSES/BSD-3-Clause.txt`.
+
+## D2 (diagram rendering tool)
+
+- Component: D2, a text-to-diagram language and renderer used to build the diagrams under
+  `docs/architecture/`.
+- Upstream: https://github.com/terrastruct/d2
+- Licence: Mozilla Public License 2.0
+- The tool is a build-time executable, fetched from the upstream release and cached locally by
+  path. The complete Mozilla Public License 2.0 text is distributed in `LICENSES/MPL-2.0.txt`.

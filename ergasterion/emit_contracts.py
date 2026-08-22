@@ -50,6 +50,17 @@ if __package__ in (None, ""):
 
 from ergasterion import emit
 from ergasterion.estate import EstateContext
+from ergasterion.source_delivery import load_typed_declarations
+from ergasterion.translators.dbt import (
+    bind_production_sources,
+    bronze_binding_dir,
+    bronze_odcs_id,
+    bronze_plan_digest,
+    graph_contract_identity,
+    landing_handle,
+    load_runtime_bindings,
+    reject_draft_generation,
+)
 
 # Ambient estate context; functions default to it, a caller threads its own via `ctx=`.
 _DEFAULT_CTX = EstateContext.default()
@@ -449,6 +460,159 @@ def dump_yaml(contract: dict[str, Any]) -> str:
     return GENERATED_HEADER + body
 
 
+_ODCS_LOGICAL = {
+    "boolean": "boolean",
+    "int64": "integer",
+    "utf8_string": "string",
+    "date": "date",
+    "utc_instant": "timestamp",
+    "binary": "string",
+    "decimal": "number",
+    "local_datetime": "timestamp",
+}
+
+
+def _odcs_logical_type(logical_type: Any) -> str:
+    from ergasterion.source_delivery import logical_type_token
+
+    return _ODCS_LOGICAL[logical_type_token(logical_type)]
+
+
+def _bronze_quality(contract: Any) -> list[dict[str, Any]]:
+    """Product-intent quality policy. Run telemetry never enters this projection."""
+    quality: list[dict[str, Any]] = []
+    for rule in contract.delivery.quality.rules:
+        kind = rule.kind
+        if kind == "not_null":
+            quality.append(_library_metric("nullValues", "completeness", f"not_null on {rule.field}"))
+        elif kind == "unique_key":
+            quality.append(
+                _library_metric("duplicateValues", "uniqueness", f"unique_key on {list(rule.fields)}")
+            )
+        else:
+            quality.append(
+                _custom_rule(
+                    f"bronze quality rule {kind}",
+                    "conformity",
+                    f"Authored Bronze quality rule kind={kind}.",
+                )
+            )
+    return quality
+
+
+def build_bronze_contract(
+    typed_table: Any, binding: Any, *, plan_digest: str
+) -> dict[str, Any]:
+    """Static ODCS v3.1 projection of one Bronze Product Contract. Coordinates
+    come only from the selected RuntimeBinding; no operational telemetry."""
+    contract = typed_table.contract
+    identity = graph_contract_identity(typed_table, plan_digest=plan_digest)
+    landing = binding.landing_ports[landing_handle(contract)]
+    relations = binding.projection_relations
+    properties = []
+    for field in contract.projection:
+        prop: dict[str, Any] = {
+            "name": field.name,
+            "logicalType": _odcs_logical_type(field.logical_type),
+        }
+        if not field.nullable:
+            prop["required"] = True
+        properties.append(prop)
+
+    schema_object: dict[str, Any] = {
+        "name": contract.interfaces.published,
+        "physicalName": relations.active_alias,
+        "logicalType": "object",
+        "physicalType": "table",
+        "properties": properties,
+    }
+    quality = _bronze_quality(contract)
+    if quality:
+        schema_object["quality"] = quality
+
+    server_entry: dict[str, Any] = {
+        "server": binding.binding_id,
+        "type": "custom",
+        "environment": binding.environment,
+        "schema": relations.schema_ref,
+    }
+    database = relations.database_ref or landing.database_ref
+    if database:
+        server_entry["database"] = database
+
+    lineage = [{"source": field.source, "name": field.name} for field in contract.projection]
+    product = contract.product
+    doc: dict[str, Any] = {
+        "apiVersion": API_VERSION,
+        "kind": KIND,
+        "id": bronze_odcs_id(identity),
+        "version": product.product_version,
+        "status": "active",
+        "name": identity["table"],
+        "domain": product.domain,
+        "dataProduct": bronze_odcs_id(identity),
+        "description": {"purpose": product.description},
+        "servers": [server_entry],
+        "schema": [schema_object],
+        "team": {"name": product.owner, "description": f"Owner {product.owner}."},
+        "support": [
+            {
+                "channel": product.support,
+                "url": f"https://example.invalid/support/{product.support}",
+                "description": f"Support contact {product.support}.",
+            }
+        ],
+        "customProperties": [
+            {"property": "dpf.identity", "value": identity},
+            {"property": "dpf.classification", "value": product.classification},
+            {"property": "dpf.accessPolicyRef", "value": product.access_policy_ref},
+            {"property": "dpf.retentionPolicyRef", "value": product.retention_policy_ref},
+            {"property": "dpf.fieldLineage", "value": lineage},
+        ],
+    }
+    return doc
+
+
+def generate_bronze(
+    ctx: EstateContext | None = None,
+    *,
+    binding_path: Path | None = None,
+    environment: str | None = None,
+) -> dict[Path, str]:
+    """Binding-specific ODCS projections under contracts/bronze/**."""
+    ctx = ctx or _DEFAULT_CTX
+    typed = load_typed_declarations(ctx)
+    reject_draft_generation(typed)
+    if not typed.production_contracts():
+        return {}
+    if binding_path is None or environment is None:
+        raise ValueError(
+            "production Bronze ODCS generation needs --binding PATH and --environment NAME"
+        )
+    bindings = load_runtime_bindings(binding_path, environment)
+    plan_digest = bronze_plan_digest()
+    bound = bind_production_sources(typed, bindings)
+    files: dict[Path, str] = {}
+    for key, typed_table in typed.tables.items():
+        if typed_table.kind != "production":
+            continue
+        binding = bound[key]
+        path = (
+            bronze_binding_dir(ctx.contracts_dir, typed_table.contract.logical_identity, binding.binding_id)
+            / "bronze.odcs.yml"
+        )
+        files[path] = dump_yaml(build_bronze_contract(typed_table, binding, plan_digest=plan_digest))
+    return files
+
+
+def _is_bronze_path(path: Path, contracts_dir: Path) -> bool:
+    bronze = (contracts_dir / "bronze").resolve()
+    try:
+        return path.resolve().is_relative_to(bronze)
+    except (OSError, ValueError):
+        return False
+
+
 def generate(ctx: EstateContext | None = None) -> dict[Path, str]:
     """Build the full {path: yaml_text} set of contracts. Also runs the completeness gate."""
     ctx = ctx or _DEFAULT_CTX
@@ -523,6 +687,8 @@ def write_files(files: dict[Path, str], *, ctx: EstateContext | None = None) -> 
     # Prune stale contracts (a served table renamed/removed) so the dir can't accrete orphans.
     if contracts_dir.exists():
         for existing in contracts_dir.rglob("*.odcs.yml"):
+            if _is_bronze_path(existing, contracts_dir):
+                continue
             if existing not in live:
                 changed.append(existing)
                 existing.unlink()
@@ -563,6 +729,58 @@ def check_files(files: dict[Path, str], *, ctx: EstateContext | None = None) -> 
     if contracts_dir.exists():
         live = set(files)
         for existing in sorted(contracts_dir.rglob("*.odcs.yml")):
+            if _is_bronze_path(existing, contracts_dir):
+                continue
+            if existing not in live:
+                problems.append(
+                    f"ORPHAN (on disk, no longer generated): {existing.relative_to(root).as_posix()}"
+                )
+    return problems
+
+
+def write_bronze_files(files: dict[Path, str], *, ctx: EstateContext | None = None) -> list[Path]:
+    ctx = ctx or _DEFAULT_CTX
+    bronze_dir = ctx.contracts_dir / "bronze"
+    changed: list[Path] = []
+    live = set(files)
+    if bronze_dir.exists():
+        for existing in bronze_dir.rglob("bronze.odcs.yml"):
+            if existing not in live:
+                changed.append(existing)
+                existing.unlink()
+    for path in sorted(files):
+        content = files[path]
+        current = path.read_text(encoding="utf-8") if path.exists() else None
+        if current == content:
+            continue
+        changed.append(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content.encode("utf-8"))
+    return changed
+
+
+def check_bronze_files(files: dict[Path, str], *, ctx: EstateContext | None = None) -> list[str]:
+    ctx = ctx or _DEFAULT_CTX
+    bronze_dir = ctx.contracts_dir / "bronze"
+    root = ctx.root
+    problems: list[str] = []
+    for path in sorted(files):
+        rel = path.relative_to(root).as_posix()
+        if not path.exists():
+            problems.append(f"MISSING (never generated on disk): {rel}")
+            continue
+        current = path.read_text(encoding="utf-8")
+        if current != files[path]:
+            diff = "\n".join(
+                difflib.unified_diff(
+                    current.splitlines(), files[path].splitlines(),
+                    fromfile=f"{rel} (on disk)", tofile=f"{rel} (regenerated)", lineterm="",
+                )
+            )
+            problems.append(f"DRIFT (hand-edited or stale): {rel}\n{diff}")
+    if bronze_dir.exists():
+        live = set(files)
+        for existing in sorted(bronze_dir.rglob("bronze.odcs.yml")):
             if existing not in live:
                 problems.append(
                     f"ORPHAN (on disk, no longer generated): {existing.relative_to(root).as_posix()}"
@@ -580,35 +798,66 @@ def main() -> int:
         "--estate-root", type=Path, default=None,
         help="Estate root to emit contracts against (resolved from the environment or working directory when omitted).",
     )
+    parser.add_argument(
+        "--binding", type=Path, default=None,
+        help="RuntimeBinding YAML file or directory for production Bronze ODCS projections.",
+    )
+    parser.add_argument(
+        "--environment", default=None,
+        help="Mandatory matching assertion against RuntimeBinding.environment.",
+    )
     args = parser.parse_args()
 
     ctx = EstateContext.resolve(estate_root=args.estate_root)
     validator = load_schema_validator()
     files = generate(ctx)
+    try:
+        bronze_files = generate_bronze(ctx, binding_path=args.binding, environment=args.environment)
+    except ValueError as error:
+        print(f"FAIL: {error}")
+        return 2
 
     schema_errors = validate_all(files, validator, ctx=ctx)
+    bronze_schema_errors = validate_all(bronze_files, validator, ctx=ctx) if bronze_files else []
+    schema_errors = schema_errors + bronze_schema_errors
     if schema_errors:
         print(f"ODCS schema-validation FAIL: {len(schema_errors)} error(s) against {SCHEMA_PATH.name}:")
         for err in schema_errors:
             print(f"  {err}")
         return 1
-    print(f"ODCS schema-validation OK: {len(files)} contract(s) valid against {SCHEMA_PATH.name}")
+    print(
+        f"ODCS schema-validation OK: {len(files)} served contract(s)"
+        + (f" + {len(bronze_files)} bronze contract(s)" if bronze_files else "")
+        + f" valid against {SCHEMA_PATH.name}"
+    )
 
     if args.check:
-        problems = check_files(files, ctx=ctx)
+        problems = check_files(files, ctx=ctx) + check_bronze_files(bronze_files, ctx=ctx)
         if problems:
             print(f"ODCS contract gate FAIL: {len(problems)} on-disk divergence(s):")
             for problem in problems:
                 print(problem)
             return 1
-        print(f"ODCS contract gate OK: {len(files)} on-disk contract(s) byte-match the generated set")
+        print(
+            f"ODCS contract gate OK: {len(files)} on-disk served contract(s) byte-match"
+            + (f" and {len(bronze_files)} bronze contract(s) byte-match" if bronze_files else "")
+        )
         return 0
 
     changed = write_files(files, ctx=ctx)
+    bronze_changed = write_bronze_files(bronze_files, ctx=ctx)
     print(f"generated/updated {len([p for p in changed if p in files])} of {len(files)} contract(s)")
     for path in sorted(changed):
         marker = "wrote" if path in files else "pruned"
         print(f"  {marker} {path.relative_to(ctx.root).as_posix()}")
+    if bronze_files or bronze_changed:
+        print(
+            f"generated/updated {len([p for p in bronze_changed if p in bronze_files])} "
+            f"of {len(bronze_files)} bronze contract(s)"
+        )
+        for path in sorted(bronze_changed):
+            marker = "wrote" if path in bronze_files else "pruned"
+            print(f"  {marker} {path.relative_to(ctx.root).as_posix()}")
     return 0
 
 

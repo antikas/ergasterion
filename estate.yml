@@ -1,0 +1,8 @@
+# The target-neutral estate root. `estate.namespace` is the mandatory production
+# qualifier for every Bronze Product Contract's globally qualified identity
+# `(estate_namespace, source.name, tables.<key>)`; a seed-only legacy estate may
+# omit this file entirely (ergasterion.source_delivery.load_estate_namespace()
+# returns None and every table stays seed-backed). It is never derived from a
+# path. See docs/specifications/bronze-product-v1.md.
+estate:
+  namespace: io.antikas.ergasterion

@@ -74,7 +74,27 @@ def normalise_landing(table: dict[str, Any], where: str) -> dict[str, Any]:
         raise ValueError(
             f"{where}.landing.kind: expected 'seed' or 'source', got {kind!r}"
         )
-    allowed_keys = {"kind"} if kind == "seed" else {"kind", "source_name", "identifier"}
+    # The Bronze-contract fields (integration, content_encodings, codec,
+    # physical_columns) are OPTIONAL here: this structural gate stays the single
+    # entry point for the landing discriminator, but semantic validation of the
+    # full Bronze shape -- required once a table also carries a `delivery`
+    # block -- belongs to ergasterion.source_delivery (the "no template owns
+    # semantic validation" split). A bare {kind: source, source_name,
+    # identifier} landing with no delivery block stays a legacy dbt source()
+    # reference, unchanged from before this module existed.
+    allowed_keys = (
+        {"kind"}
+        if kind == "seed"
+        else {
+            "kind",
+            "source_name",
+            "identifier",
+            "integration",
+            "content_encodings",
+            "codec",
+            "physical_columns",
+        }
+    )
     unknown_keys = sorted(set(landing) - allowed_keys)
     if unknown_keys:
         raise ValueError(

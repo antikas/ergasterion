@@ -1,0 +1,4 @@
+# Fixture dbt projects live under tests/fixtures/ for the packaged python tests.
+# The root project must never discover them: a nested dbt_project.yml read as a
+# schema file fails every three-target parse.
+tests/fixtures/

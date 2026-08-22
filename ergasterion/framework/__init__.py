@@ -1,0 +1,96 @@
+"""Ergasterion's platform-neutral pattern registry, composition graph and router.
+
+This package classifies the canonical fifteen patterns, resolves the Bronze
+layer to its exact, normative, immutable, digest-bearing execution graph, and
+routes that graph to a fixed set of translators. It imports no dbt, DuckDB,
+SQLite or orchestrator package. It never imports ``ergasterion.translators``:
+the dependency flows one way.
+"""
+
+from ergasterion.framework.models import (
+    ConventionsDocument,
+    DriftReport,
+    Edge,
+    EdgeRole,
+    ExecutionPlan,
+    FrameworkError,
+    HandoffSchemaId,
+    InvalidLayerArgumentError,
+    Layer,
+    Occurrence,
+    PatternDisposition,
+    PatternId,
+    Role,
+    TranslationResult,
+    TranslatorValidationResult,
+    UnsupportedLayerError,
+    ValidationFinding,
+    ValidationSeverity,
+    compute_plan_digest,
+)
+from ergasterion.framework.patterns import (
+    BRONZE_FORBIDDEN,
+    BRONZE_MANDATORY,
+    BRONZE_OPTIONAL,
+    PATTERN_DISPLAY_NAMES,
+    ResolutionStatus,
+    classify_bronze,
+    resolution_status,
+)
+from ergasterion.framework.resolver import resolve
+from ergasterion.framework.routing import (
+    BadHandoffError,
+    DigestMismatchError,
+    DuplicateExecutionOwnerError,
+    DuplicateTargetNameError,
+    MissingExecutionOwnerError,
+    ReorderedOwnershipError,
+    RoutableTranslator,
+    RouteAssignment,
+    RoutingError,
+    RoutingResult,
+    TranslationRouter,
+    UndeclaredAttachmentError,
+)
+
+__all__ = [
+    "BRONZE_FORBIDDEN",
+    "BRONZE_MANDATORY",
+    "BRONZE_OPTIONAL",
+    "BadHandoffError",
+    "ConventionsDocument",
+    "DigestMismatchError",
+    "DriftReport",
+    "DuplicateExecutionOwnerError",
+    "DuplicateTargetNameError",
+    "Edge",
+    "EdgeRole",
+    "ExecutionPlan",
+    "FrameworkError",
+    "HandoffSchemaId",
+    "InvalidLayerArgumentError",
+    "Layer",
+    "MissingExecutionOwnerError",
+    "Occurrence",
+    "PATTERN_DISPLAY_NAMES",
+    "PatternDisposition",
+    "PatternId",
+    "ReorderedOwnershipError",
+    "ResolutionStatus",
+    "Role",
+    "RoutableTranslator",
+    "RouteAssignment",
+    "RoutingError",
+    "RoutingResult",
+    "TranslationResult",
+    "TranslationRouter",
+    "TranslatorValidationResult",
+    "UndeclaredAttachmentError",
+    "UnsupportedLayerError",
+    "ValidationFinding",
+    "ValidationSeverity",
+    "classify_bronze",
+    "compute_plan_digest",
+    "resolution_status",
+    "resolve",
+]

@@ -1,0 +1,15 @@
+name: ergasterion
+version: "0.1.0"
+config-version: 2
+profile: ergasterion
+model-paths: ["models"]
+seed-paths: ["seeds"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: target
+clean-targets: ["target", "dbt_packages", "logs"]
+vars:
+  dpf_heartbeat_slo_seconds: 120
+models:
+  ergasterion:
+    +materialized: table

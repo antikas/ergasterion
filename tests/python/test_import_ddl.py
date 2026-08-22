@@ -40,6 +40,8 @@ if __package__ in (None, ""):
 from ergasterion import emit
 from ergasterion import import_ddl as idd
 from ergasterion import import_odcs as io_mod
+from ergasterion.estate import EstateContext
+from ergasterion.source_delivery import load_typed_declarations
 
 REPO_ROOT = emit.REPO_ROOT
 
@@ -391,6 +393,164 @@ def test_model_provenance_header_matches_import_odcs_convention() -> None:
         assert "Run ergasterion/emit.py once those" in text and "TODOs are filled in." in text
 
 
+# --- (c) feed DDL --landing source -> a Bronze landing/delivery draft --------------------
+
+SOURCE_MODE_DDL = """
+CREATE TABLE Orders (
+    ID VARCHAR(36) PRIMARY KEY,
+    Amount NUMERIC(10,2) NOT NULL,
+    Created_At TIMESTAMPTZ NOT NULL,
+    Note VARCHAR(200)
+);
+"""
+
+
+def test_landing_seed_is_still_the_default() -> None:
+    """seed importer defaults are preserved: calling seed_declaration_from_ddl() with no
+    --landing argument stays byte-identical to before this module gained a second mode."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ddl_path = _write(Path(tmp), "feed.sql", FEED_DDL)
+        _, text = idd.seed_declaration_from_ddl(ddl_path, source_name="testfeed")
+        seeded = yaml.safe_load(text)
+        table = seeded["tables"]["customers"]
+        assert "raw_model" in table
+        assert "landing" not in table and "delivery" not in table
+
+
+def test_landing_source_carries_physical_schema_and_draft_status() -> None:
+    """Acceptance: source mode carries the physical schema and draft status without
+    guessing owner, support, access, schedule or progress."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ddl_path = _write(Path(tmp), "orders.sql", SOURCE_MODE_DDL)
+        source_name, text = idd.seed_declaration_from_ddl(
+            ddl_path, source_name="acme", landing_kind="source", codec_kind="jsonl",
+        )
+        seeded = yaml.safe_load(text)
+        table = seeded["tables"]["orders"]
+
+        assert "raw_model" not in table, "landing.kind: source forbids raw_model"
+        assert "seed_tests" not in table and "model_tests" not in table
+        assert "vault_entities" not in table
+
+        landing = table["landing"]
+        assert landing["kind"] == "source"
+        assert landing["source_name"] == "acme"
+        assert landing["identifier"] == "orders"
+        assert landing["integration"] == {"kind": "managed"}
+        assert landing["codec"]["kind"] == "jsonl"
+
+        columns = {c["name"]: c for c in landing["physical_columns"]}
+        assert columns["id"]["logical_type"] == "utf8_string"
+        assert columns["id"]["nullable"] is False, "PRIMARY KEY implies NOT NULL"
+        assert columns["amount"]["logical_type"] == {"kind": "decimal", "precision": 10, "scale": 2}
+        assert columns["created_at"]["logical_type"] == "utc_instant"
+        assert columns["note"]["logical_type"] == "utf8_string"
+        assert columns["note"]["nullable"] is True
+
+        assert table["delivery"] == {"kind": "draft", "reason": "delivery_contract_required"}
+        for guessed in ("product", "owner", "support", "schedule", "progress", "access_policy_ref"):
+            assert guessed not in table and guessed not in table["delivery"], (
+                f"source mode must never guess {guessed!r}"
+            )
+
+
+def test_landing_source_maps_every_bronze_physical_shape() -> None:
+    """Every DDL type family this module reads maps onto Bronze's LogicalType
+    vocabulary: bare SimpleLogicalType tokens, a parameterised decimal (explicit and
+    default precision/scale), and a parameterised local_datetime (default timezone)."""
+    ddl = """
+CREATE TABLE things (
+    a INTEGER,
+    b VARCHAR(10),
+    c DATE,
+    d BOOLEAN,
+    e BLOB,
+    f NUMERIC,
+    g NUMERIC(6,3),
+    h TIMESTAMP,
+    i TIMESTAMPTZ
+);
+"""
+    with tempfile.TemporaryDirectory() as tmp:
+        ddl_path = _write(Path(tmp), "things.sql", ddl)
+        _, text = idd.seed_declaration_from_ddl(ddl_path, source_name="things_src", landing_kind="source")
+        seeded = yaml.safe_load(text)
+        columns = {c["name"]: c["logical_type"] for c in seeded["tables"]["things"]["landing"]["physical_columns"]}
+        assert columns["a"] == "int64"
+        assert columns["b"] == "utf8_string"
+        assert columns["c"] == "date"
+        assert columns["d"] == "boolean"
+        assert columns["e"] == "binary"
+        assert columns["f"] == {"kind": "decimal", "precision": 38, "scale": 9}, "no precision/scale -> the documented default"
+        assert columns["g"] == {"kind": "decimal", "precision": 6, "scale": 3}
+        assert columns["h"] == {"kind": "local_datetime", "timezone": "UTC"}
+        assert columns["i"] == "utc_instant"
+
+
+def test_landing_source_table_key_and_identifier_are_lowercase_identifiers() -> None:
+    """Bronze's Identifier grammar is lowercase-only; a mixed-case DDL table/column name
+    is folded so the draft is already conformant -- no rename needed to go to production."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ddl_path = _write(Path(tmp), "orders.sql", SOURCE_MODE_DDL)
+        _, text = idd.seed_declaration_from_ddl(ddl_path, source_name="acme", landing_kind="source")
+        seeded = yaml.safe_load(text)
+        assert "orders" in seeded["tables"] and "Orders" not in seeded["tables"]
+        assert seeded["tables"]["orders"]["landing"]["identifier"] == "orders"
+
+
+def test_landing_source_loads_as_a_draft_through_source_delivery() -> None:
+    """The seeded landing/delivery block round-trips through both consumers: the legacy
+    emit.py loader (structural gate only) and ergasterion.source_delivery's typed loader
+    (resolves to an explicit draft placeholder, never a guessed production contract)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        ddl_path = _write(tmp_path, "orders.sql", SOURCE_MODE_DDL)
+        source_name, text = idd.seed_declaration_from_ddl(ddl_path, source_name="acme", landing_kind="source")
+
+        decls_dir = tmp_path / "declarations"
+        decls_dir.mkdir()
+        _write(decls_dir, f"{source_name}.yml", text)
+
+        emit_ctx = emit.EstateContext.resolve(estate_root=emit.REPO_ROOT, declarations_dir=decls_dir)
+        declarations = emit.load_declarations(ctx=emit_ctx)
+        assert declarations[0]["tables"]["orders"]["landing"]["kind"] == "source"
+
+        (tmp_path / "domains").mkdir()
+        typed_ctx = EstateContext.resolve(estate_root=tmp_path, declarations_dir=decls_dir)
+        typed = load_typed_declarations(typed_ctx)
+        table = typed.tables[(source_name, "orders")]
+        assert table.kind == "draft"
+        assert table.draft_reason == "delivery_contract_required"
+        assert table.contract is None
+
+
+def test_landing_source_is_deterministic() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        ddl_path = _write(Path(tmp), "orders.sql", SOURCE_MODE_DDL)
+        _, first = idd.seed_declaration_from_ddl(ddl_path, source_name="acme", landing_kind="source")
+        _, second = idd.seed_declaration_from_ddl(ddl_path, source_name="acme", landing_kind="source")
+        assert first == second, "source-mode seeding produced non-identical output for the same input"
+
+
+def test_landing_source_rejected_for_model_mode() -> None:
+    """--landing source applies to --mode feed only -- a domain carries no landing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        ddl_path = _write(tmp_path, "model.sql", MODEL_DDL)
+        argv = [
+            "import-ddl", str(ddl_path), "--mode", "model", "--domain", "testmodel",
+            "--landing", "source", "--estate-root", str(tmp_path),
+        ]
+        original_argv = sys.argv
+        sys.argv = argv
+        try:
+            code = idd.main()
+        finally:
+            sys.argv = original_argv
+        assert code == 1, "expected --landing source under --mode model to fail"
+        assert not (tmp_path / "domains" / "testmodel.yml").exists()
+
+
 TESTS = [
     test_no_create_table_rejected,
     test_no_columns_rejected,
@@ -408,6 +568,13 @@ TESTS = [
     test_model_ddl_never_guesses_survivorship_er_relations,
     test_model_ddl_seeding_is_deterministic,
     test_model_provenance_header_matches_import_odcs_convention,
+    test_landing_seed_is_still_the_default,
+    test_landing_source_carries_physical_schema_and_draft_status,
+    test_landing_source_maps_every_bronze_physical_shape,
+    test_landing_source_table_key_and_identifier_are_lowercase_identifiers,
+    test_landing_source_loads_as_a_draft_through_source_delivery,
+    test_landing_source_is_deterministic,
+    test_landing_source_rejected_for_model_mode,
 ]
 
 

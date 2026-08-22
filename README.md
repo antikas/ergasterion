@@ -6,7 +6,7 @@
 
 Turning raw source feeds into a trustworthy warehouse means writing a lot of plumbing by hand: typed staging tables, history that never overwrites, clean served tables, tests. Ergasterion is a factory that builds that plumbing instead. You write a short description of each source: what it sends, what the columns mean, and which real-world things (a customer, an order, a fund) the columns refer to. The engine reads the descriptions and generates the whole pipeline. Change a description and rebuild; the plumbing is never written by hand, so it never falls out of date.
 
-One source per entity is a perfectly normal estate. You still get the full generated pipeline, the contracts, and the map. And when several sources describe the same real-world thing (a retailer hearing about its customers from a storefront, a marketplace, and a CRM, each spelling names its own way), the factory earns its keep twice over: it works out which records are the same thing, keeps every source's version of every fact, and applies your written rules for which value wins.
+One source per entity is a perfectly normal estate. You still get the full generated pipeline, contracts, and map. Several sources may also describe the same real-world thing. A retailer, for example, may hear about one customer from its storefront, a marketplace, and its CRM, with each source spelling the name differently. The factory resolves those records, keeps every source's version of each fact, and applies the written rule for which value wins.
 
 The factory itself does not know or care what a "customer" or a "fund" is. Everything it does is generic. This repository proves that on two worked domains that share no vocabulary at all, one online-retail and one investment, both described in full further down.
 
@@ -18,27 +18,28 @@ the checkout. The engine and the DuckDB path need local tools only, with no ware
 - **Python 3.11 or newer.** Check with `python --version`.
 - **Git**, to fetch the code if you install from source.
 - **Bash and a terminal**, to run the repository checks and demonstrations.
-- **The repository build dependencies**, when you want to validate or demonstrate this checkout. The one-time setup in the [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md#1-install) creates the repository `.venv` and installs the tested stack: dbt Core 1.11.12, dbt-snowflake 1.11.6, dbt-bigquery 1.11.3, and dbt-duckdb 1.11.0. It then installs the repository package in editable mode. Run the validator from that activated shell or select the `.venv` Python and dbt executables explicitly as shown there.
+- **The repository build dependencies**, when you want to validate or demonstrate this checkout. The one-time setup in the [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md#1-install) creates the repository `.venv`. It installs dbt Core 1.11.12 with dbt-snowflake 1.11.6, dbt-bigquery 1.11.3, and dbt-duckdb 1.11.0, then installs Ergasterion in editable mode. Run the validator from that activated shell or select the `.venv` Python and dbt executables explicitly as shown there.
 - **A warehouse account only for the live Snowflake route.** The complete local DuckDB run needs no warehouse account.
 
 ## Install the engine and local database support
 
-The `duckdb` extra installs the engine, dbt Core, and the tested DuckDB adapter.
+The `local-ingestion` extra installs the engine, dbt Core, DuckDB, and the tested
+DuckDB adapter.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install "ergasterion-factory[duckdb]"
+pip install "ergasterion-factory[local-ingestion]"
 ```
 
-The virtual environment keeps the installation isolated from the rest of your system. The base package, `pip install ergasterion-factory`, is sufficient when you only need generation and import commands. Snowflake and BigQuery users can install the `snowflake` or `bigquery` extra.
+The virtual environment keeps the installation isolated from the rest of your system. The base package, `pip install ergasterion-factory`, is sufficient when you only need generation and import commands. Existing installs that use the `duckdb` extra remain supported; it is an alias of `local-ingestion`. Snowflake and BigQuery users can install the `snowflake` or `bigquery` extra.
 
 **Or install from the source**, if you want to read the engine or keep an editable checkout that tracks your own edits. Clone the repository and install it in place. The `-e` means *editable*, so pulling updates never means reinstalling.
 
 ```bash
 git clone https://github.com/antikas/ergasterion
 cd ergasterion
-pip install -e ".[duckdb]"
+pip install -e ".[local-ingestion]"
 ```
 
 ## Check it works, and two ways to run it
@@ -62,7 +63,7 @@ ergasterion init my-estate
 cd my-estate
 ```
 
-An **estate** is your own project, kept separate from the engine. Inside you will find empty `domains/`, `declarations/`, `seeds/`, and `tests/` folders to fill, a `dbt_project.yml` and connection template, the engine's shared helper macros copied in (dbt only ever loads macros from inside a project's own tree, so this copy is not optional), and a `GETTING-STARTED.md` that walks the estate in full. This README gets you to your first build. That file is your reference for everything after.
+An **estate** is your own project, kept separate from the engine. It contains empty `domains/`, `declarations/`, `seeds/`, and `tests/` folders, plus a `dbt_project.yml` and connection template. The engine's shared helper macros are copied into the estate because dbt loads macros from the project's own tree. A generated `GETTING-STARTED.md` walks through the estate in full. This README gets you to the first build; that file is the reference after it.
 
 ## Describe what you have
 
@@ -105,7 +106,7 @@ ergasterion import-odcs supplier-contract.yml   # from a supplier's data contrac
 
 Both read a machine-readable definition you already have and write the mechanical first draft of a source description: the column names, the types, and which ones must never be blank or duplicated. What no definition can tell you, which real-world thing each table describes, is left as a clearly marked `TODO` for you to fill. They speed up the typing. They never guess the judgement. See the worked [ODCS](https://github.com/antikas/ergasterion/blob/master/DEMO.md#worked-example-hand-me-your-data-contract) and [DDL](https://github.com/antikas/ergasterion/blob/master/DEMO.md#worked-example-seeding-from-raw-ddl) examples.
 
-## Every command
+## Generation and estate commands
 
 Run any of these as `ergasterion <command>` or `python -m ergasterion <command>`. Add `--help` to any for its options.
 
@@ -122,6 +123,14 @@ Run any of these as `ergasterion <command>` or `python -m ergasterion <command>`
 | `ergasterion structure` | Check the estate against each target's declared structural budgets. |
 
 Everything the repository ships runs on made-up data that imitates the real shapes these sources take. There is no real or client information anywhere in it, and the e-commerce domain's people, addresses, and brands are entirely invented (synthetic emails sit on the reserved `example.com` domain). The public repository is released under the MIT licence; see the LICENSE file in the repository you are reading.
+
+## Bronze: how a source's delivered batch gets in
+
+Everything above starts from a domain description that already trusts its seed data. Bronze earns that trust. A team writes one Bronze Product Contract per source table, covering its native schema, delivery mode, quality rules, and publication policy. The runtime applies that contract to every delivery the same way. A delivery's raw bytes are preserved exactly as received, parsed, checked against every declared rule, and either published or quarantined with a locator back to the exact bytes that failed. Nobody decides a single delivery's outcome by hand at run time; the contract decided it in advance.
+
+Bronze runs through its own closed operator command surface (`ergasterion plan`, `contract register`/`activate`, `deployment register`/`activate`, `ingest file`/`due`, `reconcile`, `local-backup`, `status`, `inspect`, `quarantine`). The local reference platform needs no external account. [`bronze-ingestion.md`](https://github.com/antikas/ergasterion/blob/master/docs/architecture/bronze-ingestion.md) explains the full mechanism. [`demo/bronze-ingestion/`](https://github.com/antikas/ergasterion/blob/master/demo/bronze-ingestion/) runs it end to end with no warehouse account or network call.
+
+The runtime binds to its environment through declared adapter ports. Delivery transport, operational state, raw storage, the Bronze store, projections, and the policy authority each sit behind a port, and a runtime binding names the adapter that fills each one. The local reference platform uses SQLite for operational state, DuckDB for Bronze and projections, and local files for delivery and raw storage. The packaged conformance runner checks another implementation against the same interface vectors. Those checks establish compatibility with the runtime contract; production access, resilience, and operation remain the responsibility of that environment.
 
 ---
 
@@ -141,7 +150,7 @@ Follow one customer through it. Ava Thompson buys from all three feeds under thr
 
 **Recognition.** The system resolves all three records to one customer because two of them share the loyalty id, the strongest signal available, checked first. Where no loyalty id is shared, it tries a normalised email match. A customer seen under a case-different or punctuation-different email in two feeds still resolves to one identity. Records with neither signal remain separate. The e-commerce domain does not send customer pairs into the probabilistic review queue.
 
-**Memory and choosing.** Every feed's version of a customer's contact details, preferences, and order history is kept, dated. Survivorship rules, written by the person responsible and changeable at any time, choose the winner per field: the CRM feed wins contact attributes (the system of record for who the customer actually is), the storefront wins marketing preferences and consent, the marketplace wins its own order-side attributes. A seeded conflict (Ava's city, recorded differently across feeds) proves the rule picks the intended winner, not an arbitrary one.
+**Memory and choosing.** Every feed's version of a customer's contact details, preferences, and order history is kept, dated. Survivorship rules are written by the person responsible and can be changed at any time. The CRM supplies contact attributes, while marketing preferences and consent come from the storefront. The marketplace remains the authority for its order attributes. A seeded conflict (Ava's city, recorded differently across feeds) proves the rule picks the intended winner, not an arbitrary one.
 
 **Placed, over time.** A customer's loyalty tier (bronze, silver, gold) changes without the customer's own identity changing. Ava was silver from the start of 2025 and became gold from May. An order placed in March attributes to silver, one placed in June attributes to gold, and a query about March always gets March's answer no matter when it is asked, from the same dated history (`models/marts`, `dim_customer_segment`).
 
@@ -161,7 +170,7 @@ An investment dataset built from four described sources: fund-administration and
 
 **Memory.** Every source's version of every fact is kept, with the date it arrived and the source it came from. Nothing is overwritten. If a source corrects itself next month, both the old and new values are there, each with its time (`models/raw_vault`, a warehouse pattern the industry calls a Data Vault).
 
-**Choosing.** For each fact about the fund, one value must win: the fund's name, its size, its currency. The winners are chosen by rules that the person responsible sets and can change at any time, written in one readable file: prefer the fund administrator for capital figures, prefer the most recent business date where sources tie, and so on. The system applies the rules; it never invents its own. The chosen record keeps, for every single field, a note of which source won and when (`models/business_vault`, "golden records").
+**Choosing.** For each fact about the fund, one value must win. The responsible person sets the rules in one readable file and can change them at any time. Capital figures prefer the fund administrator, while the most recent business date breaks a source tie. The system applies those rules; it never invents its own. The chosen record keeps, for every field, a note of which source won and when (`models/business_vault`, "golden records").
 
 **Serving.** The winning values are arranged into a small set of clean tables shaped for people and tools to use: funds, management firms, companies, cash movements, valuations (`models/canonical` and `models/marts`).
 
@@ -171,9 +180,9 @@ An investment dataset built from four described sources: fund-administration and
 
 Two more things can happen to a fund that Apex Growth II does not show, so here they are on funds that do.
 
-**Wrapped.** Some funds are not held directly: money moves through a legal vehicle sitting between the fund and the cash flows, sometimes with one vehicle nested inside another. Orion Credit Opportunities I is held this way, through several vehicles, one nested inside another. Whichever vehicle a payment arrives through, the totals still have to add up to what the fund as a whole received and paid out, and the system checks that they do, every time (`models/canonical` and `models/marts`, the vehicle-to-fund rollup).
+**Wrapped.** Some funds are held through a legal vehicle between the fund and its cash flows, sometimes with one vehicle nested inside another. Orion Credit Opportunities I is held this way through several vehicles. Whichever vehicle a payment arrives through, its totals must reconcile to what the fund as a whole received and paid out. The system checks that reconciliation every time (`models/canonical` and `models/marts`, the vehicle-to-fund rollup).
 
-**Renamed.** A fund's manager can change without the fund changing at all: through a merger, a rebrand, an acquisition. Harbor Infrastructure III's manager was Harbor Infrastructure Partners until the start of 2025, when it became Meridian Infrastructure Advisors. The fund's own identity never moved. The two manager names are kept as two separate records joined by a dated event, so a return earned in 2024 stays attributed to Harbor Infrastructure Partners and a return earned after the rebrand belongs to Meridian (`models/raw_vault`, the manager succession link).
+**Renamed.** A fund's manager can change through a merger, rebrand, or acquisition without changing the fund's identity. Harbor Infrastructure III's manager was Harbor Infrastructure Partners until the start of 2025, when it became Meridian Infrastructure Advisors. The two manager names are kept as separate records joined by a dated event. A return earned in 2024 stays attributed to Harbor Infrastructure Partners; a return earned after the rebrand belongs to Meridian (`models/raw_vault`, the manager succession link).
 
 ### Investment, second arc: the deal pipeline
 
@@ -183,13 +192,13 @@ A firm also tracks opportunities that may become investments. Ergasterion carrie
 
 **Recognised.** The two pairs sharing a reference merge automatically. The pair with no reference and only similar names waits on the review screen. Deal matching is source-local: ORIGO deals are compared with other ORIGO deals. Fund matching, by contrast, compares records across every source that describes a fund.
 
-**Tracked.** Each recognised deal moves through a handful of stages over time (sourced, screened, examined in detail, then a decision, and finally committed or declined), and every stage it has ever occupied is kept, dated, the same append-only discipline the department move above used: a log that only ever grows, nothing in it edited or deleted. A buyout aimed at the portfolio company Lumina Health, code-named Project Atlas inside the deal team, reached that decision point and then sat there: the investment committee first met in March and chose to wait for more information rather than decide either way.
+**Tracked.** Each recognised deal moves through a small set of stages over time: sourced, screened, examined in detail, considered for a decision, then committed or declined. Every stage it has occupied is kept and dated in an append-only log. A buyout aimed at Lumina Health, code-named Project Atlas inside the deal team, reached the decision point and stayed there. The investment committee first met in March and chose to wait for more information.
 
 **Decided.** A decision on a deal at that point (approve it, approve it with conditions attached, decline it, or wait longer) is written to a permanent record. A deal that reaches committed can also carry a link to the fund it became. One of the ten, the direct-lending opportunity, converts into Orion Credit Opportunities I. The decision log keeps every decision; the dated stage model derives its current result from the latest decision.
 
 **Reviewed.** The same review screen that shows an uncertain fund match has a tab for these deals too: a queue of the ones sitting at a decision point, the history behind each one, and the four choices above.
 
-This second arc reuses everything the fund journey already built: the same shape of source description, the same confident-first matching, the same never-overwritten history, the same review screen, extended to a new kind of thing rather than built again from nothing. It is deliberately not as thorough as the fund journey: a deal's identity is never checked against a second source, and nothing learned reviewing a deal feeds back into how funds are matched. That is a stated limit, not an oversight.
+This second arc reuses the source-description shape, confident-first matching, never-overwritten history, and review screen from the fund journey. It extends that machinery to deals. The example is deliberately narrower: a deal's identity is never checked against a second source, and nothing learned while reviewing a deal feeds back into fund matching. That is a stated limit, not an oversight.
 
 ### What is different between the two domains, stated plainly
 
@@ -198,21 +207,27 @@ The e-commerce domain is a complete worked domain in its own right. It runs the 
 - **No canonical model repo.** The investment domain's declarations carry an optional `canonical_mappings` block that cross-checks attribute lineage against the Open Investment Model (see "What this is not," below); the e-commerce declarations carry none. There is no external model this domain validates against, and the pipeline builds and runs identically without one.
 - **A shared scoring slot.** The scoring configuration calls its categorical comparison weight `weight_sector`. Investment entities use it for sector; other entities can use it for another categorical attribute. The e-commerce declarations carry customer weights, but customer records do not enter the probabilistic scoring branch.
 - **Deterministic customer resolution.** The e-commerce customer path uses loyalty id and normalised email. Its unmatched records stay separate. The review console serves the investment domain's probabilistic matches and deal decisions.
-- **The clean, final tables are hand-authored in both domains.** `canonical_customer`, `canonical_product`, the customer, product, and segment dimensions, and `fact_order` are designed and written by a person on top of what the generator produces, not generated themselves, exactly as `canonical_fund` / `dim_fund` / `fact_fund_performance` are in the investment domain. See "What this is not," below, for why that boundary exists.
+- **The clean, final tables are hand-authored in both domains.** A person designs `canonical_customer`, `canonical_product`, the customer, product, and segment dimensions, and `fact_order` on top of the generated pipeline. The investment domain follows the same boundary for `canonical_fund`, `dim_fund`, and `fact_fund_performance`. See "What this is not," below, for why that boundary exists.
 
 ## How the output is verified
 
-The generator always produces identical output from identical descriptions, and the build fails if anyone edits a generated file by hand instead of editing the description it came from. A badly written description is rejected before anything is built, with a message naming exactly what is missing. A test suite asserts known answers on the made-up data. In the e-commerce domain, a seeded cross-feed customer duplicate must resolve to exactly one identity, order lines must sum to their header, and a segment change must attribute correctly by date, with no gap and no overlap. In the investment domain, a specific fund's return must come out at a specific number, a fund with contradictory cash flows must produce no return at all rather than a nonsense one, the record-matching must find exactly the overlaps that were planted in the data, a vehicle's cash flows must add up to the fund's own total no matter how many wrappers sit in between, a manager's history must stay attached to the right name on either side of a rebrand, and a classification asked about a past date must return what was true then, not today's answer read backward. The same discipline reaches the deal pipeline: a deal's dated stages are checked the same way a fund's classification history is, and a deal that claims to have become a fund must point at a fund that genuinely exists, not a dangling reference. The account-free validator re-emits the generated estate, parses all three supported targets, builds the complete seeded project in DuckDB, and runs the remaining package, contract, graph, scaffold, and wheel checks. Live Snowflake validation is a separate, authorised run against a bounded development schema.
+The generator always produces identical output from identical descriptions. The build fails if anyone edits a generated file by hand, and a bad description is rejected before generation with a message naming what is missing. A test suite asserts known answers on the invented data.
+
+In e-commerce, a seeded customer duplicate must resolve to one identity, order lines must sum to their header, and segment changes must attribute correctly by date. The investment checks pin a specific fund return and reject a return when its cash flows contradict one another. They also verify the planted record overlaps, vehicle-to-fund totals, manager history across a rebrand, and historical classifications. The deal pipeline checks its dated stages and requires every conversion into a fund to name a fund that exists.
+
+The account-free validator re-emits the estate, parses all three supported targets, and builds the complete seeded project in DuckDB. It also runs the package, contract, graph, scaffold, and wheel checks. Live Snowflake validation is a separate authorised run against a bounded development schema.
 
 The architecture guide follows these checks through the generated pipeline and names the boundary between generated source-facing models and human-designed served models.
 
 ## Speaking the standard at the boundary
 
-When a team finishes building a clean, consumable table, the next people along (analysts, other engineers, a data-catalogue tool the company already runs) need to know what that table promises: which columns it has, which one is its identifier, which values can never be missing or duplicated, who owns it, and what it is supposed to mean. Writing that down by hand, in a document that slowly drifts away from the real table, is the usual and unhappy state of affairs.
+When a team finishes a clean, consumable table, its users need to know what that table promises. They need its columns, identifier, quality rules, owner, and meaning. Writing those facts by hand leaves a document that can drift away from the real table.
 
-There is a published, open, industry format for writing it down instead: the **Open Data Contract Standard (ODCS)**, maintained under the Linux Foundation. A data contract in this format is a small machine-readable file, one per table, that states the table's schema, its keys, the quality checks that hold on it, an optional link to an outside definition of the terms, and any extra notes the producer wants to attach. Data-catalogue and governance tools that companies already buy (Collibra and OpenMetadata among them) read this exact format, so a table that ships one of these files arrives already understood by the tooling the company runs.
+The **Open Data Contract Standard (ODCS)** is a published industry format maintained under the Linux Foundation. One small machine-readable contract per table records its schema, keys, quality checks, optional external definitions, and producer notes. Data catalogue and governance tools, including Collibra and OpenMetadata, read this format. A table that ships its contract can enter those tools without a second handwritten description.
 
-This factory generates one such contract for every served table it produces (every finished view and every dimension and fact) in both worked domains, and it does so the same way it does everything else: from the descriptions, never by hand. The columns and their keys come from the built model; the quality entries are the very same tests the build already runs (a "must not be null" check becomes a null-count metric, a "must be unique" check becomes a duplicate-count metric, and the more specialised checks become named custom rules); the survivorship story (which source wins each field, and in what order) rides along as extra notes; and a link to an authoritative outside model is attached where one exists. That last point is where the two domains part ways on purpose: the investment contracts link out to the public Open Investment Model, and the e-commerce contracts link to nothing at all, because that domain answers to no outside model. The same generator, run over two unrelated domains, produces valid contracts either way. Every generated contract is checked against the standard's own official schema file, which is kept inside the repository so the check needs no network, and the build fails if a contract is hand-edited or drifts from what the descriptions would regenerate.
+The factory generates one contract for every served view, dimension, and fact in both worked domains. Columns and keys come from the built model. Existing build tests become quality entries, while survivorship rules record which source wins each field. A contract also links to an authoritative external model where one exists.
+
+Investment contracts link to the public Open Investment Model. E-commerce contracts carry no external-model link because that domain answers to none. The same generator produces valid contracts in both cases. Each contract is checked against the standard's official schema held in this repository, so validation needs no network. The build also fails if a contract was edited by hand or has drifted from its source descriptions.
 
 The line to hold in your head is this: the factory **speaks the shared standard at its boundary, and generates everything between the boundaries itself**. The contract is the interface a served table presents to the outside world; the machinery that builds the table (the identity resolution, the survivorship, the vault discipline) is the factory's own, and no standard describes it because none needs to. The regeneration command and validation steps are in the [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md).
 
@@ -307,17 +322,21 @@ The live Snowflake path needs credentials supplied by the account owner or an au
 
 The generator builds the source-facing plumbing. The clean consumable layer (the final tables and the measure definitions) is designed once by people, deliberately, because that layer is the product and deserves human judgment. This is true for both worked domains: `canonical_customer` / `dim_customer` / `fact_order` in the e-commerce domain and `canonical_fund` / `dim_fund` / `fact_fund_performance` in the investment domain are all hand-authored on top of what the generator produces, never generated themselves. The supported targets are Snowflake, BigQuery, and DuckDB. The record matching is deliberately cautious: when it is not sure, it asks a person instead of guessing, because a wrong merge is far more expensive than a short review queue.
 
-This factory is not, itself, an investment tool, and it is not an OpenIM tool. The factory core (the templates, the identity-resolution mechanism, the vault pattern, the survivorship engine) reads, requires, and knows about no domain at all. The optional `canonical_mappings` block a declaration can carry, and the validation `ergasterion/emit.py` runs against it, are an **investment-domain-specific** onboarding aid, not a factory feature: they check a source's declared attribute lineage against the OpenIM canonical model (the [Open Investment Model](https://openinvestmentmodel.org), a separate, standards-based buy-side investment reference model) when a local clone of that model's repository is pointed at explicitly (`--openim-root <path>`, with no default, see "Pointing at an external model," below), and, in the default mode this README's install steps use, skip with a warning rather than a failure when no path is given or the path does not resolve to a checkout (`--strict-openim` turns that same skip into a non-zero exit instead; see "Pointing at an external model," below). The e-commerce domain proves this directly: none of its declarations carry a `canonical_mappings` block, no OpenIM checkout is needed to build it, and it runs the same generator, unmodified.
+Ergasterion is a data-product factory. Its templates, identity-resolution mechanism, vault pattern, and survivorship engine contain no investment-domain knowledge. Investment declarations may add an optional `canonical_mappings` block as an onboarding aid. When `--openim-root <path>` points to a local [Open Investment Model](https://openinvestmentmodel.org) checkout, `ergasterion emit` checks the declared attribute lineage against that reference model.
+
+The default mode reports a warning when no OpenIM checkout is available. `--strict-openim` turns the same condition into a non-zero exit. E-commerce declarations carry no `canonical_mappings` block, need no OpenIM checkout, and run through the same generator unchanged.
 
 ## Pointing at an external model (investment domain only)
 
 The install steps at the top of this README are the whole of what most estates need. This one further route exists only for a domain that has an external reference model to validate against, and the investment domain is the one worked example that does.
 
-A declaration's optional `canonical_mappings` block (see "What this is not," above) can be checked against a real reference model rather than left as an unverified assertion. Clone the public [Open Investment Model](https://openinvestmentmodel.org) repository anywhere on disk and pass its path to `ergasterion emit --openim-root <path>`. The generator then checks your declared attribute lineage against that model for spelling and schema drift. This is a validation layer only, and it is genuinely optional: with no path given, or a path that does not resolve to a checkout, the check skips with a warning rather than failing, and it never generates or decides anything on your behalf (when it skips, the run's summary line carries the warning count alongside the usual generated/would-change tally). Whether an attribute maps the way you have declared it remains a judgment call you make. A domain with no external model to validate against, the e-commerce domain being the worked example, simply omits the block. In default mode that skip is only ever a warning; pass `--strict-openim` to turn it into a non-zero exit instead, for a CI-style run that must not silently skip the check.
+A declaration's optional `canonical_mappings` block can be checked against a real reference model. Clone the public [Open Investment Model](https://openinvestmentmodel.org) repository anywhere on disk and pass its path to `ergasterion emit --openim-root <path>`. The generator checks the declared attribute lineage for spelling and schema drift. It does not generate or decide a mapping.
+
+With no valid path, the check records a warning in the run summary and continues. Pass `--strict-openim` when a CI run must treat that missing validation as a failure. Whether an attribute maps as declared remains a human judgment. A domain with no external reference model simply omits the block, as the e-commerce example does.
 
 ## For engineers
 
-The factory core and the per-domain content are a **documented split, not a directory split**: both domains' models live in the same layer folders below (`staging`, `raw_vault`, `business_vault`, `entity_resolution`, `canonical`, `marts`) because the two domains share no entity names and a folder reorganisation would buy nothing. What actually separates "the engine" from "a domain" is which files carry domain vocabulary at all:
+The factory core and per-domain content share the same layer folders: `staging`, `raw_vault`, `business_vault`, `entity_resolution`, `canonical`, and `marts`. The two domains share no entity names, so separate folder trees would add structure without clarifying ownership. The engine boundary is defined by which files carry domain vocabulary:
 
 ```text
 pyproject.toml       # the engine's OWN packaging manifest: distribution name
@@ -385,4 +404,4 @@ streamlit/           # the human review screen for uncertain record matches
                      #   (investment probabilistic matches and deal decisions)
 ```
 
-Build and test without an account: `bash scripts/validate_offline.sh`. Run the worked local demonstration with `bash demo/run_offline_demo.sh`. The public [source-description guide](https://github.com/antikas/ergasterion/blob/master/DEMO.md#worked-example-adding-a-whole-new-domain), [graph vocabulary reference](https://github.com/antikas/ergasterion/blob/master/docs/architecture/ontology-map-lane.md), and [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md) cover the next steps.
+Build and test without an account: `bash scripts/validate_offline.sh`. Run the worked local demonstration with `bash demo/run_offline_demo.sh`. The public [source-description guide](https://github.com/antikas/ergasterion/blob/master/DEMO.md#worked-example-adding-a-whole-new-domain) covers onboarding a source. The [graph vocabulary reference](https://github.com/antikas/ergasterion/blob/master/docs/architecture/ontology-map-lane.md) and [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md) cover the remaining operational detail.

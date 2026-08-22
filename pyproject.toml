@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ergasterion-factory"
-version = "0.3.2"
+version = "0.4.0"
 description = "Deterministic, source-declaration-driven dbt data-product factory engine."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,18 +18,37 @@ classifiers = [
     "Topic :: Database",
     "Topic :: Software Development :: Code Generators",
 ]
-# All three sit in the artefact-producing path (Jinja renders every model,
-# PyYAML serialises every contract and descriptor, jsonschema validates them),
-# so the byte-stable gates depend on their behaviour: floors at the tested
-# versions, ceilings at the next major.
+# All seven sit in the artefact-producing or contract-truth path (Jinja renders
+# every model, PyYAML serialises every contract and descriptor, jsonschema
+# validates them, pydantic models the contract IR, rfc8785 canonicalises JSON for
+# byte-stable hashing, tzdata pins IANA timezone data for deterministic
+# timestamps, cryptography signs and verifies provenance), so the byte-stable
+# gates depend on their behaviour. pyyaml/jinja2/jsonschema float within a floor
+# and a ceiling; pydantic, rfc8785, tzdata, and cryptography are exact-pinned --
+# every checkout and every wheel resolves the identical build.
 dependencies = [
     "pyyaml>=6.0,<7",
     "jinja2>=3.1,<4",
     "jsonschema>=4.17,<5",
+    "pydantic==2.13.4",
+    "rfc8785==0.1.4",
+    "tzdata==2026.2",
+    "cryptography==49.0.0",
 ]
 
 [project.optional-dependencies]
+# local-ingestion is the complete lazily imported local path: the direct DuckDB
+# runtime plus dbt Core and dbt-duckdb, everything the engine imports on demand
+# to ingest into and build against a local DuckDB estate.
+local-ingestion = [
+    "duckdb==1.5.5",
+    "dbt-core==1.11.12",
+    "dbt-duckdb==1.11.0",
+]
+# duckdb is the legacy compatibility alias: an identical pin set to
+# local-ingestion, kept for existing installs and docs that still name it.
 duckdb = [
+    "duckdb==1.5.5",
     "dbt-core==1.11.12",
     "dbt-duckdb==1.11.0",
 ]
@@ -41,7 +60,9 @@ bigquery = [
     "dbt-core==1.11.12",
     "dbt-bigquery==1.11.3",
 ]
+# all is the union of local-ingestion plus both warehouse adapters.
 all = [
+    "duckdb==1.5.5",
     "dbt-core==1.11.12",
     "dbt-duckdb==1.11.0",
     "dbt-snowflake==1.11.6",
@@ -57,24 +78,28 @@ Source = "https://github.com/antikas/ergasterion"
 [project.scripts]
 ergasterion = "ergasterion.cli:main"
 
-[tool.setuptools]
-packages = [
-    "ergasterion",
-    "ergasterion.scaffold",
-    "ergasterion.scaffold.macros",
-    "ergasterion.scaffold.targets",
-    "ergasterion.schemas",
-    "ergasterion.templates",
-]
+[tool.setuptools.packages.find]
+# Every current and future ergasterion.* subpackage is admitted automatically --
+# no hard-coded package list to extend when a later cycle adds one. namespaces
+# = true because the data-only subpackages (schemas, scaffold, scaffold.macros,
+# scaffold.targets, templates) carry no __init__.py of their own.
+include = ["ergasterion*"]
+namespaces = true
+exclude = ["*__pycache__*"]
 
 [tool.setuptools.package-data]
 # scaffold/** is the consumer-scaffold engine data `ergasterion init` copies --
 # generated from the engine source tree by ergasterion/sync_scaffold.py and shipped
 # in the wheel so a non-editable install scaffolds from its own package.
+# schemas/*.json and conformance/*.json are generated, schema-validated contract
+# data shipped the same way.
 ergasterion = [
     "templates/*",
     "schemas/*.json",
+    "conformance/*.json",
     "scaffold/*.yml",
+    "scaffold/.gitignore",
+    "scaffold/runtime/*.yml",
     "scaffold/targets/*.yml",
     "scaffold/macros/*.sql",
 ]

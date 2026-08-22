@@ -97,7 +97,7 @@ bindings:
     target_key: product_hk
 ```
 
-The `order_line_product` link also has a payload entity called `order_line`. The names differ, so the classification uses the declared structure: `order_line.src_pk` matches the link key, and `order_line.links` names the link. Its payload columns become edge properties rather than a node type.
+The `order_line_product` link also has a payload entity called `order_line`. The names differ, so the classification uses the declared structure: `order_line.src_pk` matches the link key, and `order_line.links` names the link. Its payload columns are stored as edge properties.
 
 ## What This Is Not
 

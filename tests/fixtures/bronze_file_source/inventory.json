@@ -1,0 +1,187 @@
+{
+  "schema": "ergasterion.bronze-file-source-inventory/v1",
+  "fixtures": [
+    {
+      "path": "additive/new.csv",
+      "sha256": "2eac18e8709ecb3d6e49d81c5d52c2cb90a241c2aea7f064eca71710ba452fb3",
+      "vectors": [
+        "additive"
+      ]
+    },
+    {
+      "path": "additive/old.csv",
+      "sha256": "dab038e5bac1f325ad97dfa5c2bba1872c18fa2329d0a0a2df81f32f3fff4390",
+      "vectors": [
+        "additive",
+        "fingerprint-conflict"
+      ]
+    },
+    {
+      "path": "additive/unknown_key.ndjson",
+      "sha256": "4e452e2cef712237e4b450fe751d739af5f21eeaa9a7a7ad520759f36d75836a",
+      "vectors": [
+        "additive"
+      ]
+    },
+    {
+      "path": "claims/append.csv",
+      "sha256": "296987176c4041d097831e7082af07abd7b6fe006140be150d72b9695f6d2f45",
+      "vectors": [
+        "sidecars"
+      ]
+    },
+    {
+      "path": "claims/cdc_events.ndjson",
+      "sha256": "7f17c4dadef797b089a09a16a4331bd89cb91c18cb97472f01b5290e8deffec9",
+      "vectors": [
+        "cdc-events",
+        "sidecars",
+        "external-receipt",
+        "fingerprint-conflict",
+        "compressed-cdc"
+      ]
+    },
+    {
+      "path": "claims/cdc_events.ndjson.gz",
+      "sha256": "d2ba382ed8b7fb3cc0da19730850e4ab6e4869e4fa792456b5e207da6de14f53",
+      "vectors": [
+        "compressed-cdc"
+      ]
+    },
+    {
+      "path": "claims/cdc_zero.ndjson",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "vectors": [
+        "cdc-zero",
+        "sidecars"
+      ]
+    },
+    {
+      "path": "claims/snapshot.ndjson",
+      "sha256": "dfd6ce23046fb72997e0561ccbc4dea4a3b9349bc198887282a928680188e816",
+      "vectors": [
+        "sidecars",
+        "snapshot-facts"
+      ]
+    },
+    {
+      "path": "codecs/number_for_string.ndjson",
+      "sha256": "d40f7a57577ff6c3cd3d35c2af81a62858b52cdea511fcb7b6c3361ff994d443",
+      "vectors": [
+        "json-number-types"
+      ]
+    },
+    {
+      "path": "codecs/types.csv",
+      "sha256": "296987176c4041d097831e7082af07abd7b6fe006140be150d72b9695f6d2f45",
+      "vectors": [
+        "codec-types",
+        "identity-gzip"
+      ]
+    },
+    {
+      "path": "codecs/types.csv.gz",
+      "sha256": "e5ee9b19ee31f1a25db70fc324ceade8f74d0b3a10f5db724f9c524820618692",
+      "vectors": [
+        "identity-gzip"
+      ]
+    },
+    {
+      "path": "codecs/types.ndjson",
+      "sha256": "dfd6ce23046fb72997e0561ccbc4dea4a3b9349bc198887282a928680188e816",
+      "vectors": [
+        "codec-types"
+      ]
+    },
+    {
+      "path": "codecs/utf8.csv",
+      "sha256": "2a3d5cc65b85a42349ff9546247a3f64ffc7aaa2203ddbcd710a80bc8e0b22a3",
+      "vectors": [
+        "utf8-csv-offsets"
+      ]
+    },
+    {
+      "path": "gzip/concatenated.gz",
+      "sha256": "6568fb5c021efb0098fe7bb0f4c1bda0b15a1b4fb5b1b7a6fd24748fd3a268d6",
+      "vectors": [
+        "limits"
+      ]
+    },
+    {
+      "path": "gzip/corrupt.gz",
+      "sha256": "1cf4b622e8771a9a31116235e8026e0d9bf4118dd90de38efc33c2acfcccb4a9",
+      "vectors": [
+        "limits"
+      ]
+    },
+    {
+      "path": "gzip/expansion.gz",
+      "sha256": "41485ef8661232d06549e81d8b69fcf06d3b0864567e294e62630c8fa5227d2f",
+      "vectors": [
+        "limits"
+      ]
+    },
+    {
+      "path": "limits/chunk_256.bin",
+      "sha256": "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880",
+      "vectors": [
+        "limits"
+      ]
+    },
+    {
+      "path": "limits/oversize.bin",
+      "sha256": "be4d3ed1fc5f5cfa00735b28605a975f3293fa235d23abb1d9dea380fba0fb87",
+      "vectors": [
+        "limits",
+        "capped-read"
+      ]
+    },
+    {
+      "path": "malformed/bad_utf8.ndjson",
+      "sha256": "cba371ff193e94d6ba06d5ea0072cdf2224f50fed2cd1e372a9fa36259fc2ff2",
+      "vectors": [
+        "malformed"
+      ]
+    },
+    {
+      "path": "malformed/blank_line.ndjson",
+      "sha256": "0b0f552e36404141e6a8d7c3a85ca97f6d6e0b0174777e90e42c84904517071c",
+      "vectors": [
+        "malformed"
+      ]
+    },
+    {
+      "path": "malformed/bom.ndjson",
+      "sha256": "1da3319c0c5daad7bcd43cbd47fe68889bd91b16822b899d367c4875e45a8e95",
+      "vectors": [
+        "malformed"
+      ]
+    },
+    {
+      "path": "malformed/crlf_when_lf.ndjson",
+      "sha256": "3d7a58c6d1faed3195c443697c2490c8aacd42e8d2375b062ce053a0c5b62586",
+      "vectors": [
+        "malformed"
+      ]
+    },
+    {
+      "path": "malformed/duplicate_keys.ndjson",
+      "sha256": "26fbe15da8e2b283fe2a2a8b587e7d407cfcca7303f5e78424bc14ae7f567395",
+      "vectors": [
+        "malformed"
+      ]
+    },
+    {
+      "path": "sample.ndjson",
+      "sha256": "dfd6ce23046fb72997e0561ccbc4dea4a3b9349bc198887282a928680188e816",
+      "vectors": [
+        "inventory",
+        "raw-atomic",
+        "scratch",
+        "preserve-fingerprint",
+        "sidecar-bytes",
+        "scratch-reservation"
+      ]
+    }
+  ]
+}

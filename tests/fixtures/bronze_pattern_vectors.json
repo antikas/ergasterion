@@ -1,0 +1,140 @@
+{
+  "schema": "ergasterion.bronze-pattern-vectors/v1",
+  "forbidden_tokens": ["secret-account-99", "membership-tag-do-not-leak"],
+  "quality_arithmetic": [
+    {
+      "id": "zero-data-control-publish-all",
+      "publication_mode": "all_or_nothing",
+      "max_error_fraction": "0",
+      "delivery_mode": "cdc",
+      "progress_kind": "sequence",
+      "framed_count": 0,
+      "error_numerator": 0,
+      "passing_count": 0,
+      "batch_error": false,
+      "expected_decision": "publish_all"
+    },
+    {
+      "id": "all-or-nothing-no-errors",
+      "publication_mode": "all_or_nothing",
+      "max_error_fraction": "0",
+      "delivery_mode": "cdc",
+      "progress_kind": "sequence",
+      "framed_count": 4,
+      "error_numerator": 0,
+      "passing_count": 4,
+      "batch_error": false,
+      "expected_decision": "publish_all"
+    },
+    {
+      "id": "all-or-nothing-any-error-rejects",
+      "publication_mode": "all_or_nothing",
+      "max_error_fraction": "0",
+      "delivery_mode": "cdc",
+      "progress_kind": "sequence",
+      "framed_count": 4,
+      "error_numerator": 1,
+      "passing_count": 3,
+      "batch_error": false,
+      "expected_decision": "reject_delivery"
+    },
+    {
+      "id": "partial-within-threshold",
+      "publication_mode": "publish_valid_rows",
+      "max_error_fraction": "0.5",
+      "delivery_mode": "append_only",
+      "progress_kind": "opaque_batch",
+      "framed_count": 4,
+      "error_numerator": 2,
+      "passing_count": 2,
+      "batch_error": false,
+      "expected_decision": "publish_valid_rows"
+    },
+    {
+      "id": "partial-at-threshold-inclusive",
+      "publication_mode": "publish_valid_rows",
+      "max_error_fraction": "0.25",
+      "delivery_mode": "append_only",
+      "progress_kind": "opaque_batch",
+      "framed_count": 4,
+      "error_numerator": 1,
+      "passing_count": 3,
+      "batch_error": false,
+      "expected_decision": "publish_valid_rows"
+    },
+    {
+      "id": "partial-above-threshold-rejects",
+      "publication_mode": "publish_valid_rows",
+      "max_error_fraction": "0.25",
+      "delivery_mode": "append_only",
+      "progress_kind": "opaque_batch",
+      "framed_count": 4,
+      "error_numerator": 2,
+      "passing_count": 2,
+      "batch_error": false,
+      "expected_decision": "reject_delivery"
+    },
+    {
+      "id": "partial-no-passing-unit-rejects",
+      "publication_mode": "publish_valid_rows",
+      "max_error_fraction": "0.9",
+      "delivery_mode": "append_only",
+      "progress_kind": "opaque_batch",
+      "framed_count": 3,
+      "error_numerator": 3,
+      "passing_count": 0,
+      "batch_error": false,
+      "expected_decision": "reject_delivery"
+    },
+    {
+      "id": "batch-error-rejects-even-within-fraction",
+      "publication_mode": "publish_valid_rows",
+      "max_error_fraction": "0.9",
+      "delivery_mode": "append_only",
+      "progress_kind": "opaque_batch",
+      "framed_count": 4,
+      "error_numerator": 1,
+      "passing_count": 3,
+      "batch_error": true,
+      "expected_decision": "reject_delivery"
+    },
+    {
+      "id": "partial-policy-zero-errors-is-publish-all",
+      "publication_mode": "publish_valid_rows",
+      "max_error_fraction": "0.5",
+      "delivery_mode": "append_only",
+      "progress_kind": "opaque_batch",
+      "framed_count": 2,
+      "error_numerator": 0,
+      "passing_count": 2,
+      "batch_error": false,
+      "expected_decision": "publish_all"
+    }
+  ],
+  "prohibited_partial_modes": [
+    {"id": "cdc-forbids-partial", "delivery_mode": "cdc", "progress_kind": "sequence"},
+    {"id": "sequence-append-forbids-partial", "delivery_mode": "append_only", "progress_kind": "sequence"},
+    {"id": "snapshot-forbids-partial", "delivery_mode": "complete_snapshot", "progress_kind": "opaque_batch"}
+  ],
+  "memory_bound": {
+    "budget_bytes": 400,
+    "frame_count": 24
+  },
+  "selected_locator_gaming": {
+    "original_denominator": 4,
+    "subset_framed_count": 2,
+    "unique_key_fields": ["acct_id"]
+  },
+  "checkpoint_enclosure": {
+    "wrapper_id": "bronze.checkpoint",
+    "members": [
+      "bronze.contract",
+      "bronze.ingest",
+      "bronze.lineage",
+      "bronze.metadata",
+      "bronze.publish",
+      "bronze.schema",
+      "bronze.validate"
+    ]
+  }
+}

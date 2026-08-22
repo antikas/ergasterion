@@ -6,7 +6,7 @@ on:
       release_tag:
         description: GitHub release tag containing the reviewed package artifacts
         required: true
-        default: v0.3.0
+        default: v0.4.0
         type: string
 
 concurrency:
@@ -77,4 +77,3 @@ jobs:
           skip-existing: false
           attestations: true
           print-hash: true
-

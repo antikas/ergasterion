@@ -58,3 +58,20 @@ warehouse before running it.
 Each live run uses a timestamped schema by default and writes its transcript and
 query results beneath `demo/live-runs/<UTC-id>/`. The directory is local runtime
 output and is ignored by Git.
+
+## Bronze ingestion walkthrough
+
+[`demo/bronze-ingestion/`](bronze-ingestion/README.md) demonstrates Bronze, the
+layer that receives a source's delivered batch and checks it against a written
+contract, separately from the two dbt demonstrations above:
+
+```bash
+bash demo/bronze-ingestion/run_bronze_demo.sh
+```
+
+This needs no warehouse account, no network call, and no dbt project. Bronze reads
+and writes through the local reference platform directly. See
+[`demo/bronze-ingestion/README.md`](bronze-ingestion/README.md) for the three
+scenarios it proves, and
+[`docs/architecture/bronze-ingestion.md`](../docs/architecture/bronze-ingestion.md)
+for the mechanism it exercises.

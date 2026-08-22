@@ -1,0 +1,9 @@
+# The target-neutral estate root. `estate.namespace` is the mandatory production
+# qualifier for every Bronze Product Contract's globally qualified identity
+# (estate_namespace, source.name, tables.<key>). Replace this placeholder with your
+# own reverse-DNS-style namespace before authoring a production contract -- a
+# seed-only estate never reads this file (ergasterion.source_delivery's
+# load_estate_namespace() only matters once a table's landing.kind is 'source').
+# See docs/specifications/bronze-product-v1.md.
+estate:
+  namespace: com.example.ergasterion

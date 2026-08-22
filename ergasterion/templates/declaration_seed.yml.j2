@@ -8,6 +8,34 @@ source:
 tables:
 {%- for table in tables %}
   {{ table.name }}:
+{%- if table.landing is defined %}
+    description: {{ table.description | tojson }}
+    landing:
+      kind: source
+      source_name: {{ table.landing.source_name }}
+      identifier: {{ table.landing.identifier }}
+      integration: {{ table.landing.integration | tojson }}
+      content_encodings: {{ table.landing.content_encodings | tojson }}
+      codec: {{ table.landing.codec | tojson }}
+      physical_columns:
+{%- for column in table.landing.physical_columns %}
+        - {name: {{ column.name }}, logical_type: {{ column.logical_type | tojson }}, nullable: {{ column.nullable | tojson }}}
+{%- endfor %}
+    delivery:
+      kind: draft
+      reason: delivery_contract_required
+    # TODO product -- add {product: {product_version, display_name, description, owner,
+    # support, classification, access_policy_ref, retention_policy_ref}}; no importer input
+    # carries ownership, support, access classification or retention -- authored judgment,
+    # never guessed.
+    # TODO projection -- once product is authored, add the published projection
+    # ({source, name, logical_type, nullable} per column) and the delivery mode's own
+    # facts (schedule, progress, timestamps, delete_strategy, record_key, quality, retry).
+    # TODO domain membership -- register this (source, table) under a domains/<domain>.yml
+    # bronze: block so production generation resolves a domain.
+    # Only once every TODO above is filled in, flip delivery.kind to production -- see
+    # docs/specifications/bronze-product-v1.md.
+{%- else %}
     raw_model: {{ table.raw_model }}  # TODO: confirm the actual seed/landing table name this reads from
     description: {{ table.description | tojson }}
 {%- if table.seed_tests %}
@@ -55,6 +83,7 @@ tables:
     #         where:
     #           - <alias>_resolution.golden_<entity>_key is not null
     vault_entities: []
+{%- endif %}
 {% endfor %}
 # TODO entity_resolution -- add a top-level `entity_resolution:` mapping only if a table
 # above is vaulted against an entity that fans into a shared res_<entity> resolution

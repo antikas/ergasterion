@@ -19,11 +19,13 @@ analysis-paths:
 - analyses
 snapshot-paths:
 - snapshots
-target-path: target
+target-path: runtime/data/dbt/target
+log-path: runtime/data/dbt/logs
+packages-install-path: runtime/data/dbt/packages
 clean-targets:
-- target
-- dbt_packages
-- logs
+- runtime/data/dbt/target
+- runtime/data/dbt/packages
+- runtime/data/dbt/logs
 models:
   ergasterion:
     staging:

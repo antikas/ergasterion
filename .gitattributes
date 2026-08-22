@@ -4,3 +4,28 @@
 *.md text eol=lf
 *.sh text eol=lf
 LICENSE text eol=lf
+/.gitignore text eol=lf
+/.gitattributes text eol=lf
+ergasterion/scaffold/.gitignore text eol=lf
+docs/specifications/bronze-portable-idl-v1.json text eol=lf
+
+# Generated/schema-validated JSON, diagram sources, and their rendered output: LF, so a
+# fresh Windows checkout regenerates identical bytes regardless of core.autocrlf.
+ergasterion/schemas/*.json text eol=lf
+ergasterion/conformance/*.json text eol=lf
+tests/fixtures/**/*.json text eol=lf
+contracts/bronze/**/*.json text eol=lf
+docs/architecture/*.d2 text eol=lf
+docs/architecture/*.svg text eol=lf
+
+# The bronze demo's own prose and scripts: LF, explicit alongside the blanket *.md/*.sh rules
+# above so the demo tree's line endings never depend on those blanket rules staying as they are.
+demo/bronze-ingestion/*.md text eol=lf
+demo/bronze-ingestion/*.sh text eol=lf
+
+# Exact transport fixtures: never touched by line-ending or content normalisation. These
+# override the broader *.json/*.md/*.sh/*.csv rules above for paths inside them -- a checkout
+# must match the recorded bytes exactly, byte for byte.
+tests/fixtures/bronze_file_source/** -text
+tests/fixtures/bronze_acceptance/** -text
+demo/bronze-ingestion/fixtures/** -text

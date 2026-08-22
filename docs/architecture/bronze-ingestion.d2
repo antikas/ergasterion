@@ -1,0 +1,84 @@
+# docs/architecture/bronze-ingestion.d2
+#
+# Bronze's received-batch boundary: preserve, land, validate, publish/quarantine,
+# and the five named interfaces every Bronze product exposes. Rendered with:
+#   d2 --layout elk docs/architecture/bronze-ingestion.d2 docs/architecture/bronze-ingestion.svg
+# The committed SVG is generated from this source with the command above.
+
+canvas: {
+  label: ""
+  style.fill: "#0d1117"
+  style.stroke: "#0d1117"
+  near: top-left
+  direction: right
+
+  contract: "Bronze Product Contract\n(schema, delivery mode, quality rules)" {
+    class: contract
+  }
+
+  delivery: "delivery\npayload + sidecar manifest" {
+    class: dim
+  }
+
+  raw: "raw\npreserved exactly" {
+    class: dim
+  }
+
+  source_native: "source_native\nparsed, quality-annotated" {
+    class: dim
+  }
+
+  published: "published\naccepted rows" {
+    class: accept
+  }
+
+  quarantine: "quarantine\nrejected rows, locator to raw" {
+    class: reject
+  }
+
+  deletion_evidence: "deletion_evidence\naccepted deletion facts" {
+    class: dim
+  }
+
+  staging: "typed staging\n(generated pipeline)" {
+    class: dim
+  }
+
+  delivery -> raw: "1. preserve"
+  raw -> source_native: "2. land (parse under codec)"
+  source_native -> published: "3. validate + publish (accepted)"
+  source_native -> quarantine: "3. validate (rejected)"
+  source_native -> deletion_evidence: "delete recognised"
+  published -> staging: "generator reads published"
+
+  contract -> source_native: "governs" {
+    style.stroke-dash: 4
+    style.stroke: "#6e7681"
+  }
+}
+
+classes: {
+  dim: {
+    style.fill: "#161b22"
+    style.stroke: "#30363d"
+    style.font-color: "#8b949e"
+  }
+  contract: {
+    style.fill: "#111820"
+    style.stroke: "#21262d"
+    style.font-color: "#8b949e"
+    style.border-radius: 6
+  }
+  accept: {
+    style.fill: "#122117"
+    style.stroke: "#3fb950"
+    style.font-color: "#7ee787"
+    style.stroke-width: 2
+  }
+  reject: {
+    style.fill: "#3d2020"
+    style.stroke: "#f85149"
+    style.font-color: "#ffa198"
+    style.stroke-width: 2
+  }
+}

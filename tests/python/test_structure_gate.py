@@ -28,7 +28,7 @@ if __package__ in (None, ""):
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
 from ergasterion.estate import EstateContext
-from ergasterion.structure_gate import check_structure, load_structure_declarations
+from ergasterion.structure_gate import check_structure, load_structure_declarations, normalise_landing
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -380,7 +380,89 @@ def test_shipped_declarations_load() -> None:
     assert "models/canonical" in view_layers, f"expected models/canonical declared, got: {view_layers}"
 
 
+BRONZE_LANDING = {
+    "kind": "source",
+    "source_name": "warehouse_feed",
+    "identifier": "things_live",
+    "integration": {"kind": "managed"},
+    "content_encodings": ["identity"],
+    "codec": {"kind": "jsonl", "version": 1, "charset": "utf-8", "newline": "lf"},
+    "physical_columns": [{"name": "id", "logical_type": "utf8_string", "nullable": False}],
+}
+
+
+def test_landing_admits_the_bronze_contract_fields_on_a_source_landing() -> None:
+    """normalise_landing is the single structural entry point for the landing
+    discriminator. A source landing may carry the four Bronze Product Contract
+    fields; a bare source landing stays the plain dbt source reference it has
+    always been; a seed landing admits none of them."""
+    landing = normalise_landing({"landing": dict(BRONZE_LANDING)}, "fixture:things")
+    assert landing["integration"] == {"kind": "managed"}, landing
+    assert landing["physical_columns"][0]["name"] == "id", landing
+
+    legacy = normalise_landing(
+        {"landing": {"kind": "source", "source_name": "feed", "identifier": "rel"}},
+        "fixture:things",
+    )
+    assert legacy == {"kind": "source", "source_name": "feed", "identifier": "rel"}, legacy
+
+    assert normalise_landing({}, "fixture:things") == {"kind": "seed"}, "the default stays seed"
+
+    for bronze_field in ("integration", "content_encodings", "codec", "physical_columns"):
+        try:
+            normalise_landing({"landing": {"kind": "seed", bronze_field: {}}}, "fixture:things")
+        except ValueError as exc:
+            assert bronze_field in str(exc), str(exc)
+        else:
+            raise AssertionError(f"a seed landing must reject {bronze_field!r}")
+
+
+def test_landing_still_rejects_a_misspelled_or_incomplete_source_landing() -> None:
+    """Widening the admitted key set does not widen what passes: a misspelled
+    Bronze field and a source landing missing its coordinates both fail."""
+    misspelled = dict(BRONZE_LANDING)
+    misspelled["physical_colums"] = []
+    try:
+        normalise_landing({"landing": misspelled}, "fixture:things")
+    except ValueError as exc:
+        assert "physical_colums" in str(exc), str(exc)
+    else:
+        raise AssertionError("a misspelled Bronze landing field must fail")
+
+    try:
+        normalise_landing({"landing": {"kind": "source", "integration": {"kind": "managed"}}}, "fixture:things")
+    except ValueError as exc:
+        assert "source_name" in str(exc) and "identifier" in str(exc), str(exc)
+    else:
+        raise AssertionError("a source landing without its coordinates must fail")
+
+
+def test_the_structural_gate_owns_no_bronze_semantics() -> None:
+    """The structural gate validates the shape of the discriminator alone.
+    Whether a codec, encoding or column set is a valid Bronze Product Contract is
+    decided by ergasterion.source_delivery, so a structurally well-formed landing
+    carrying nonsense Bronze content still passes here."""
+    nonsense = dict(BRONZE_LANDING)
+    nonsense["codec"] = {"kind": "not-a-codec"}
+    nonsense["content_encodings"] = ["identity", "identity"]
+    nonsense["physical_columns"] = []
+    landing = normalise_landing({"landing": nonsense}, "fixture:things")
+    assert landing["codec"] == {"kind": "not-a-codec"}, landing
+
+    from ergasterion import source_delivery
+
+    try:
+        source_delivery.LandingContract.model_validate(nonsense)
+    except Exception as exc:
+        assert "codec" in str(exc), str(exc)
+    else:
+        raise AssertionError("the Bronze wire schema must reject the codec this gate passes")
+
+
 TESTS = [
+    test_landing_admits_the_bronze_contract_fields_on_a_source_landing,
+    test_landing_still_rejects_a_misspelled_or_incomplete_source_landing,
+    test_the_structural_gate_owns_no_bronze_semantics,
     test_compliant_fixture_passes,
     test_view_chain_past_ceiling_fails,
     test_view_outside_boundary_fails,
