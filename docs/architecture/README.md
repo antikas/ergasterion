@@ -1,117 +1,294 @@
 # Ergasterion architecture
 
-Ergasterion is a factory that generates a whole data warehouse pipeline from a short, written description of each of your sources. The root [README.md](../../README.md) gets you installed and building your first pipeline. This document is the other half: the shape of the system once you are building against it, in one read, with no code required.
+Adding a source to a warehouse usually creates another set of pipeline code. The code
+must receive the data, map its fields, retain its history, apply data rules, build useful
+tables, and publish tests and contracts. Source changes then require corresponding code
+changes throughout that path.
 
-The factory core does not know or care what a customer, a fund, or any other real-world thing is. Everything below is generic. Wherever a concrete example helps, this document draws on whichever of the repository's two worked domains, an online retailer's customer view or an investment dataset, makes the point clearest. Neither one is the point of the factory; both are proof that the identical mechanism works on domains that share no vocabulary at all. The two domains, and OpenIM's narrow role in one of them, are covered in full toward the end of this document.
+Ergasterion moves this repeated work into code generation. An Ergasterion project records
+the target warehouse model, the sources that feed it, the mappings between them, and the
+runtime configuration. Those definitions drive the production of the pipeline and its
+published interfaces.
 
-## The problem, before the factory
+The warehouse model and its mappings can start from an existing database schema (DDL), a
+reference model, or a new design. AI assistance can help design the model, complete the
+mappings, and develop the served or gold layer. The resulting definitions and code remain
+version controlled, reviewable, and subject to the same validation as the rest of the
+estate.
 
-![Four vendor sources, each feeding its own hand-written plumbing script, converging awkwardly on a warehouse](problem.svg)
+![Several source systems feeding separate pipelines before a warehouse](problem.svg)
 
-*Illustrative: a generic before-picture, not a diagram of this repository's own pipeline.*
+*Separate source pipelines require corresponding code changes whenever a source changes.*
 
-Turning raw source feeds into a trustworthy warehouse normally means writing the same kind of plumbing by hand for every source: typed staging, history that never overwrites, clean served tables, and tests. Each handwritten script ends up shaped a little differently, then drifts when its source changes. Ergasterion generates the plumbing from one source description. Rebuilding after a change takes one command.
+## Architecture overview
 
-## The shape of the system, in one diagram
+![Source declarations entering the generator and flowing through staging, identity resolution, historical storage, golden records, canonical models and marts](pipeline.svg)
 
-![The full generated pipeline: source declarations into the engine, out through typed staging, identity resolution, the raw vault, the business vault, the canonical layer, and the marts, ringed by four verification gates](pipeline.svg)
+The diagram shows the warehouse data flow. It uses the investment example because that
+estate has several sources for the same entities. The e-commerce example uses the same
+components with different entity names and business rules.
 
-*The investment domain's four sources are drawn here for concreteness; the shape is identical for any domain, including the e-commerce example further down.*
+A delivered batch first crosses the Bronze ingestion boundary. Bronze preserves the
+received payload, applies the delivery contract, and publishes accepted records through a
+stable interface. Source declarations then map those records into the warehouse model.
+The generator produces the warehouse code, tests, contracts, product metadata, and domain
+maps from the estate definitions.
 
-Read left to right. A set of source declarations feed the engine (`ergasterion/emit.py`). The engine generates typed staging, identity resolution, the raw vault (history), the business vault (golden records), the canonical layer, and the served marts. A ring of gates checks the output at every stage. Each stage gets its own closer look below.
+Platform code sits behind two adapter boundaries. The warehouse generation
+boundary handles SQL and dbt target differences. The Bronze runtime boundary connects the
+same delivery contract to the storage, state, landing, projection, scheduling, and policy
+services used by a deployment.
 
-## What you write, and what the engine writes
+## Inputs, generated outputs and ownership
 
-A working project is an **estate**: your own project, kept separate from the engine itself. Inside an estate, two kinds of file exist, and knowing which is which is the whole key to reading this system.
+An Ergasterion project is called an **estate**. The estate keeps the design of the
+warehouse separate from the engine that produces and runs it.
 
-You write:
+| Part | What it contains | How it is produced |
+|---|---|---|
+| Warehouse model | Target entities, keys, attributes, relationships, matching rules, survivorship rules, and served products | Created from DDL, a reference model, or a design for the estate |
+| Source declarations | Native source fields, data types, landing details, tests, and mappings into the warehouse model | Created from DDL, an Open Data Contract Standard (ODCS) contract, or the source specification |
+| Runtime and target configuration | Warehouse target, adapter bindings, physical limits, materialisation choices, and protection settings | Selected for each deployment environment |
+| Generated integration layers | Typed staging, optional identity resolution, historical storage, golden records, tests, and operational interfaces | Produced deterministically from the estate definitions |
+| Served or gold layer | Canonical models, dimensions, facts, calculated fields, semantic models, and measures | Produced from the warehouse design for that estate |
+| Published metadata | Data contracts, product descriptors, domain maps, runtime manifests, and lineage | Generated from the same estate definitions and built models |
 
-- **A domain** (`domains/<name>.yml`): the real-world things you care about, a customer, a fund, an order, and how they relate. If several sources ever describe the same thing, your rules for resolving duplicates and choosing a winning value live here too.
-- **A source declaration** (`declarations/<source>.yml`), one per incoming feed: its columns, and which real-world thing in the domain each column belongs to.
-- **The served layer itself**: the small set of final, clean tables and measure definitions a person actually queries, the `canonical_*` models and the `dim_*` / `fact_*` marts. The engine hands these its output; a person designs the served shape on top, on purpose, because that is the layer everyone downstream builds their trust on.
+The engine treats entity names, field names, relationships, and rules as estate data. A
+customer estate and an investment estate therefore use the same engine while carrying
+different warehouse models and source mappings.
 
-From those descriptions, the engine writes everything else: typed staging, identity resolution, the raw vault, golden records, data contracts, the product descriptor, and the graph map. None of that middle section is hand-maintained. Change a description and regenerate. The generated layers remain a reproducible function of what you wrote, and the build refuses hand edits to generated files.
+The structured definitions are the repeatable input to generation. They can be imported
+from an existing model or developed for the estate. Once a design decision is recorded,
+generation applies it consistently whenever a source is added or changed.
 
-A small amount of authored intent goes in, a small amount of authored output comes out, and everything between the two is generated. That is the whole shape of the system. The rest of this document walks the generated middle, stage by stage.
+## Flow from source to warehouse
 
-## Bronze: receiving a source's delivered batch
+The e-commerce example shows the complete journey. CARTIVO is a storefront, MERCARO is a
+marketplace, and RELATIO is a customer relationship system. Each source contains a record
+for the same customer under a different source key.
 
-Before a source's data becomes a row the rest of this document walks, it has to arrive, get checked, and either publish or quarantine. That is Bronze, the layer that sits in front of typed staging. A team writes one Bronze Product Contract per source table: its native schema, how it delivers (a stream of change events, append-only rows, or a full snapshot), and the quality rules a delivery must clear. A delivery's payload and its sidecar manifest are preserved exactly as received, parsed under the contract's declared codec, checked against every declared rule, and either published or quarantined with a locator back to the exact raw bytes. No person decides a single delivery's outcome at run time; the contract decided it when it was written, and the runtime only applies it. The typed staging models below are generated against a Bronze product's published interface.
+### Receive and validate the delivery
 
-[`bronze-ingestion.md`](bronze-ingestion.md) is the deep dive: the received-batch boundary in full, the five interfaces every Bronze product exposes, delivery modes, the operator command surface, and the local-versus-production access boundary. [`bronze-product-v1.md`](../specifications/bronze-product-v1.md) is the exact contract reference. [`demo/bronze-ingestion/`](../../demo/bronze-ingestion/) runs the mechanism account-free and network-free.
+Each source table has a Bronze Product Contract. The contract records the native schema,
+delivery mode, parsing rules, quality rules, publication policy, and retention settings.
+The team responsible for the data can read and change those decisions.
 
-## Following a source through the factory
+The runtime preserves the payload and its manifest exactly as received. It parses the
+payload under the declared codec, checks each quality rule, and records the result. A
+passing delivery is published for downstream use. A failing delivery is quarantined with
+a locator back to the source bytes.
 
-**Declared. You write this.** A source declaration says what a feed sends, what its columns mean, and which real-world thing in the domain each column refers to. It is the only place any human judgment about meaning enters the system.
+[`bronze-ingestion.md`](bronze-ingestion.md) describes this boundary in detail.
+[`bronze-product-v1.md`](../specifications/bronze-product-v1.md) is the contract reference.
+The [Bronze demonstration](../../demo/bronze-ingestion/) runs on the local reference
+platform using local files, SQLite, and DuckDB.
 
-**Generated: typed staging.** The engine reads every declared source and generates one staging model per source: the same columns, typed, renamed to the domain's own vocabulary, nothing else changed.
+### Map source fields into the warehouse model
 
-![Source declarations feeding the engine, which emits typed staging models](pipeline_sources.svg)
+A source declaration describes the fields supplied by one feed and maps each field into
+the target warehouse model. It can rename fields, cast values into stable types, and state
+which entity and attribute each value supplies.
 
-**Resolved, when sources overlap.** One source per real-world entity is a normal, common estate, and needs none of what follows: the golden record the engine generates is simply that one source's value, passed through untouched. Identity resolution exists for the case where that does not hold, when two or more sources describe the same real-world thing under different spellings, different identifiers, or no shared identifier at all. It answers one question only, are these two records the same thing, and it is not a step every pipeline has to clear: a domain with a single source per entity never generates it. Where it does apply, the engine tries the strongest available signal first, a shared official identifier, then falls back to weaker signals such as a shared reference code or a normalised name match, recording the rule that made each match. Where no rule is confident enough, the pair is not merged automatically; it goes to a review queue for a person to decide, and that decision is remembered.
+The generator reads those mappings and produces a typed staging model for each source.
+Every later layer uses the warehouse vocabulary, while the declaration retains the link
+back to the source field.
 
-![The identity resolution stage: deterministic matching, probabilistic matching, and the human review queue](pipeline_entity_resolution.svg)
+![Source declarations entering the generator, which emits typed staging models](pipeline_sources.svg)
 
-**Remembered: the raw vault.** Once identity is settled, directly for a single source or through resolution for several, every source's version of every fact is written to the raw vault (a warehouse pattern called a Data Vault) and dated. Nothing is overwritten. If two sources disagree, or a source corrects itself later, every version stays, so a later question, where did this number come from, can always be answered by walking back to what actually arrived.
+### Resolve records that describe the same entity
 
-**Chosen: golden records and survivorship.** The raw vault keeps every version; the business vault's golden record picks the one that counts. For each fact, a written rule, authored by the person responsible and changeable at any time, chooses which source wins: prefer the fund administrator for capital figures, prefer the CRM feed for a customer's contact details, and so on. The engine applies the rule; it never invents one, and the chosen record keeps a note of which source won and when, for every field.
+Identity resolution is used when several sources describe the same customer, fund, or
+other entity. The estate defines the available matching signals and their order. Strong
+identifiers can resolve a pair directly. Weaker evidence can feed a probabilistic score
+when the estate enables that path.
 
-**Served: the canonical layer and the marts. You write this too.** The winning values carry forward into the canonical layer and then into a small set of marts shaped for people and tools to query. As above, this served layer is the one piece of the generated-adjacent path a person still designs by hand, on top of what the engine produces.
+Pairs below the approved threshold enter a review queue. A reviewer can accept or reject
+the match, and the decision is retained for later runs. An entity supplied by one source
+passes directly into the historical layer.
 
-![The raw vault and business vault producing golden records, carried forward into the canonical layer and the marts](pipeline_vault.svg)
+![Deterministic and probabilistic identity resolution leading to a review queue](pipeline_entity_resolution.svg)
 
-**Published: the boundary.** Three more things come out of the same declarations, generated the same way as everything above, and published at the edge of the pipeline for other tools and other people to read:
+### Retain source history
 
-- **A data contract per served table**, in the published Open Data Contract Standard (ODCS) format: schema, keys, the same quality checks the build already runs, and a note of which source wins each field.
-- **One product descriptor per domain**, in the Open Data Product Standard (ODPS, Bitol): the tables' contracts wired together as output ports, plus the console and docs site a person operates the factory from.
-- **A typed graph map of the domain**: entities become nodes and relationships become edges. Common graph query forms (openCypher, SQL/PGQ, and GQL) let a tool or agent navigate the domain's shape without reading the warehouse.
+Every accepted source version is dated and stored in the raw vault. Hubs hold stable
+entity identities, links hold relationships, and satellites hold descriptive history.
+Bridge models connect source records to their resolved entity keys. Corrections and
+disagreements remain visible because new versions are appended.
 
-None of the three is hand-written, and none of them can drift from the tables they describe: they regenerate from the same declarations everything else does, and the build fails if one is hand-edited instead.
+This history retains the source and effective date for every value. A downstream record
+can therefore be traced to the source version from which it was produced.
 
-## How the generated layers are verified
+### Apply survivorship and produce golden records
 
-![The four verification gates: byte-stable re-emit, dialect lint, three-target parse, and a complete local DuckDB build](pipeline_gates.svg)
+The estate defines which source should supply each attribute when several sources provide
+a value. One rule may prefer the customer relationship system for contact details, while
+another prefers the storefront for marketing consent. These survivorship rules are
+readable and changeable estate configuration.
 
-Four checks cover the complete generation. The engine re-emits and checks that the output is byte-for-byte identical to the declarations. A linter checks the SQL for each supported dialect. dbt parses Snowflake, BigQuery, and DuckDB. A complete local DuckDB build executes the seeded estate and its business assertions. One validation command runs the set.
+The business vault applies those rules to the retained history and produces a golden
+record. The golden record stores the selected value, its source, and the date on which it
+became effective.
 
-### Portable verification without a warehouse
+### Produce the served or gold layer
 
-**What it is.** A checkout with the project dependencies installed can verify the generated estate without connecting to a warehouse. The check answers whether the committed generated files still match their declarations and whether the factory's structural outputs remain internally consistent.
+The served layer reshapes integrated records for business use. It can contain canonical
+models, dimensions, facts, calculated fields, semantic models, and measures. Canonical
+models expose consistent domain entities. Dimensions, facts, and measures organise them
+for analysis. Some platforms call this the gold layer.
 
-**How it works.** [`scripts/validate_offline.sh`](../../scripts/validate_offline.sh) locates the repository from its own path and selects Python and dbt from explicit environment variables or the command path. It first checks that the generated estate can be re-emitted without changing the committed files and runs the emitter and structure tests. It parses Snowflake, BigQuery, and DuckDB, then completes a full seeded DuckDB build before the downstream package, contract, graph, scaffold, and wheel gates.
+Ergasterion can produce this layer as part of the estate generation process. Its design is
+specific to the warehouse and the questions it must answer. Existing DDL, industry
+models, direct design, and design with AI assistance can all provide that intent. Once
+captured in the estate's generation inputs, the models can be produced and checked with
+the rest of the pipeline.
 
-**Worked example.** A successful run confirms that regeneration would not change the committed generated files. It parses all three supported targets and proves the worked data locally with DuckDB. It checks each ODCS contract and ODPS descriptor before comparing the graph artefacts with fresh output.
+A golden record and a gold layer serve different purposes. The golden record selects the
+current value for an entity after matching and survivorship. The gold layer organises
+those values into the dimensions, facts, measures, and other outputs used by consumers.
 
-**How it is demonstrated.** The runnable check is [`scripts/validate_offline.sh`](../../scripts/validate_offline.sh).
+![Historical source records producing golden records, canonical models and marts](pipeline_vault.svg)
 
-**Boundaries.** The check does not load live credentials or connect to Snowflake or BigQuery. It does not validate data in either live warehouse. The command requires Git and Bash. A first run needs network access if dbt packages are not already installed.
+### Publish contracts, products, maps and runtime metadata
 
-## The engine and the estate
+The publication boundary is generated from the same model and mappings:
 
-`ergasterion/` is the installed engine: the generators, validators, templates, schemas, and consumer scaffold. It reads whichever estate's `domains/*.yml` it is pointed at. Everything else, `domains/`, `declarations/`, `seeds/`, and the served layer inside `models/`, belongs to this worked estate. The file-by-file layout is in the root [README.md](../../README.md#for-engineers).
+- An Open Data Contract Standard (ODCS) contract describes each served table, including
+  its schema, keys, tests, ownership, and field lineage.
+- An Open Data Product Standard (ODPS, Bitol) descriptor groups the served tables into a
+  product and records its output and management ports.
+- A typed domain map records entities and relationships in relational and graph forms.
+- Runtime manifests and operational evidence record how a Bronze product is bound and
+  what happened to each delivery.
 
-### Console scoring configuration by target
+The verification process regenerates these artefacts and compares them with the committed
+versions. A direct edit is reported as drift.
 
-**What it is.** The console implementation derives a raw schema from the selected target and converts scoring seed rows into entity resolution weights and thresholds. If row loading or validation fails, the selector returns the static fallback and describes the failure through its status and detail values.
+## Platform adapters
 
-**How it works.** The tested helpers validate and quote the identifiers used to build the scoring table relation. The pure transformation checks the required metrics, entity uniqueness, numeric bounds, weight totals, and uniform thresholds. The selector distinguishes unavailable data from invalid data.
+The warehouse model and source mappings describe the data. Translators and runtime
+adapters contain the platform implementation. This separation allows one estate
+design to run on different combinations of warehouse, storage, state, and scheduling
+services.
 
-**Worked example.** Selecting `DEV` derives the `DEV_RAW` schema. Uniform rows produce one weight set. When weights differ by entity type and thresholds remain uniform, label generation orders the profiles by entity type.
+### Warehouse generation and SQL targets
 
-**How it is demonstrated.** [`streamlit/test_scoring_config.py`](../../streamlit/test_scoring_config.py) executes the production transformation and identifier functions from [`streamlit_app.py`](../../streamlit/streamlit_app.py) without importing Streamlit or Snowflake. It covers Snowpark row shapes, casing, invalid values, weight rules, thresholds, and target identifiers.
+The warehouse generator emits models and tests for dbt, the tool that builds them on the
+target database. dbt dispatch macros isolate SQL differences such as safe casts, regular
+expressions, date arithmetic, hashing, arrays, and object construction. Target
+declarations record physical limits and materialisation settings.
 
-**Boundaries.** The test stops at the pure functions and does not exercise the live table read. Streamlit rendering and Snowflake connectivity remain outside its evidence. The transformation supports weights by entity type only when thresholds remain uniform.
+DuckDB, Snowflake, and BigQuery are implemented targets. The same estate definitions can
+be parsed for all three. The local reference build executes the complete worked estate on
+DuckDB. Snowflake and BigQuery use their corresponding dbt adapters and credentials.
 
-## Two domains, one factory, and where OpenIM fits
+A new warehouse target supplies the required SQL dispatches, target limits, and dbt
+configuration. Its implementation must pass the dialect, parse, structure, and build
+checks that apply to that platform.
 
-Both worked domains run through the same declaration generator. The online-retail domain (customer, product, order) and the investment domain (fund, management firm, portfolio company, deal) are peers. The full walkthrough of both domains is in the root [README.md](../../README.md#the-two-worked-domains).
+### Bronze translators and runtime ports
 
-The [Open Investment Model (OpenIM)](https://openinvestmentmodel.org) is not part of the factory and is never required to build or run either domain. It is an optional validation aid the investment domain alone can use: a declaration's attribute lineage can be checked against OpenIM's public reference model, when a local checkout of it is pointed at explicitly. With no checkout given, the check is skipped with a warning, never a failure. The e-commerce domain has no equivalent and needs none, because it answers to no external model at all.
+The Bronze framework resolves a product contract and runtime binding into an execution
+plan that is independent of any platform. Translators claim the stages they implement and
+produce the target artefacts and runtime manifest. Routing checks that each stage has one
+execution owner and that handoffs use compatible schemas.
 
-## Property-graph projection
+The runtime reaches external services through declared ports for source connection, raw
+storage, scratch storage, operational state, landing, remediation, projection, lifecycle
+evidence, and key services. A runtime binding selects one adapter for each port and names
+the relations used by that environment.
 
-[`ontology-map-lane.md`](ontology-map-lane.md) explains how a domain declaration becomes the typed graph map and how to extend its relationship vocabulary.
+The local reference binding uses files for delivery and raw storage, SQLite for
+operational state, and DuckDB for landing and projection. Another platform supplies
+adapters for its own services. The contract and execution plan remain unchanged.
 
-## Where to go next
+Each adapter declares its operations, supported delivery modes, codecs, limits, safety
+guarantees, and protection capabilities. The conformance runner checks those declarations
+against the implementation, including recovery and verified backup and restore.
 
-The root [README.md](../../README.md) installs the engine and builds a first pipeline. [DEMO.md](../../DEMO.md) walks the source-description format field by field, including a source's Bronze declaration. [RUNBOOK.md](../../RUNBOOK.md) covers the account-free local build, the Bronze operator command surface, and the authorised live Snowflake path. [`bronze-ingestion.md`](bronze-ingestion.md) is the Bronze deep dive.
+## Verification
+
+![Verification gates for regeneration, SQL dialects, dbt targets and the local estate build](pipeline_gates.svg)
+
+Verification checks the declarations, generated code, built models, and published
+metadata at several boundaries:
+
+- Regeneration must reproduce committed generated files byte for byte.
+- Dialect checks reject SQL that is incompatible with a selected target.
+- dbt parses the estate for DuckDB, Snowflake, and BigQuery.
+- A full DuckDB build executes the worked data and its business assertions.
+- Contract, product, graph, scaffold, package, and adapter checks cover the other
+  published and runtime interfaces.
+
+[`scripts/validate_offline.sh`](../../scripts/validate_offline.sh) runs the local checks.
+It needs Git, Bash, Python, dbt, and the pinned dbt packages. Snowflake and BigQuery
+credentials are used only by separate authorised runs against bounded development
+environments.
+
+## Worked examples
+
+The repository contains an e-commerce estate and an investment estate. Both use the same
+engine and adapter interfaces.
+
+The e-commerce estate models customers, products, orders, and customer segments. Its
+three sources exercise source mapping, customer identity resolution, survivorship,
+historical classification, order reconciliation, and revenue measures.
+
+The investment estate models funds, management firms, portfolio companies, legal
+vehicles, cash flows, valuations, and deal opportunities. Its sources exercise the same
+pipeline mechanisms with a different warehouse model and different business rules.
+
+The root [README.md](../../README.md#worked-domains) describes the results produced by
+both estates. [DEMO.md](../../DEMO.md) explains their source declarations and mappings.
+
+## Optional alignment with reference models
+
+An estate may align its warehouse model with an industry, enterprise, or public reference
+model. The reference model can supply a starting schema and vocabulary. The estate still
+records the model it uses and the mappings from each source.
+
+The investment example records attribute lineage to the
+[Open Investment Model (OpenIM)](https://openinvestmentmodel.org). A validation hook can
+check those references when an OpenIM checkout is supplied. BIAN, FIBO, and internal
+canonical models occupy the same architectural position when a validator exists for
+their format.
+
+Alignment with a reference model is optional. The mappings from each source into the
+warehouse and the generated pipeline work with an estate's own warehouse model.
+
+The domain file also defines a relationship vocabulary. Ergasterion uses it to produce a
+typed domain map and a binding to the physical warehouse tables. The
+[domain map guide](ontology-map-lane.md) describes that projection.
+
+## Boundaries
+
+- Business meaning enters through the warehouse model, source mappings, matching rules,
+  survivorship rules, and served layer design. AI assistance can help develop each of
+  these inputs. The reviewed estate files record the decisions generation applies.
+- DDL and ODCS importers provide structural starting points. The estate completes the
+  business meaning, source mappings, ownership, matching rules, and publication details.
+- Automated identity resolution follows the signals and thresholds approved for the
+  estate. Uncertain pairs wait for a recorded review decision.
+- DuckDB, Snowflake, and BigQuery are the current warehouse targets. Another target needs
+  the required SQL implementation, target configuration, and validation evidence.
+- Adapter conformance establishes compatibility with Ergasterion's interfaces.
+  Production suitability also depends on the target environment's security, resilience,
+  access control, operating model, and recovery evidence.
+
+## For engineers
+
+| Location | Responsibility |
+|---|---|
+| `domains/` | Warehouse models, matching rules, survivorship rules, product definitions, and relationship vocabularies |
+| `declarations/` | Source schemas, landing configuration, and mappings into the warehouse model |
+| `ergasterion/emit.py` and `ergasterion/templates/` | Deterministic warehouse model generation |
+| `ergasterion/framework/` | Typed contracts, execution plans, routing, bindings, and translator conformance |
+| `ergasterion/translators/` | Translation from execution plans into target artefacts |
+| `ergasterion/ingestion/` | Bronze runtime, ports, local adapters, operational evidence, and adapter conformance |
+| `models/` | Generated integration models and the estate's canonical, mart, calculated field, and semantic outputs |
+| `contracts/`, `products/`, and `graphs/` | Generated publication interfaces |
+
+The root [README.md](../../README.md#for-engineers) covers installation, commands, and the
+complete repository layout. [RUNBOOK.md](../../RUNBOOK.md) covers local operation, Bronze
+commands, and live warehouse validation. [`bronze-ingestion.md`](bronze-ingestion.md) and
+[`ontology-map-lane.md`](ontology-map-lane.md) provide the detailed architecture for those
+two areas.

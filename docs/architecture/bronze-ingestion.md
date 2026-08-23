@@ -207,7 +207,7 @@ also depends on the environment's security controls, operating model, and recove
 
 ## Where Bronze fits in the generated pipeline
 
-The [architecture overview](README.md#the-shape-of-the-system-in-one-diagram) begins its
+The [architecture overview](README.md#architecture-overview) begins its
 walk of the generated pipeline at typed staging. Bronze is the layer that makes typed
 staging possible: every generated staging model reads from a Bronze product's `published`
 interface. A source declaration carries both its Bronze contract and its domain mapping.

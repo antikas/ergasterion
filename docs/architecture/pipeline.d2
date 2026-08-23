@@ -39,7 +39,7 @@ canvas: {
   marts: "models/marts/ + calculated_fields/\n+ semantic/\ndim_*.sql · fact_*.sql · cf_*.sql"
 
   gates: {
-    label: "what keeps it honest"
+    label: "verification gates"
     class: container
     byte_stable: "emit.py --check\n(byte-stable re-emit)"
     dialect_lint: "ergasterion/dialect_lint.py"
@@ -152,7 +152,7 @@ canvas.gates.duckdb_build.class: gate-dim
 # --- progressive reveal: each step lights the next real stage of the pipeline ---
 
 steps: {
-  # state1 -- "you write a short description of the source"
+  # state1 -- the source declarations are the generator inputs
   1: {
     canvas.sources.vantora.class: lit
     canvas.sources.chrono.class: lit
@@ -163,7 +163,7 @@ steps: {
     (canvas.sources.portiq -> canvas.emit)[0].class: lit-edge
     (canvas.sources.meridex -> canvas.emit)[0].class: lit-edge
   }
-  # state2 -- "a generator reads those descriptions"; the emitted layers fan out
+  # state2 -- the generator reads the declarations and emits typed staging
   2: {
     canvas.emit.class: lit
     canvas.staging.class: lit
@@ -181,7 +181,7 @@ steps: {
     (canvas.entity_resolution.tier1 -> canvas.entity_resolution.tier2)[0].class: lit-edge
     (canvas.entity_resolution.tier2 -> canvas.entity_resolution.review_queue)[0].class: lit-edge
   }
-  # state5 -- memory, choosing: raw vault + business vault golden record light together
+  # state5 -- history and survivorship: raw vault + business vault golden record
   5: {
     canvas.raw_vault.class: lit
     canvas.business_vault.class: lit
@@ -189,7 +189,7 @@ steps: {
     (canvas.entity_resolution.review_queue -> canvas.raw_vault)[0].class: lit-edge
     (canvas.raw_vault -> canvas.business_vault)[0].class: lit-edge
   }
-  # state6 -- canonical + marts/metrics light, and the gates ring the whole pipeline
+  # state6 -- canonical + marts/metrics light, with the verification gates
   6: {
     canvas.canonical.class: lit
     canvas.marts.class: lit
