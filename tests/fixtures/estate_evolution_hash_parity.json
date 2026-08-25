@@ -1,0 +1,94 @@
+{
+  "comment": [
+    "Golden-hash parity vectors for the declared re-baseline.",
+    "hashdiff_expression is the bare expression macros/estate_evolution.sql renders from",
+    "automate_dv.hash over the basis with is_hashdiff=true; aliased_expression is the same",
+    "rendering before the alias is stripped. basis is written in declaration order, and the",
+    "expression shows the alphabetical order AutomateDV hashes in.",
+    "expected_hashdiff pins what DuckDB computes for each row, so a change in the hash",
+    "construction is caught on execution."
+  ],
+  "basis": [
+    "product_note",
+    "list_price",
+    "product_name",
+    "as_of_date"
+  ],
+  "alias": "dpf_rebaseline_hashdiff",
+  "hashdiff_expression": "CAST(UPPER(MD5(CONCAT_WS('||',\n    IFNULL(NULLIF(UPPER(TRIM(CAST(as_of_date AS VARCHAR))), ''), '^^'),\n    IFNULL(NULLIF(UPPER(TRIM(CAST(list_price AS VARCHAR))), ''), '^^'),\n    IFNULL(NULLIF(UPPER(TRIM(CAST(product_name AS VARCHAR))), ''), '^^'),\n    IFNULL(NULLIF(UPPER(TRIM(CAST(product_note AS VARCHAR))), ''), '^^')\n))) AS VARCHAR)",
+  "aliased_expression": "CAST(UPPER(MD5(CONCAT_WS('||',\n    IFNULL(NULLIF(UPPER(TRIM(CAST(as_of_date AS VARCHAR))), ''), '^^'),\n    IFNULL(NULLIF(UPPER(TRIM(CAST(list_price AS VARCHAR))), ''), '^^'),\n    IFNULL(NULLIF(UPPER(TRIM(CAST(product_name AS VARCHAR))), ''), '^^'),\n    IFNULL(NULLIF(UPPER(TRIM(CAST(product_note AS VARCHAR))), ''), '^^')\n))) AS VARCHAR) AS dpf_rebaseline_hashdiff",
+  "column_types": {
+    "as_of_date": "DATE",
+    "list_price": "DECIMAL(10,2)",
+    "product_name": "VARCHAR",
+    "product_note": "VARCHAR"
+  },
+  "rows": [
+    {
+      "row_id": 1,
+      "as_of_date": "2025-01-01",
+      "list_price": "59.99",
+      "product_name": "Wireless Earbuds",
+      "product_note": null
+    },
+    {
+      "row_id": 2,
+      "as_of_date": "2025-01-01",
+      "list_price": "59.99",
+      "product_name": "Wireless Earbuds",
+      "product_note": ""
+    },
+    {
+      "row_id": 3,
+      "as_of_date": "2025-01-01",
+      "list_price": "59.99",
+      "product_name": "Wireless Earbuds",
+      "product_note": "   "
+    },
+    {
+      "row_id": 4,
+      "as_of_date": "2025-01-01",
+      "list_price": "59.99",
+      "product_name": "wireless earbuds",
+      "product_note": "NOTE-1"
+    },
+    {
+      "row_id": 5,
+      "as_of_date": "2025-01-01",
+      "list_price": "59.99",
+      "product_name": "  Wireless Earbuds  ",
+      "product_note": "note-1"
+    },
+    {
+      "row_id": 6,
+      "as_of_date": "2025-12-31",
+      "list_price": "0.00",
+      "product_name": "Cafe Grinder \u00e9\u00e9",
+      "product_note": "NOTE-2"
+    },
+    {
+      "row_id": 7,
+      "as_of_date": null,
+      "list_price": null,
+      "product_name": null,
+      "product_note": null
+    },
+    {
+      "row_id": 8,
+      "as_of_date": "2025-01-01",
+      "list_price": "1.50",
+      "product_name": "Kettle",
+      "product_note": "^^"
+    }
+  ],
+  "expected_hashdiff": {
+    "1": "999E14B3048937C1599FBB656AD7E573",
+    "2": "999E14B3048937C1599FBB656AD7E573",
+    "3": "999E14B3048937C1599FBB656AD7E573",
+    "4": "AE6B32E478EE8B6945CDD64A21FE5C65",
+    "5": "AE6B32E478EE8B6945CDD64A21FE5C65",
+    "6": "E0D47357FFE64698E29C51FD2BABAED1",
+    "7": "889D3256EAF8CEC0209F1FB105142881",
+    "8": "BF15F5F27472F2FBC3ECDA37FB26A390"
+  }
+}

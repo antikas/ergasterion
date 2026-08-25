@@ -3,7 +3,7 @@
 {{ dbt_set('src_pk', entity.src_pk) }}
 {{ dbt_set('src_hashdiff', entity.hashdiff) }}
 {{ dbt_set('src_payload', entity.payload) }}
-{{ dbt_set('src_eff', 'effective_from') }}
+{{ dbt_set('src_eff', effective_column) }}
 {{ dbt_set('src_ldts', 'load_datetime') }}
 {{ dbt_set('src_source', 'record_source') }}
 

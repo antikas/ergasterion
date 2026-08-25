@@ -845,6 +845,72 @@ def test_default_check_run_summary_carries_warnings_count() -> None:
     )
 
 
+def test_main_bootstraps_the_evolution_ledger_and_grades_later_payloads() -> None:
+    """The whole emit command carries estate evolution: the first run bootstraps the
+    domain's ledger and stays byte-stable on a second --check run; a payload addition
+    is graded an extension and reported; a removal stops emit with the estate migration
+    requirement."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        domains_dir = tmp_path / "domains"
+        domains_dir.mkdir()
+        domain_doc = copy.deepcopy(FIXTURE_DOMAIN)
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(domain_doc, sort_keys=False), encoding="utf-8"
+        )
+        decls = tmp_path / "declarations"
+        decls.mkdir()
+        declaration = _fixture_declaration()
+        _write_declaration(decls, "toysrc.yml", declaration)
+        _write_structure_minimum(tmp_path)
+
+        exit_code, out, _err = _run_main_capturing(["--estate-root", str(tmp_path)])
+        assert exit_code == 0, f"first emit must succeed, got {exit_code}: {out}"
+        ledger_path = decls / "evolution" / "fixture.lock.yml"
+        assert ledger_path.is_file(), f"the first emit must bootstrap {ledger_path}: {out}"
+        ledger = yaml.safe_load(ledger_path.read_text(encoding="utf-8"))
+        assert ledger["entities"]["alpha"]["hashdiff_basis"] == FIXTURE_DOMAIN[
+            "entity_configs"]["alpha"]["payload"]
+
+        exit_code, out, _err = _run_main_capturing(["--check", "--estate-root", str(tmp_path)])
+        assert exit_code == 0, f"the bootstrapped estate must be byte-stable, got: {out}"
+
+        # An extension: the new column reaches every payload layer and the run says which
+        # columns stay outside change detection until a re-baseline.
+        domain_doc["entity_configs"]["alpha"]["payload"].append("alpha_extra")
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(domain_doc, sort_keys=False), encoding="utf-8"
+        )
+        table = declaration["tables"]["things"]
+        table["projection"].append(
+            {"name": "alpha_extra", "expression": "cast(alpha_extra as string)"}
+        )
+        for vault in table["vault_entities"]:
+            if vault["entity"] == "alpha":
+                vault["bridge"]["select"].append(
+                    {"name": "alpha_extra", "expression": "source.alpha_extra"}
+                )
+        _write_declaration(decls, "toysrc.yml", declaration)
+        exit_code, out, _err = _run_main_capturing(["--estate-root", str(tmp_path)])
+        assert exit_code == 0, f"an extension must emit, got {exit_code}: {out}"
+        notice = [line for line in out.splitlines() if line.startswith("estate evolution: extension")]
+        assert len(notice) == 1, f"expected one extension notice line, got: {out}"
+        assert "alpha_extra" in notice[0], notice[0]
+        satellite = (tmp_path / "models" / "raw_vault" / "satellites" / "sat_alpha_toysrc.sql")
+        assert "alpha_extra" in satellite.read_text(encoding="utf-8")
+
+        # A removal: emit stops, naming entity, column, change class and remedy.
+        domain_doc["entity_configs"]["alpha"]["payload"].remove("source_id")
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(domain_doc, sort_keys=False), encoding="utf-8"
+        )
+        exit_code, out, _err = _run_main_capturing(["--estate-root", str(tmp_path)])
+        assert exit_code == 1, f"a removal must stop emit, got {exit_code}: {out}"
+        assert "estate migration requirement" in out, out
+        for token in ("alpha", "source_id", "removal", "remedy:"):
+            assert token in out, f"expected {token!r} in the failure, got: {out}"
+
+
 def test_bigquery_deny_list_is_non_empty() -> None:
     assert dialect_lint.DENY_LISTS["bigquery"], "BigQuery must have portability rules"
 
@@ -1456,7 +1522,202 @@ def test_removed_declaration_turns_the_orphan_signal_on() -> None:
         )
 
 
+# --- cross-target satellite replay suppression -------------------------------------
+
+# Replay suppression is the satellite guard that discards a candidate row whose
+# (business key, hashdiff, effective time) already exists in the target. The three tests
+# below hold the guard's two halves together: the macro that renders the key, and the
+# generated declaration that pins the same key as a uniqueness test on every satellite.
+
+_SUPPRESSION_MACRO = "dpf_sat_replay_suppression"
+
+
+def _macro_source(name: str) -> str:
+    return (emit.REPO_ROOT / "macros" / name).read_text(encoding="utf-8")
+
+
+def test_both_satellite_arms_share_one_suppression_body() -> None:
+    """The DuckDB and Snowflake satellite overrides delegate to one shared suppression
+    macro, and that macro wraps AutomateDV's own satellite SQL rather than replacing it.
+    Two arms carrying two hand-copied bodies could drift apart on the comparison, the
+    key, or the wrapping; one body cannot."""
+    duckdb_src = _macro_source("automate_dv_duckdb.sql")
+    snowflake_src = _macro_source("automate_dv_snowflake.sql")
+
+    assert f"macro {_SUPPRESSION_MACRO}(" in snowflake_src, (
+        "the shared suppression macro must be declared once"
+    )
+    assert duckdb_src.count(f"macro {_SUPPRESSION_MACRO}(") == 0, (
+        "the shared suppression macro must not be declared twice"
+    )
+    for name, source in (("duckdb__sat", duckdb_src), ("snowflake__sat", snowflake_src)):
+        assert f"macro {name}(" in source, f"{name} must be declared"
+        assert f"{_SUPPRESSION_MACRO}(" in source, f"{name} must delegate to the shared body"
+        assert "default__sat(" not in source.split(f"macro {name}(", 1)[1].split("endmacro", 1)[0], (
+            f"{name} must reach AutomateDV's satellite SQL through the shared body alone"
+        )
+
+    body = snowflake_src.split(f"macro {_SUPPRESSION_MACRO}(", 1)[1].split("endmacro", 1)[0]
+    assert "automate_dv.default__sat(" in body, "the shared body must wrap AutomateDV's satellite SQL"
+    assert "WHERE NOT EXISTS (" in body, "the shared body must suppress with a NOT EXISTS guard"
+    assert body.count("IS NOT DISTINCT FROM") == 2, (
+        "hashdiff and effective time must both be compared null-safely"
+    )
+
+    # The DuckDB parse-wall overrides AutomateDV needs on DuckDB stay in their own file and
+    # stay whole: the suppression work must not have shadowed or dropped one of them.
+    for leaf in (
+        "duckdb__get_escape_characters",
+        "duckdb__cast_date",
+        "duckdb__cast_datetime",
+        "duckdb__type_binary",
+        "duckdb__type_timestamp",
+        "duckdb__cast_binary",
+        "duckdb__hash_alg_md5",
+        "duckdb__hash_alg_sha256",
+        "duckdb__hash_alg_sha1",
+    ):
+        assert f"macro {leaf}(" in duckdb_src, f"{leaf} must stay declared"
+        assert f"macro {leaf}(" not in snowflake_src, f"{leaf} must not be shadowed"
+
+
+def test_satellite_tests_declare_the_suppression_key_under_arguments() -> None:
+    """The emitted declaration gives every satellite a uniqueness test over its own
+    replay-suppression key, with the test's keyword arguments under the nested
+    ``arguments:`` mapping dbt reads them from."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        domains_dir = tmp_path / "domains"
+        domains_dir.mkdir()
+        (domains_dir / "fixture.yml").write_text(
+            yaml.safe_dump(FIXTURE_DOMAIN, sort_keys=False), encoding="utf-8"
+        )
+        decls_dir = tmp_path / "declarations"
+        decls_dir.mkdir()
+        _write_declaration(decls_dir, "toysrc.yml", _fixture_declaration())
+
+        domain = emit.load_domains(domains_dir)
+        ctx = emit.EstateContext.resolve(
+            estate_root=tmp_path, domains_dir=domains_dir, declarations_dir=decls_dir
+        )
+        declarations = emit.load_declarations(domain, ctx=ctx)
+        files = emit.generate_files(declarations, emit.template_env(), domain, ctx=ctx)
+
+        rendered = {f.path.name: f.content for f in files}
+        assert "_satellites.yml" in rendered, "the satellite test declaration must render"
+        document = yaml.safe_load(rendered["_satellites.yml"])
+
+        satellites = {
+            f.path.stem
+            for f in files
+            if f.path.suffix == ".sql" and f.path.parent.name == "satellites"
+        }
+        assert satellites, "the fixture domain must emit at least one satellite"
+        declared = {model["name"] for model in document["models"]}
+        assert declared == satellites, (
+            f"every satellite must be pinned exactly once: {sorted(declared)} vs {sorted(satellites)}"
+        )
+
+        for model in document["models"]:
+            tests = model["data_tests"]
+            assert len(tests) == 1, f"{model['name']}: expected one uniqueness test"
+            test = tests[0]["dbt_utils.unique_combination_of_columns"]
+            assert set(test) == {"arguments"}, (
+                f"{model['name']}: test keyword arguments must sit under the nested "
+                f"arguments: mapping, got {sorted(test)}"
+            )
+            key = test["arguments"]["combination_of_columns"]
+            entity = domain["entity_configs"][
+                next(v["entity"] for v in emit.select_vaults(declarations)
+                     if v["satellite_model"] == model["name"])
+            ]
+            assert key == [entity["src_pk"], entity["hashdiff"], emit.EFFECTIVE_COLUMN], (
+                f"{model['name']}: the pinned key must be business key, hashdiff, effective column"
+            )
+
+
+def test_committed_satellite_pins_match_the_committed_satellite_sql() -> None:
+    """Every committed satellite carries a pin, and each pinned key is the exact
+    (src_pk, src_hashdiff, src_eff) triple that satellite hands the macro. The
+    declaration and the SQL cannot name different columns."""
+    satellites_dir = emit.REPO_ROOT / "models" / "raw_vault" / "satellites"
+    document = yaml.safe_load(
+        (satellites_dir / "_satellites.yml").read_text(encoding="utf-8")
+    )
+    pinned = {
+        model["name"]: model["data_tests"][0]["dbt_utils.unique_combination_of_columns"][
+            "arguments"
+        ]["combination_of_columns"]
+        for model in document["models"]
+    }
+    # Generated satellites only: the guard lives in the AutomateDV satellite macro, and a
+    # hand-authored satellite in the same folder builds its own SQL without reaching it.
+    generated = {
+        path.stem
+        for path in sorted(satellites_dir.glob("sat_*.sql"))
+        if dialect_lint._is_generated(path)
+    }
+    assert generated, "the committed estate must carry generated satellites"
+    assert set(pinned) == generated, (
+        f"pinned satellites and generated satellite models must agree: "
+        f"{sorted(set(pinned) ^ generated)}"
+    )
+
+    for name in sorted(generated):
+        text = (satellites_dir / f"{name}.sql").read_text(encoding="utf-8")
+        declared = []
+        for variable in ("src_pk", "src_hashdiff", "src_eff"):
+            marker = f"{{%- set {variable} = '"
+            assert marker in text, f"{name}: {variable} must be set in the emitted SQL"
+            declared.append(text.split(marker, 1)[1].split("'", 1)[0])
+        assert pinned[name] == declared, (
+            f"{name}: pinned key {pinned[name]} does not match the satellite's own "
+            f"{declared}"
+        )
+
+
+def test_every_committed_table_resolves_exactly_one_natural_key() -> None:
+    """natural_key is the source of truth for the derived staging key. No committed
+    table declares a staging increment block, so every one of them resolves its key by
+    inference from a single unambiguous unique model test, and none is ambiguous."""
+    declarations = emit.load_declarations()
+    seen = 0
+    for declaration in declarations:
+        for table_name, table in declaration.get("tables", {}).items():
+            where = f"{declaration['source']['name']}.{table_name}"
+            assert emit.STAGING_INCREMENT_KEY not in table, (
+                f"{where}: the committed estate declares no staging increment block"
+            )
+            key = table.get(emit.NATURAL_KEY_FIELD)
+            assert isinstance(key, list) and key, f"{where}: no natural key resolved"
+            projected = {column["name"] for column in table.get("projection", [])}
+            assert set(key) <= projected, f"{where}: {key} is not in the staging projection"
+            seen += 1
+    assert seen, "expected the committed estate to carry tables"
+
+
+def test_an_undeclared_table_carries_no_window_text() -> None:
+    """Every generated file of an undeclared table stays free of window text, which is
+    what keeps the committed estate regenerating byte-identically."""
+    domain = emit.load_domains()
+    declarations = emit.load_declarations(domain)
+    warnings, windowed = emit.apply_staging_increments(declarations)
+    assert warnings == [], warnings
+    assert windowed == set(), windowed
+    files = emit.generate_files(declarations, emit.template_env(), domain)
+    for file in files:
+        if file.path.suffix != ".sql":
+            continue
+        assert "dpf_window_floor" not in file.content, file.path
+        assert "incremental_predicates" not in file.content, file.path
+
+
 TESTS = [
+    test_every_committed_table_resolves_exactly_one_natural_key,
+    test_an_undeclared_table_carries_no_window_text,
+    test_both_satellite_arms_share_one_suppression_body,
+    test_satellite_tests_declare_the_suppression_key_under_arguments,
+    test_committed_satellite_pins_match_the_committed_satellite_sql,
     test_missing_bridge_columns_raise_named_value_error,
     test_complete_bridge_columns_pass,
     test_committed_declarations_still_load_clean,
@@ -1471,6 +1732,7 @@ TESTS = [
     test_canonical_mapping_omitted_business_keys_uses_pre_f6_default,
     test_canonical_mapping_omitted_attributes_uses_pre_f6_default,
     test_default_check_run_summary_carries_warnings_count,
+    test_main_bootstraps_the_evolution_ledger_and_grades_later_payloads,
     test_bigquery_deny_list_is_non_empty,
     test_bigquery_lint_rejects_snowflake_construct_in_hand_authored_model,
     test_dialect_gate_rejects_any_registered_adapter_with_empty_rules,

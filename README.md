@@ -24,9 +24,10 @@ a CRM under different keys and column names. The configuration records how each 
 field maps into the warehouse model. The generator applies those rules consistently to
 casting, validation, history, and identity resolution.
 
-The same definitions run on DuckDB, Snowflake, and BigQuery. Platform-specific connectors
-sit behind stable interfaces. Another warehouse or database can be added without
-rewriting the warehouse model or its source mappings.
+DuckDB is the executable reference implementation. Ergasterion also generates the same estate
+for Snowflake and BigQuery. The repository checks those projects with dbt, the tool that builds
+them on the target database. The checks cover parsing, dialect rules, deterministic output,
+structure limits, and adapter conformance.
 
 The [Ergasterion architecture guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/README.md)
 follows a source from its declaration through the generated warehouse layers and
@@ -80,6 +81,10 @@ public interfaces:
 
 - **Warehouse models** under `models/`: typed staging, identity resolution, append-only
   history, golden records, and the project-defined served layer above them.
+- **Estate evolution controls**: additive payload changes are absorbed online, and a
+  declared re-baseline brings new columns into change detection when the estate is ready.
+- **Watermark increments**: a source table can read a bounded window of new and late
+  records while keeping append-only satellite history.
 - **Data contracts** under `contracts/`: one ODCS contract per served table and one Open
   Data Product Standard (ODPS, Bitol) descriptor per domain.
 - **Domain maps** under `graphs/`: entities and their relationships in relational, graph,
@@ -125,16 +130,47 @@ The [demo guide](https://github.com/antikas/ergasterion/blob/master/demo/README.
 the customer and investment warehouse results on invented data. The separate Bronze
 demonstration covers the received-file boundary.
 
+## Changing a running estate
+
+Most source changes need one ordinary workflow. Add the field to the source declaration,
+map it for every source that feeds the entity, run `ergasterion emit`, review the change,
+and deploy it. Existing history keeps its identity. New rows can carry the new field.
+
+Ergasterion can do this safely because it commits an **evolution ledger** beside each
+domain. The ledger records the fields stored for each entity and the exact fields and
+expressions used to detect a changed record. It is durable state for a running estate.
+Keep it in version control. If it is lost, restore it from the deployed revision rather
+than generating a new ledger over an existing warehouse.
+
+Changing what an existing field means is different from adding one. A removal, rename,
+type change, changed projection expression, or hashdiff-basis change stops generation
+with an **estate migration requirement**. The error names the affected entity and field
+and points to the re-baseline operation. A re-baseline is planned maintenance: it
+recomputes stored change fingerprints, then keeps the warehouse gate closed while the
+regenerated models are deployed. The operator releases that gate explicitly.
+
+Large source tables can opt into bounded staging. Each table declares its natural key,
+lookback, and the effective date that advances when the source redelivers a record. Its
+processing floor is derived only from satellites fed by that table, so another table on
+the same source cannot move it. Records at or above the floor enter staging; replay
+suppression prevents an already stored version from being appended again.
+
+These controls are optional. A normal estate can start with full source processing and
+add a staging increment only when volume makes it worthwhile. The [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md)
+contains the operator steps and recovery rules.
+
 ## DuckDB, Snowflake, and BigQuery
 
 The estate's warehouse model and source mappings are independent of the database that
-executes them. Ergasterion provides working targets for DuckDB, Snowflake, and BigQuery.
-The adapter architecture separates platform work at two boundaries.
+executes them. DuckDB is the executable reference implementation. Snowflake and BigQuery
+are implemented generation targets whose generated projects pass dbt parsing, dialect
+linting, deterministic generation, structure checks, and adapter conformance tests. The
+adapter architecture separates platform work at two boundaries.
 
 The engine resolves a platform-neutral execution plan, then produces the models and tests
 that dbt runs. Adapter-dispatched macros isolate SQL differences, while target
 declarations record database limits and materialisation constraints. The same estate can
-be built with each supported dbt adapter.
+be generated for each supported dbt adapter.
 
 The Bronze runtime reaches external systems through nine ports: source connection, raw
 storage, scratch storage, operational state, landing, remediation, projection, lifecycle
@@ -144,7 +180,7 @@ local reference binding uses files, SQLite, and DuckDB.
 Another platform supplies adapters for its own scheduler, state database, storage,
 warehouse, and policy services. The packaged conformance runner checks those
 implementations against the runtime contract, including failure recovery and
-backup/restore behaviour. Adding a target is a defined adapter task; the domain schema,
+backup/restore behaviour. Adding a target is a defined adapter task. The domain schema,
 source mappings, product contracts, and business rules remain unchanged.
 
 ## Receiving delivered data with Bronze
@@ -220,8 +256,9 @@ The repository checks the generated estate at several boundaries:
 - Adapter conformance covers state, storage, publication, failure recovery, protection,
   and verified backup/restore behaviour.
 
-The local validator needs no warehouse account. Live Snowflake validation is a separate
-authorised run against a bounded development schema.
+The local validator needs no warehouse account. It checks generated Snowflake and BigQuery
+projects through dbt parsing, dialect rules, deterministic output, structure limits, and
+adapter conformance.
 
 ## Worked domains
 
@@ -265,8 +302,10 @@ walks through both domains and the importers.
   remains unmerged until the review decision is recorded.
 - External reference models are optional. Each format needs validation support before
   Ergasterion can check an alignment against it.
-- DuckDB, Snowflake, and BigQuery are included. Another platform needs implementations
-  of the relevant translator and runtime adapter contracts.
+- DuckDB is the executable reference implementation. Snowflake and BigQuery are implemented
+  generation targets checked through dbt parsing, dialect linting, deterministic generation,
+  structure checks, and adapter conformance tests. Another platform needs implementations of
+  the relevant translator and runtime adapter contracts.
 - Adapter conformance establishes compatibility with Ergasterion's interfaces.
   Production security, resilience, access control, and operation remain responsibilities
   of the target environment.
@@ -360,8 +399,8 @@ dbt deps --profiles-dir profiles
 dbt build --profiles-dir profiles --target duckdb
 ```
 
-Select `snowflake` or `bigquery` as the target to build on those platforms. Their account
-settings and credentials stay in the target environment.
+Select `snowflake` or `bigquery` when generating or preparing an estate for either target.
+Their account settings and credentials stay in the target environment.
 
 ### Run the worked repository
 
@@ -379,13 +418,13 @@ and backup/restore through the local reference adapters:
 bash demo/bronze-ingestion/run_bronze_demo.sh
 ```
 
-The live Snowflake demonstration creates a fresh schema in an authorised account:
+The Snowflake demonstration script provisions and runs the worked estate in an account
+selected by its owner. Its help can be inspected without opening an account connection:
 
 ```bash
-bash demo/run_clean_demo.sh
+bash demo/run_clean_demo.sh --help
 ```
 
-Review the account, role, database, schema, and warehouse before running the live path.
 The [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md) contains the
 complete setup and operating sequence.
 
@@ -397,6 +436,7 @@ complete setup and operating sequence.
 | `ergasterion import-ddl` | Seed a domain model or source declaration from DDL. |
 | `ergasterion import-odcs` | Seed a source declaration from an ODCS contract. |
 | `ergasterion emit` | Generate the source-facing warehouse pipeline. |
+| `ergasterion evolve` | Run estate evolution operations, including re-baseline and audit-window. |
 | `ergasterion contracts` | Generate ODCS contracts for served tables. |
 | `ergasterion odps` | Generate one ODPS descriptor per domain. |
 | `ergasterion graph` | Generate the typed domain map. |
@@ -425,7 +465,7 @@ Run `ergasterion <command> --help` for the exact options.
 | `macros/` | Shared dbt and cross-database adapter logic. |
 | `contracts/` | Generated ODCS contracts and ODPS descriptors. |
 | `graphs/` | Generated domain-map artefacts. |
-| `demo/` | Account-free and live demonstrations. |
+| `demo/` | Account-free demonstrations and adapter scripts. |
 | `streamlit/` | Review screen for uncertain matches and deal decisions. |
 | `tests/` | Known-answer, structural, contract, package, and conformance checks. |
 

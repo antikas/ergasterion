@@ -51,6 +51,29 @@ else
   fail "Python 3.11+ is required; set PY or add python3/python to PATH"
 fi
 
+# WSL can execute the repository's Windows virtualenv directly, but it does not
+# translate POSIX path arguments or inherited environment variables unless asked.
+# Keep shell-side paths in their POSIX form for Bash/cp/mkdir, and translate only
+# at the Windows-Python boundary. Git Bash performs its own native-argument
+# conversion and has no wslpath, so it continues through the ordinary branch.
+WINDOWS_PYTHON_UNDER_WSL=0
+case "$PY" in
+  *.exe)
+    if command -v wslpath >/dev/null 2>&1; then
+      WINDOWS_PYTHON_UNDER_WSL=1
+      export WSLENV="${WSLENV:+$WSLENV:}DPF_WHEELHOUSE/p:DPF_DBT_PACKAGE_CACHE/p:DBT_LOG_PATH/p:PY/p:DBT/p"
+    fi
+    ;;
+esac
+
+python_path() {
+  if [ "$WINDOWS_PYTHON_UNDER_WSL" -eq 1 ]; then
+    wslpath -w -- "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
 [ -n "${DPF_WHEELHOUSE:-}" ] || fail "DPF_WHEELHOUSE is required -- the wheel-mode arm installs offline only"
 [ -d "$DPF_WHEELHOUSE" ] || fail "DPF_WHEELHOUSE does not name a directory: $DPF_WHEELHOUSE"
 
@@ -59,21 +82,36 @@ fi
 [ -d "$DPF_DBT_PACKAGE_CACHE/dbt_utils" ] || fail "DPF_DBT_PACKAGE_CACHE is missing dbt_utils/: $DPF_DBT_PACKAGE_CACHE"
 [ -d "$DPF_DBT_PACKAGE_CACHE/automate_dv" ] || fail "DPF_DBT_PACKAGE_CACHE is missing automate_dv/: $DPF_DBT_PACKAGE_CACHE"
 
-WORK=$(mktemp -d) || fail "cannot create a scratch directory"
+if [ "$WINDOWS_PYTHON_UNDER_WSL" -eq 1 ]; then
+  WINDOWS_TEMP_PY=$("$PY" -c 'import tempfile; print(tempfile.gettempdir())' | tr -d '\r') \
+    || fail "cannot discover the Windows temporary directory"
+  WINDOWS_TEMP=$(wslpath -u -- "$WINDOWS_TEMP_PY") \
+    || fail "cannot map the Windows temporary directory into WSL"
+  WORK=$(mktemp -d "$WINDOWS_TEMP/ergasterion-wheel.XXXXXX") \
+    || fail "cannot create a shared Windows/WSL scratch directory"
+else
+  WORK=$(mktemp -d) || fail "cannot create a scratch directory"
+fi
 cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
+
+REPO_ROOT_PY=$(python_path "$REPO_ROOT") || fail "cannot translate the repository path for Python"
+WORK_PY=$(python_path "$WORK") || fail "cannot translate the scratch path for Python"
+WHEELHOUSE_PY=$(python_path "$DPF_WHEELHOUSE") || fail "cannot translate DPF_WHEELHOUSE for Python"
+DBT_PACKAGE_CACHE_PY=$(python_path "$DPF_DBT_PACKAGE_CACHE") || fail "cannot translate DPF_DBT_PACKAGE_CACHE for Python"
 
 echo "--- build the wheel"
 # --no-build-isolation: the backend (setuptools, pinned in [build-system].requires) is borrowed
 # from $PY's own already-bootstrapped environment rather than fetched into an ephemeral isolated
 # build env from the package index -- this is the ONLY way this build step stays offline.
-"$PY" -m pip wheel "$REPO_ROOT" --no-deps --no-build-isolation -w "$WORK/dist" -q \
+"$PY" -m pip wheel "$REPO_ROOT_PY" --no-deps --no-build-isolation -w "$WORK_PY/dist" -q \
   || fail "wheel build (offline, --no-build-isolation borrowing \$PY's own setuptools)"
 WHEEL=$(ls "$WORK"/dist/ergasterion_factory-*.whl 2>/dev/null | head -n1)
 [ -n "$WHEEL" ] || fail "no ergasterion_factory wheel produced"
+WHEEL_PY=$(python_path "$WHEEL") || fail "cannot translate the built wheel path for Python"
 
 echo "--- scratch venv + non-editable install"
-"$PY" -m venv "$WORK/venv" || fail "scratch venv creation"
+"$PY" -m venv "$WORK_PY/venv" || fail "scratch venv creation"
 if [ -x "$WORK/venv/Scripts/python.exe" ]; then
   VPY="$WORK/venv/Scripts/python.exe"
   ERG="$WORK/venv/Scripts/ergasterion.exe"
@@ -83,13 +121,13 @@ else
   ERG="$WORK/venv/bin/ergasterion"
   VDBT="$WORK/venv/bin/dbt"
 fi
-"$VPY" -m pip install -q --no-index --find-links "$DPF_WHEELHOUSE" "$WHEEL" \
+"$VPY" -m pip install -q --no-index --find-links "$WHEELHOUSE_PY" "$WHEEL_PY" \
   || fail "offline wheel install into the scratch venv via --no-index --find-links $DPF_WHEELHOUSE"
 # The local-ingestion extra's packages, installed by name rather than as a
 # "<wheel-path>[local-ingestion]" argument: a bracket-suffixed local-file argument does not
 # survive Git Bash's native-executable path translation reliably on Windows, where $WHEEL is a
 # POSIX-style mktemp path being handed to a native (non-MSYS) python.exe.
-"$VPY" -m pip install -q --no-index --find-links "$DPF_WHEELHOUSE" "duckdb==1.5.5" "dbt-core==1.11.12" "dbt-duckdb==1.11.0" \
+"$VPY" -m pip install -q --no-index --find-links "$WHEELHOUSE_PY" "duckdb==1.5.5" "dbt-core==1.11.12" "dbt-duckdb==1.11.0" \
   || fail "offline local-ingestion package install into the scratch venv via --no-index --find-links $DPF_WHEELHOUSE"
 
 echo "--- empty-venv pinned dependency versions (before ingestion and dbt proof)"
@@ -145,7 +183,7 @@ grep -Eq 'duckdb:[[:space:]]+1\.11\.0' <<< "$DBT_VERSION_RAW" \
 cd "$WORK" || fail "cannot enter the scratch directory"
 
 echo "--- framework, translators and ingestion import from the installed wheel"
-"$VPY" - "$REPO_ROOT" <<'PYEOF'
+"$VPY" - "$REPO_ROOT_PY" <<'PYEOF'
 import json
 import sys
 from pathlib import Path
@@ -205,7 +243,7 @@ PYEOF
 [ $? -eq 0 ] || fail "framework/translators/ingestion import from the installed wheel"
 
 echo "--- init from the installed wheel, outside the source tree"
-"$VPY" - "$REPO_ROOT" <<'PYEOF'
+"$VPY" - "$REPO_ROOT_PY" <<'PYEOF'
 import sys
 from pathlib import Path
 
@@ -248,7 +286,7 @@ PYEOF
 [ $? -eq 0 ] || fail "init from the installed wheel"
 
 echo "--- declare the toy fixture domain"
-"$PY" - "$REPO_ROOT" <<'PYEOF'
+"$PY" - "$REPO_ROOT_PY" <<'PYEOF'
 import sys
 from pathlib import Path
 
@@ -303,7 +341,7 @@ echo "--- second emit in --check mode (byte-stable)"
 "$ERG" emit --check --estate-root estate || fail "emitted estate is not byte-stable from the wheel"
 
 echo "--- materialize pinned dbt Hub packages from DPF_DBT_PACKAGE_CACHE (no dbt deps, no network)"
-"$PY" - "$DPF_DBT_PACKAGE_CACHE" "$REPO_ROOT" <<'PYEOF' || fail "DPF_DBT_PACKAGE_CACHE does not match packages.yml's pins"
+"$PY" - "$DBT_PACKAGE_CACHE_PY" "$REPO_ROOT_PY" <<'PYEOF' || fail "DPF_DBT_PACKAGE_CACHE does not match packages.yml's pins"
 import sys
 from pathlib import Path
 
@@ -323,7 +361,7 @@ cp -r "$DPF_DBT_PACKAGE_CACHE/dbt_utils" "$PACKAGES_DEST/dbt_utils" || fail "mat
 cp -r "$DPF_DBT_PACKAGE_CACHE/automate_dv" "$PACKAGES_DEST/automate_dv" || fail "materializing automate_dv from DPF_DBT_PACKAGE_CACHE"
 
 echo "--- reference-journey: register/activate the shipped binding's own contract, ingest, inspect, backup/restore"
-"$VPY" - "$REPO_ROOT" <<'PYEOF'
+"$VPY" - "$REPO_ROOT_PY" <<'PYEOF'
 import io
 import json
 import shutil

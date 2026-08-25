@@ -1,4 +1,14 @@
+{%- macro projection_select(table) -%}
+select
+{%- for column in table.projection %}
+    {{ column.expression }} as {{ column.name }}{{ "," if not loop.last }}
+{%- endfor %}
+from source{{ table.visibility_join | default('', true) }}
+{%- endmacro -%}
 {{ generated_header }}
+{%- if table.staging_increment_config | default('', true) %}
+{{ table.staging_increment_config }}
+{%- endif %}
 with source as (
 {%- if table.landing.kind == "source" %}
     select * from {{ "{{ source('" }}{{ table.landing.source_name }}{{ "', '" }}{{ table.landing.identifier }}{{ "') }}" }}
@@ -6,9 +16,17 @@ with source as (
     select * from {{ "{{ ref('" }}{{ table.raw_model }}{{ "') }}" }}
 {%- endif %}
 )
+{%- if table.staging_increment_config | default('', true) %},
 
-select
-{%- for column in table.projection %}
-    {{ column.expression }} as {{ column.name }}{{ "," if not loop.last }}
-{%- endfor %}
-from source{{ table.visibility_join | default('', true) }}
+projected as (
+
+{{ projection_select(table) }}
+
+)
+
+select * from projected
+{{ table.staging_increment_window }}
+{%- else %}
+
+{{ projection_select(table) }}
+{%- endif %}

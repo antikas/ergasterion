@@ -9,3 +9,6 @@
     derived_columns=derived_columns,
     hashed_columns=hashed_columns
 {{ ") }}" }}
+{%- if vault.window_block | default('', true) %}
+{{ vault.window_block }}
+{%- endif %}
