@@ -1,6 +1,9 @@
 """``ergasterion`` console entry point -- multiplexes factory emitters and Bronze commands.
 
     ergasterion emit [args...]          ->  ergasterion.emit:main
+    ergasterion evolve <args...>        ->  ergasterion.emit:evolve_main
+        evolve rebaseline <domain> <entity>   recompute stored hashdiffs under a new basis
+        evolve audit-window <source> <table>  report keys wholly outside the delta window
     ergasterion contracts [args...]     ->  ergasterion.emit_contracts:main
     ergasterion odps [args...]          ->  ergasterion.emit_odps:main
     ergasterion graph [args...]         ->  ergasterion.emit_graph:main
@@ -28,6 +31,7 @@ from ergasterion.ingestion.settings import MISSING_EXTRA_REMEDY
 # subcommand token -> the module whose main() implements it.
 SUBCOMMANDS: dict[str, str] = {
     "emit": "ergasterion.emit",
+    "evolve": "ergasterion.emit",
     "contracts": "ergasterion.emit_contracts",
     "odps": "ergasterion.emit_odps",
     "graph": "ergasterion.emit_graph",
@@ -45,6 +49,13 @@ SUBCOMMANDS: dict[str, str] = {
     "status": "ergasterion.ingestion.commands",
     "inspect": "ergasterion.ingestion.commands",
     "quarantine": "ergasterion.ingestion.commands",
+}
+
+# Subcommands whose module entry point is named something other than main(). The
+# estate-evolution operations live beside the emitter that owns the evolution ledger,
+# so they share ergasterion.emit and carry their own entry point.
+SUBCOMMAND_ENTRYPOINTS: dict[str, str] = {
+    "evolve": "evolve_main",
 }
 
 INGESTION_COMMANDS = frozenset({
@@ -99,6 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     sys.argv = [f"ergasterion {sub}", *rest]
     if sub in INGESTION_COMMANDS:
         return int(module.main([sub, *rest]))
+    entrypoint = SUBCOMMAND_ENTRYPOINTS.get(sub)
+    if entrypoint is not None:
+        return int(getattr(module, entrypoint)(rest))
     return int(module.main())
 
 

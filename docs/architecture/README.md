@@ -118,6 +118,74 @@ disagreements remain visible because new versions are appended.
 This history retains the source and effective date for every value. A downstream record
 can therefore be traced to the source version from which it was produced.
 
+### Evolve payload columns online
+
+A source can add a descriptive field after the warehouse already stores history. The
+generated warehouse handles that additive change as estate evolution. A payload column is
+a descriptive field stored in a satellite.
+
+The **hashdiff basis** is the exact column set an entity's stored hashdiffs were computed
+over. AutomateDV sorts columns alphabetically before hashing, so the set is the whole
+fact. The **evolution ledger** is the generated, committed file per domain that records
+each entity's payload roster, hashdiff basis, projection-expression fingerprints, and
+basis version. It is durable state for a running estate, not a disposable generation
+cache.
+
+An additive payload change is an **extension**. During an extension, the new column enters
+staging, bridge, stage, and satellite output. The hashdiff basis stays frozen, so stored
+history keeps the fingerprints it already has. Existing rows carry `null` for the new
+column, and new rows carry the mapped value.
+
+Every sibling source feeding the same entity maps the new column in its bridge select. A
+source that lacks the field maps it as `null`. The source declaration remains the visible
+place where that decision is reviewed.
+
+A **re-baseline** is the declared maintenance operation that adopts the current payload
+as the new hashdiff basis and recomputes stored hashdiffs in place. It rewrites every
+satellite row for the entity. The row count of those satellites therefore sets the
+maintenance window. Generated stage execution remains gated until the new models are
+deployed and the operator explicitly clears the gate.
+
+An **estate migration requirement** is the named fail-closed error for a non-additive
+change. It states the entity, column, change class, and remedy. Removals, renames, type
+changes, projection-expression changes, and basis conflicts use that error.
+
+The same-effective-time correction boundary is explicit. A re-presented business key and
+effective time with a changed basis payload stores a second version at that effective
+time. The narrow frozen-basis gap sits beside it: a same-effective-time correction
+confined to a post-extension column is captured only after a declared re-baseline.
+
+### Read bounded increments
+
+A source table can declare watermark increments when its effective date advances on
+redelivery. The **effective column** is the one staging output column the table's bridge
+maps to `effective_from`.
+
+A **staging increment block** is the declared per-table configuration for watermark
+increments. It carries `lookback_minutes` and `effective_advances_on_redelivery`. The
+table also declares `natural_key`, and the generated unique key is the natural key plus
+the effective column.
+
+The **consumption watermark** is the point on the effective column up to which every
+satellite fed by that table has absorbed history. The **delta window** is the interval
+from the consumption watermark minus lookback to the future. The generated filter enters
+that window with `>=` at the floor.
+
+**Replay suppression** is the satellite guard that discards a candidate row whose
+business key, hashdiff, and effective time already exist in the target. The guard is
+target-generic and has executed proof on DuckDB.
+
+Watermark increments are valid only for a table whose effective column advances when the
+source redelivers a changed record. A static effective date creates silent update loss:
+the redelivered row can sit below the lookback floor and never reach staging.
+
+The slowest satellite fed by a table holds that table's consumption watermark back. A
+rarely changing satellite that trails the others by 30 days widens the table's logical
+input window by about 30 days. Another table on the same source has its own floor. Split
+satellites by change rate where the wider window grows beyond the estate's normal batch
+budget. Whether the target physically prunes that input is a warehouse-specific design
+question, not a guarantee of the window declaration.
+
 ### Apply survivorship and produce golden records
 
 The estate defines which source should supply each attribute when several sources provide
@@ -177,9 +245,10 @@ target database. dbt dispatch macros isolate SQL differences such as safe casts,
 expressions, date arithmetic, hashing, arrays, and object construction. Target
 declarations record physical limits and materialisation settings.
 
-DuckDB, Snowflake, and BigQuery are implemented targets. The same estate definitions can
-be parsed for all three. The local reference build executes the complete worked estate on
-DuckDB. Snowflake and BigQuery use their corresponding dbt adapters and credentials.
+DuckDB, Snowflake, and BigQuery are implemented targets. DuckDB is the executable reference
+implementation. Snowflake and BigQuery are generation targets whose generated projects pass
+dbt parsing, dialect linting, deterministic generation, structure checks, and adapter
+conformance tests.
 
 A new warehouse target supplies the required SQL dispatches, target limits, and dbt
 configuration. Its implementation must pass the dialect, parse, structure, and build
@@ -221,8 +290,7 @@ metadata at several boundaries:
 
 [`scripts/validate_offline.sh`](../../scripts/validate_offline.sh) runs the local checks.
 It needs Git, Bash, Python, dbt, and the pinned dbt packages. Snowflake and BigQuery
-credentials are used only by separate authorised runs against bounded development
-environments.
+credentials and deployment controls stay in the operator's target environment.
 
 ## Worked examples
 
@@ -268,8 +336,10 @@ typed domain map and a binding to the physical warehouse tables. The
   business meaning, source mappings, ownership, matching rules, and publication details.
 - Automated identity resolution follows the signals and thresholds approved for the
   estate. Uncertain pairs wait for a recorded review decision.
-- DuckDB, Snowflake, and BigQuery are the current warehouse targets. Another target needs
-  the required SQL implementation, target configuration, and validation evidence.
+- DuckDB is the executable reference implementation. Snowflake and BigQuery are implemented
+  generation targets checked through dbt parsing, dialect linting, deterministic generation,
+  structure checks, and adapter conformance tests. Another target needs the required SQL
+  implementation, target configuration, and validation evidence.
 - Adapter conformance establishes compatibility with Ergasterion's interfaces.
   Production suitability also depends on the target environment's security, resilience,
   access control, operating model, and recovery evidence.
@@ -289,6 +359,6 @@ typed domain map and a binding to the physical warehouse tables. The
 
 The root [README.md](../../README.md#for-engineers) covers installation, commands, and the
 complete repository layout. [RUNBOOK.md](../../RUNBOOK.md) covers local operation, Bronze
-commands, and live warehouse validation. [`bronze-ingestion.md`](bronze-ingestion.md) and
+commands, and adapter operation. [`bronze-ingestion.md`](bronze-ingestion.md) and
 [`ontology-map-lane.md`](ontology-map-lane.md) provide the detailed architecture for those
 two areas.

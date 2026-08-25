@@ -418,6 +418,205 @@ def attach_source_physical_coords(source_groups: list[dict[str, Any]]) -> None:
             group["schema"] = schema
 
 
+# --------------------------------------------------------------------------- delta window SQL
+#
+# The delta window is the interval [consumption watermark minus lookback, infinity),
+# entered with a >= comparison at the floor. Every layer of a table carrying a staging
+# increment block filters on that one floor.
+#
+# The floor itself resolves at run time through ``dpf_window_floor``, which returns the
+# consumption watermark minus the lookback as a SQL literal already normalised to the
+# named effective column's native type. The emitter names that column as the
+# normalisation target and leaves every pruning column bare -- no cast and no function
+# wrapper around the column -- so each target prunes on the column itself.
+#
+# ``ergasterion.emit`` decides which table carries a window, which column it filters on
+# and which key the incremental strategy uses; this module renders the dbt text for that
+# decision, and the templates render the text.
+
+WINDOW_FLOOR_MACRO = "dpf_window_floor"
+"""The macro every generated window predicate calls for its floor."""
+
+WINDOW_ROWS_MACRO = "dpf_log_window_rows"
+"""The macro a declared table's staging model runs after it builds, so a normal run
+reports the applied window floor and the rows it processed."""
+
+WINDOW_FLOOR_OPERATOR = ">="
+"""The floor comparison the emitter stamps: the window is closed at the floor."""
+
+DELETE_PREDICATE_MACRO = "dpf_window_delete_predicate"
+"""The macro a declared table's generated configuration states its bounded delete
+predicate through. dbt captures a model's configuration while it parses the project, and
+parsing reads no warehouse state, so the configuration states the window and the
+incremental strategy builds the comparison from it at execution."""
+
+STAGING_INCREMENT_STRATEGY = "delete+insert"
+STAGING_INCREMENT_ON_SCHEMA_CHANGE = "append_new_columns"
+
+
+def watermark_layout_sql(watermark: dict[str, Any]) -> str:
+    """The table-local satellite layout, as the Jinja mapping literal the floor macro
+    reads: the satellites' effective column and, per satellite, the model whose relation
+    carries its stored history beside the record-source literal that satellite writes.
+
+    The record source is what keeps sibling sources apart: each satellite's maximum is
+    taken under its own record-source predicate, so a satellite that ever held another
+    source's rows could never advance this table's watermark.
+    """
+    satellites = ", ".join(
+        "{'relation': '%s', 'record_source': '%s'}"
+        % (entry["relation"], entry["record_source"])
+        for entry in watermark["satellites"]
+    )
+    return (
+        "{'effective_column': '%s', 'satellites': [%s]}"
+        % (watermark["effective_column"], satellites)
+    )
+
+
+def window_floor_call(
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """The bare ``dpf_window_floor(...)`` call, without Jinja delimiters."""
+    return (
+        f"{WINDOW_FLOOR_MACRO}('{source_name}', '{table_name}', "
+        f"'{effective_column}', {lookback_minutes}, {watermark_layout_sql(watermark)})"
+    )
+
+
+def window_floor_expression(
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """The floor as a dbt expression: the call wrapped in output delimiters."""
+    return "{{ " + window_floor_call(
+        source_name, table_name, effective_column, lookback_minutes, watermark
+    ) + " }}"
+
+
+def window_predicate_sql(
+    pruning_column: str,
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """One window predicate: the bare pruning column, the floor operator, the floor."""
+    return (
+        f"{pruning_column} {WINDOW_FLOOR_OPERATOR} "
+        + window_floor_expression(
+            source_name, table_name, effective_column, lookback_minutes, watermark
+        )
+    )
+
+
+def staging_increment_config_sql(
+    unique_key: list[str],
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """The generated configuration a declared table's staging model carries.
+
+    Incremental with the delete+insert strategy on the derived unique key, new payload
+    columns absorbed in place, a bounded delete predicate on the effective column so the
+    delete side scans the window instead of cumulative history, and the run report that
+    names the applied floor and the rows processed.
+    """
+    keys = ", ".join(f"'{column}'" for column in unique_key)
+    delete_predicate = (
+        f"{DELETE_PREDICATE_MACRO}('{source_name}', '{table_name}', "
+        f"'{effective_column}', '{WINDOW_FLOOR_OPERATOR}', {lookback_minutes}, "
+        f"{watermark_layout_sql(watermark)})"
+    )
+    report = (
+        f"{WINDOW_ROWS_MACRO}('{source_name}', '{table_name}', "
+        f"'{effective_column}', {lookback_minutes}, {watermark_layout_sql(watermark)})"
+    )
+    return (
+        "{{ config(\n"
+        "    materialized='incremental',\n"
+        f"    incremental_strategy='{STAGING_INCREMENT_STRATEGY}',\n"
+        f"    unique_key=[{keys}],\n"
+        f"    on_schema_change='{STAGING_INCREMENT_ON_SCHEMA_CHANGE}',\n"
+        f"    incremental_predicates=[{delete_predicate}],\n"
+        '    post_hook=["{{ ' + report + ' }}"]\n'
+        ") }}"
+    )
+
+
+def staging_window_sql(
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """The staging model's window: applied on an incremental run, inert on the first
+    build and under the full-refresh flag, which both make ``is_incremental()`` false."""
+    predicate = window_predicate_sql(
+        effective_column,
+        source_name,
+        table_name,
+        effective_column,
+        lookback_minutes,
+        watermark,
+    )
+    return "{% if is_incremental() %}\n" f"where {predicate}\n" "{% endif %}"
+
+
+def stage_window_sql(
+    stage_column: str,
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """The AutomateDV stage model's window, on the effective-time column the bridge
+    hands it. It goes inert under the full-refresh flag, so a full-refresh build
+    regenerates the whole candidate set."""
+    predicate = window_predicate_sql(
+        stage_column,
+        source_name,
+        table_name,
+        effective_column,
+        lookback_minutes,
+        watermark,
+    )
+    return "{% if not flags.FULL_REFRESH %}\n" f"where {predicate}\n" "{% endif %}"
+
+
+def bridge_window_predicate_sql(
+    source_name: str,
+    table_name: str,
+    effective_column: str,
+    lookback_minutes: int,
+    watermark: dict[str, Any],
+) -> str:
+    """The bridge's window, as one entry in the bridge's where list. It renders ``true``
+    under the full-refresh flag, which is the same inert reading the stage carries."""
+    predicate = window_predicate_sql(
+        f"source.{effective_column}",
+        source_name,
+        table_name,
+        effective_column,
+        lookback_minutes,
+        watermark,
+    )
+    return "{% if flags.FULL_REFRESH %}true{% else %}" + predicate + "{% endif %}"
+
+
 def template_env() -> Environment:
     env = Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),

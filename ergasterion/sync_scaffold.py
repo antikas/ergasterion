@@ -137,9 +137,11 @@ PROJECT_NAME = "ergasterion"
 # the source repository and are not copied by ``ergasterion init``.
 SCAFFOLD_MACROS = (
     "automate_dv_duckdb.sql",
+    "automate_dv_snowflake.sql",
     "calculated_field.sql",
     "cross_db.sql",
     "entity_resolution_scoring.sql",
+    "estate_evolution.sql",
     "normalisation.sql",
     "source_delivery.sql",
     "survivorship.sql",

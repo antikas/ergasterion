@@ -1717,6 +1717,80 @@ def test_the_committed_estate_generates_byte_identical_output() -> None:
     assert "ORPHANS=0" in printed, f"expected zero orphans, got:\n{printed}"
 
 
+def test_a_staging_increment_block_leaves_every_contract_digest_equal() -> None:
+    """The staging increment block is a consumer-side processing policy of the warehouse
+    estate. The typed loader accepts it as a closed model and keeps it out of the Bronze
+    Product Contract, so the same table with and without the block compiles to one
+    canonical document and four equal digests."""
+    plain = _production_table()
+    declared = copy.deepcopy(plain)
+    declared["staging_increment"] = {
+        "lookback_minutes": 1440,
+        "effective_advances_on_redelivery": True,
+    }
+    declared["natural_key"] = ["order_id"]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _estate(Path(tmp), tables={"orders": plain})
+        without = sd.load_typed_declarations(ctx).tables[("acme", "orders")]
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _estate(Path(tmp), tables={"orders": declared})
+        with_block = sd.load_typed_declarations(ctx).tables[("acme", "orders")]
+
+    assert with_block.contract is not None and without.contract is not None
+    assert sd.canonical_contract_document(with_block.contract) == sd.canonical_contract_document(
+        without.contract
+    ), "the block must not reach the canonical contract document"
+    for name in (
+        "contract_digest",
+        "source_schema_digest",
+        "published_schema_digest",
+        "ruleset_digest",
+    ):
+        assert getattr(with_block, name) == getattr(without, name), (
+            f"{name} moved when a staging increment block was declared"
+        )
+    assert "staging_increment" not in json.dumps(
+        sd.canonical_contract_document(with_block.contract)
+    )
+
+
+def test_the_typed_loader_reads_the_staging_increment_block_as_a_closed_model() -> None:
+    """An unknown key, a missing acknowledgment and a false one each fail in the typed
+    loader too, naming the file and table -- the two loaders read the same block
+    independently and neither feeds the other."""
+    cases = (
+        ({"lookback_minutes": 1440, "effective_advances_on_redelivery": True, "unique_key": ["x"]}, "unique_key"),
+        ({"lookback_minutes": 1440}, "effective_advances_on_redelivery"),
+        ({"lookback_minutes": 1440, "effective_advances_on_redelivery": False}, "effective_advances_on_redelivery"),
+        ({"effective_advances_on_redelivery": True}, "lookback_minutes"),
+        ({"lookback_minutes": 0, "effective_advances_on_redelivery": True}, "lookback_minutes"),
+    )
+    for block, expected in cases:
+        table = _production_table()
+        table["staging_increment"] = block
+        with tempfile.TemporaryDirectory() as tmp:
+            ctx = _estate(Path(tmp), tables={"orders": table})
+            try:
+                sd.load_typed_declarations(ctx)
+            except ValueError as error:
+                message = str(error)
+            else:
+                raise AssertionError(f"expected {block!r} to fail the typed loader")
+        assert "staging_increment" in message, message
+        assert expected in message, message
+
+    valid = _production_table()
+    valid["staging_increment"] = {
+        "lookback_minutes": 1,
+        "effective_advances_on_redelivery": True,
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _estate(Path(tmp), tables={"orders": valid})
+        typed = sd.load_typed_declarations(ctx)
+    assert typed.tables[("acme", "orders")].kind == "production"
+
+
 def test_no_template_owns_semantic_validation() -> None:
     """Contract semantics live in this compiler alone. Pipeline-rendering
     templates do not read Bronze contract facts, and no template raises a
@@ -1797,6 +1871,8 @@ TESTS = [
     test_the_legacy_loader_reads_a_bronze_declaration_unchanged,
     test_the_legacy_loader_still_rejects_a_projection_column_with_neither_key,
     test_the_committed_estate_generates_byte_identical_output,
+    test_a_staging_increment_block_leaves_every_contract_digest_equal,
+    test_the_typed_loader_reads_the_staging_increment_block_as_a_closed_model,
     test_no_template_owns_semantic_validation,
 ]
 

@@ -1645,6 +1645,45 @@ _PROJECTION_WIRE_KEYS = ("source", "name", "logical_type", "nullable")
 _PROJECTION_LEGACY_KEYS = frozenset({"expression"})
 
 
+class _StagingIncrement(BaseModel):
+    """The staging increment block, as this loader accepts it.
+
+    The block is a consumer-side processing policy of the warehouse estate: the
+    lookback the delta window opens on, plus the acknowledgment that the table's
+    effective column advances on redelivery. It reaches no Bronze Product Contract and
+    no contract digest, so declaring it moves no digest and changes no wire shape.
+    ``ergasterion.emit`` owns the emit-time gates that consume it for generation.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    lookback_minutes: int
+    effective_advances_on_redelivery: Literal[True]
+
+
+def validate_staging_increment(table: Any, where: str) -> _StagingIncrement | None:
+    """Validate one table's optional staging increment block as a closed model.
+
+    Returns the parsed block, or ``None`` when the table declares none. The block never
+    enters the contract this loader builds, so a table that declares it and one that
+    does not compile to byte-identical contract documents and equal digests.
+    """
+    if not isinstance(table, dict):
+        return None
+    block = table.get("staging_increment")
+    if block is None:
+        return None
+    try:
+        parsed = _StagingIncrement.model_validate(block)
+    except ValidationError as exc:
+        raise ValueError(f"{where}.staging_increment: {exc}") from exc
+    if parsed.lookback_minutes < 1:
+        raise ValueError(
+            f"{where}.staging_increment.lookback_minutes: the lookback is a positive "
+            f"integer number of minutes, got {parsed.lookback_minutes!r}"
+        )
+    return parsed
+
+
 @dataclass(frozen=True)
 class TypedTable:
     """One table's resolved typed Bronze intent: either an explicit draft
@@ -1725,6 +1764,9 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
         source_defaults = source_block.get("delivery")
 
         for table_name, table in (data.get("tables") or {}).items():
+            # The staging increment block is valid on both landing kinds, so it is
+            # validated before the landing filter and kept out of everything below it.
+            validate_staging_increment(table, f"{path}:{table_name}")
             landing = table.get("landing") or {"kind": "seed"}
             if not isinstance(landing, dict) or landing.get("kind") != "source":
                 continue

@@ -23,6 +23,12 @@ from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURE_PATH = REPO_ROOT / "tests" / "fixtures" / "bronze_documentation_blocks.json"
+WAREHOUSE_EVOLUTION_DOCS = [
+    "README.md",
+    "RUNBOOK.md",
+    "docs/architecture/README.md",
+    "demo/README.md",
+]
 
 FENCE_RE = re.compile(r"^```(\S*)\s*$")
 # Markdown link/image targets: ![alt](target) or [text](target), target may carry a
@@ -169,6 +175,106 @@ class BronzeDocumentationBlocksTest(unittest.TestCase):
                 netloc, ALLOWED_EXTERNAL_HOSTS,
                 f"{relpath}: external link host not allowlisted: {target}",
             )
+
+    def test_warehouse_evolution_terms_and_operator_claims_are_documented(self) -> None:
+        corpus = "\n".join((REPO_ROOT / path).read_text(encoding="utf-8") for path in WAREHOUSE_EVOLUTION_DOCS)
+        corpus = re.sub(r"\s+", " ", corpus)
+        required = [
+            "hashdiff basis",
+            "evolution ledger",
+            "extension",
+            "re-baseline",
+            "estate migration requirement",
+            "effective column",
+            "staging increment block",
+            "consumption watermark",
+            "delta window",
+            "replay suppression",
+            "same-effective-time correction",
+            "post-extension column is captured only after a declared re-baseline",
+            "one named remedy: widen",
+            "the lookback for one run",
+            "or run a bounded backfill",
+            "silent update loss",
+            "roughly doubles the stored source history",
+            "Split satellites by change rate",
+            "Every sibling source feeding the same entity maps the new column",
+        ]
+        for text in required:
+            self.assertIn(text, corpus)
+
+    def test_warehouse_evolution_commands_are_real_cli_commands(self) -> None:
+        top = subprocess.run(
+            [sys.executable, "-m", "ergasterion", "evolve", "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(top.returncode, 0, top.stderr)
+        self.assertIn("rebaseline", top.stdout)
+        self.assertIn("audit-window", top.stdout)
+
+        rebaseline = subprocess.run(
+            [sys.executable, "-m", "ergasterion", "evolve", "rebaseline", "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(rebaseline.returncode, 0, rebaseline.stderr)
+        for option in ("--begin", "--complete", "--clear", "--abort"):
+            self.assertIn(option, rebaseline.stdout)
+
+        audit = subprocess.run(
+            [sys.executable, "-m", "ergasterion", "evolve", "audit-window", "--help"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(audit.returncode, 0, audit.stderr)
+        self.assertIn("--sample", audit.stdout)
+
+    def test_warehouse_evolution_docs_keep_runtime_scope_honest(self) -> None:
+        corpus = "\n".join((REPO_ROOT / path).read_text(encoding="utf-8") for path in WAREHOUSE_EVOLUTION_DOCS)
+        self.assertIn("DuckDB is the executable reference implementation", corpus)
+        self.assertIn("Snowflake and BigQuery are implemented", corpus)
+        self.assertIn("dbt parsing", corpus)
+        retired_claims = [
+            "provides working targets for DuckDB, Snowflake, and BigQuery",
+            "Live Snowflake validation",
+            "live Snowflake demonstration",
+            "deploys the same estate",
+            "deploys and executes the Snowflake",
+            "unproven at runtime",
+            "runtime execution is unproven",
+            "does not prove runtime execution",
+            "runtime proof",
+            "adapter-development material",
+        ]
+        for text in retired_claims:
+            self.assertNotIn(text, corpus)
+
+    def test_project_context_pins_warehouse_validation_positioning(self) -> None:
+        context_path = REPO_ROOT / ".claude" / "CLAUDE.md"
+        if not context_path.exists():
+            self.assertTrue(
+                (REPO_ROOT / "LICENSE").read_text(encoding="utf-8").startswith("MIT License"),
+                "the private source must carry its Claude project context",
+            )
+            return
+        context = context_path.read_text(encoding="utf-8")
+        prose = " ".join(context.split())
+        self.assertIn("DuckDB is the executable reference implementation", context)
+        self.assertIn("Snowflake and BigQuery are implemented", context)
+        self.assertIn("must neither claim a live Snowflake or BigQuery deployment", prose)
+        self.assertIn("nor volunteer that one has not occurred", prose)
+
+    def test_warehouse_evolution_docs_follow_hard_vocabulary_rules(self) -> None:
+        for relpath in WAREHOUSE_EVOLUTION_DOCS:
+            text = (REPO_ROOT / relpath).read_text(encoding="utf-8")
+            self.assertNotIn("\u2013", text, relpath)
+            self.assertNotIn("\u2014", text, relpath)
+            self.assertIsNone(re.search(r"(?<!Bronze )\bcarry migration\b", text), relpath)
+            self.assertIsNone(re.search(r"(?<!Bronze )\breset migration\b", text), relpath)
 
 
 if __name__ == "__main__":

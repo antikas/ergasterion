@@ -45,6 +45,7 @@ if __package__ in (None, ""):
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 
 from ergasterion.estate import EstateContext
+from ergasterion.dialect_lint import _is_generated
 
 INTERFACES_FILE = "interfaces.yml"
 TARGET_KINDS = ("deployment", "lane")
@@ -402,6 +403,36 @@ def scan_estate(ctx: EstateContext | None = None) -> EstateScan:
 
 
 # --- the gate ------------------------------------------------------------------------
+
+def hand_authored_window_references(
+    windowed_models: set[str] | frozenset[str], ctx: EstateContext | None = None
+) -> list[tuple[str, str, str]]:
+    """Every hand-authored model that reads a window-filtered relation.
+
+    A window-filtered stage or bridge holds the delta window only, so a hand-authored
+    model reading it sees the delta rather than the whole history and silently loses
+    rows. Returns ``(model name, repo-relative path, referenced windowed model)``, one
+    entry per offending reference, sorted.
+    """
+    if not windowed_models:
+        return []
+    ctx = ctx or EstateContext.default()
+    if not ctx.models_dir.is_dir():
+        return []
+    offenders: list[tuple[str, str, str]] = []
+    for path in sorted(ctx.models_dir.rglob("*.sql")):
+        if _is_generated(path):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        refs = {match.group(2) or match.group(1) for match in _REF_RE.finditer(text)}
+        rel_path = path.relative_to(ctx.root).as_posix()
+        for referenced in sorted(refs & set(windowed_models)):
+            offenders.append((path.stem, rel_path, referenced))
+    return sorted(offenders)
+
 
 def _under_layer(rel_path: str, layers: list[str]) -> bool:
     return any(rel_path == layer or rel_path.startswith(layer + "/") for layer in layers)

@@ -52,8 +52,12 @@
       Local DuckDB builds replay the complete staged history on every run. Keep
       AutomateDV's satellite SQL authoritative, then suppress only semantic
       versions already stored by business key, hashdiff, and effective time.
+
+      The suppression body is the shared dpf_sat_replay_suppression (declared in
+      macros/automate_dv_snowflake.sql alongside the Snowflake arm that adopts it),
+      so this target and Snowflake render one key, one comparison and one body.
     #}
-    {%- set generated_satellite_sql = automate_dv.default__sat(
+    {{- dpf_sat_replay_suppression(
         src_pk=src_pk,
         src_hashdiff=src_hashdiff,
         src_payload=src_payload,
@@ -62,32 +66,5 @@
         src_ldts=src_ldts,
         src_source=src_source,
         source_model=source_model
-    ) -%}
-
-    {%- if automate_dv.is_any_incremental() -%}
-        {%- set pk_columns = automate_dv.expand_column_list(columns=[src_pk]) -%}
-        {%- set effective_columns = automate_dv.expand_column_list(columns=[src_eff]) -%}
-        SELECT candidate.*
-        FROM (
-            {{ generated_satellite_sql }}
-        ) AS candidate
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM {{ this }} AS existing
-            WHERE
-                {%- for column in pk_columns %}
-                {{ automate_dv.prefix([column], 'existing', alias_target='target') }} =
-                    {{ automate_dv.prefix([column], 'candidate', alias_target='target') }}
-                    AND
-                {%- endfor %}
-                {{ automate_dv.prefix([src_hashdiff], 'existing', alias_target='target') }} IS NOT DISTINCT FROM
-                    {{ automate_dv.prefix([src_hashdiff], 'candidate', alias_target='target') }}
-                {%- for column in effective_columns %}
-                    AND {{ automate_dv.prefix([column], 'existing', alias_target='target') }} IS NOT DISTINCT FROM
-                        {{ automate_dv.prefix([column], 'candidate', alias_target='target') }}
-                {%- endfor %}
-        )
-    {%- else -%}
-        {{ generated_satellite_sql }}
-    {%- endif -%}
+    ) -}}
 {%- endmacro %}
