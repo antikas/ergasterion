@@ -1,0 +1,88 @@
+# The deal lane with its business key and the two identifiers a deal
+# points at: the company it targets and, where the deal converted into a
+# fund investment, the fund it converted into.
+#
+# One source system states deals, so this is a derivation over one lane
+# rather than a union. A deal is identified by its external deal
+# identifier where the system states one and by its own record otherwise,
+# which is what leaves the two records carrying none unmerged and scored.
+#
+# The company and the fund a deal points at are stated as the identifier
+# the source systems share, which is not what either vault identifies the
+# entity by. Both are read through the index the owning vault publishes, so
+# what travels on is the business key that vault resolved and an association
+# keyed on it lands on the same identity in both places. An identifier no
+# vault knows resolves to nothing and makes no association.
+product:
+  name: deal_conformed
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.origo_deal@1
+    expect:
+      fields:
+        - source_record_id
+        - source_external_deal_id
+        - source_name
+        - source_target_entity_id
+        - source_strategy
+        - source_originating_team
+        - source_channel
+        - source_sourced_on
+        - source_structure
+        - source_converted_record_type
+        - source_converted_record_id
+        - deal_source_system
+        - deal_identity_key
+        - deal_normalised_name
+        - deal_external_id
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: deal_identity_key, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: deal_business_key, type: string, expression: "coalesce(deal_external_id, deal_identity_key)"}
+      - {name: deal_target_company_external_id, type: string, expression: "nullif(trim(source_target_entity_id), '')"}
+      - {name: deal_converted_fund_external_id, type: string, expression: "case when source_converted_record_type = 'fund_investment' then nullif(trim(source_converted_record_id), '') end"}
+      - {name: deal_target_company_lookup_key, type: string, expression: "upper(trim(nullif(trim(source_target_entity_id), '')))"}
+      - {name: deal_converted_fund_lookup_key, type: string, expression: "case when source_converted_record_type = 'fund_investment' then upper(trim(nullif(trim(source_converted_record_id), ''))) end"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.company_external_index@1
+        "on": {deal_target_company_lookup_key: company_external_lookup_key}
+        fields: [company_business_key]
+        no_match: null
+      - contract: investment.fund_external_index@1
+        "on": {deal_converted_fund_lookup_key: fund_external_lookup_key}
+        fields: [fund_business_key]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every deal the pipeline system states, with the identifier the estate resolves it on and the resolved company and fund it points at."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

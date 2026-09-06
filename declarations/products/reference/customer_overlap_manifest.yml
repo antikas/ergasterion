@@ -1,0 +1,64 @@
+# Landing product: The delivered cross-reference from one source system's customer record to the customer identity the business holds it to be.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: customer_overlap_manifest
+  domain: reference
+  version: "1.0"
+  layer: landed
+  owner: reference-domain
+
+sources:
+  - contract: reference.customer_overlap_manifest_delivery@1
+    kind: fixture
+    fixture:
+      relation: customer_er_overlap_manifest
+      fields:
+        - {name: source_system, type: string}
+        - {name: source_record_id, type: string}
+        - {name: true_customer_external_id, type: string}
+        - {name: overlap_note, type: string}
+    expect:
+      fields: [source_system, source_record_id, true_customer_external_id]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_record_id, unique: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The delivered cross-reference from one source system's customer record to the customer identity the business holds it to be."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

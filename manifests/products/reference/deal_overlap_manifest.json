@@ -1,0 +1,35 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "reference.deal_overlap_manifest",
+  "relations": {
+    "auxiliary": [
+      "reference.deal_overlap_manifest__checked",
+      "reference.deal_overlap_manifest__current",
+      "reference.deal_overlap_manifest__quarantine",
+      "reference.deal_overlap_manifest__sla"
+    ],
+    "published": [
+      "reference.deal_overlap_manifest"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

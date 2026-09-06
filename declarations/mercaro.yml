@@ -10,7 +10,11 @@ source:
 # vs mer-CAR-ee), is a synthetic demo feed, not a competing brand, and every row of data
 # behind it is invented.
 #
-# No canonical_mappings: the e-commerce domain has no OpenIM model repository.
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   customers:

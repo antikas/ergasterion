@@ -1,0 +1,203 @@
+# The engine reference named-rule catalogue, seeded from the existing
+# macros/cross_db.sql dispatch macro family (architecture section 3.2).
+# Ships as package data
+# (ergasterion/rules/reference/*.yml) and loads as the estate's default
+# catalogue (ergasterion/framework/rules.py: load_rule_catalogue). An
+# estate catalogue may ADD rules under its own rules/*.yml; it may never
+# redeclare one of these names -- a name collision fails closed with no
+# shadowing.
+#
+# Each entry is the rule's neutral signature only (name, version, input
+# types, output type): architecture section 3.2, "declared once ... its
+# name, its input types, its output type, its version." Implementations
+# are code, never data -- ergasterion/framework/rules.py's
+# REFERENCE_IMPLEMENTATIONS registry names, for each rule, the dbt
+# translator macro that implements it, per declared adapter where the
+# macro's adapter.dispatch body actually diverges (macros/cross_db.sql's
+# duckdb__ overrides) and as one neutral entry where it does not.
+#
+# Several of these macros are generic, dialect-dispatch utilities rather
+# than literal business calculations (dpf_type maps a type token to a
+# concrete type name; dpf_safe_cast's real output type depends on its own
+# type_token argument). The neutral type system has no "any" type, so a
+# generic argument or return is typed "string" here as the closest neutral
+# stand-in; this is a structural signature for the completeness gate, not
+# a claim that every call site is type-checked against it.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: dpf_safe_cast
+    version: 1
+    description: >-
+      Typed, dialect-free safe cast: casts expr to the concrete type
+      type_token names, returning null on a failed conversion rather than
+      raising.
+    inputs:
+      - {name: expr, type: string}
+      - {name: type_token, type: string}
+    output:
+      type: string
+
+  - name: dpf_json_cast
+    version: 1
+    description: >-
+      Normalise a JSON payload held either as text or as a native
+      semi-structured value into one parsed JSON value.
+    inputs:
+      - {name: expr, type: string}
+    output:
+      type: string
+
+  - name: dpf_type
+    version: 1
+    description: Map a dialect-free type token to the adapter's concrete type name.
+    inputs:
+      - {name: type_token, type: string}
+    output:
+      type: string
+
+  - name: dpf_regexp_replace
+    version: 1
+    description: Replace every match of pattern in subject with replacement.
+    inputs:
+      - {name: subject, type: string}
+      - {name: pattern, type: string}
+      - {name: replacement, type: string}
+    output:
+      type: string
+
+  - name: dpf_regexp_contains
+    version: 1
+    description: Whether subject contains a match for pattern.
+    inputs:
+      - {name: subject, type: string}
+      - {name: pattern, type: string}
+    output:
+      type: boolean
+
+  - name: dpf_regexp_extract
+    version: 1
+    description: Extract the first capturing group of pattern from subject.
+    inputs:
+      - {name: subject, type: string}
+      - {name: pattern, type: string}
+    output:
+      type: string
+
+  - name: dpf_hash_hex
+    version: 1
+    description: Lower-case hex of the MD5 hash of expr.
+    inputs:
+      - {name: expr, type: string}
+    output:
+      type: string
+
+  - name: dpf_array
+    version: 1
+    description: Array construction from a list of already-rendered element expressions.
+    inputs:
+      - {name: elements, type: {name: array}}
+    output:
+      type: {name: array}
+
+  - name: dpf_empty_array
+    version: 1
+    description: A typed empty array of type_token's element type.
+    inputs:
+      - {name: type_token, type: string}
+    output:
+      type: {name: array}
+
+  - name: dpf_to_json_object
+    version: 1
+    description: Serialise a static list of key/value pairs to a JSON object string.
+    inputs:
+      - {name: pairs, type: {name: array}}
+    output:
+      type: string
+
+  - name: dpf_safe_divide
+    version: 1
+    description: Null-safe division; null rather than a divide-by-zero error.
+    inputs:
+      - {name: numerator, type: {name: decimal, precision: 38, scale: 9}}
+      - {name: denominator, type: {name: decimal, precision: 38, scale: 9}}
+    output:
+      type: {name: decimal, precision: 38, scale: 9}
+
+  - name: dpf_string_agg
+    version: 1
+    description: Ordered, optionally-distinct string aggregation.
+    inputs:
+      - {name: expr, type: string}
+      - {name: delimiter, type: string}
+    output:
+      type: string
+
+  - name: dpf_date_key
+    version: 1
+    description: Integer YYYYMMDD date key for date_expr.
+    inputs:
+      - {name: date_expr, type: date}
+    output:
+      type: integer
+
+  - name: dpf_date_trunc
+    version: 1
+    description: Truncate a date to a calendar boundary (day, month, quarter, year).
+    inputs:
+      - {name: datepart, type: string}
+      - {name: date_expr, type: date}
+    output:
+      type: date
+
+  - name: dpf_date_series
+    version: 1
+    description: A contiguous date series between two scalar date expressions.
+    inputs:
+      - {name: start_expr, type: date}
+      - {name: end_expr, type: date}
+    output:
+      type: {name: array}
+
+  - name: dpf_edit_distance
+    version: 1
+    description: Levenshtein edit distance between two strings.
+    inputs:
+      - {name: expr_a, type: string}
+      - {name: expr_b, type: string}
+    output:
+      type: integer
+
+  - name: dpf_date_diff_days
+    version: 1
+    description: Whole-day difference between two date expressions (date_a minus date_b).
+    inputs:
+      - {name: date_a, type: date}
+      - {name: date_b, type: date}
+    output:
+      type: integer
+
+  - name: dpf_array_agg_distinct
+    version: 1
+    description: Distinct-valued, deterministically ordered array aggregation.
+    inputs:
+      - {name: expr, type: string}
+    output:
+      type: {name: array}
+
+  - name: dpf_map_agg
+    version: 1
+    description: Aggregate one JSON object per group from key/value pairs, one pair per input row.
+    inputs:
+      - {name: key_expr, type: string}
+      - {name: value_expr, type: string}
+    output:
+      type: string
+
+  - name: dpf_array_length
+    version: 1
+    description: Number of elements in an array.
+    inputs:
+      - {name: expr, type: {name: array}}
+    output:
+      type: integer

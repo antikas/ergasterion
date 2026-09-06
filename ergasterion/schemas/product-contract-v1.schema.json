@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/product-contract-v1.schema.json",
+  "title": "Ergasterion product contract v1 (architecture section 7)",
+  "description": "The generated product contract: identity, schema (every relation the product's shape renders), freshness, quality guarantees, versioning policy, lineage, access and support. Generated from a validated product declaration and its shape by ergasterion/framework/contract.py; never hand-written.",
+  "type": "object",
+  "required": ["schema", "identity", "relations", "versioningPolicy", "support", "team"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "ergasterion.product-contract/v1" },
+    "identity": {
+      "type": "object",
+      "required": ["namespace", "domain", "name", "major"],
+      "additionalProperties": false,
+      "properties": {
+        "namespace": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "major": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "relations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "required"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "type": { "type": ["string", "object"] },
+                "required": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "freshness": { "type": "string", "minLength": 1 },
+    "quality": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["dimension", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "dimension": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "versioningPolicy": { "type": "string", "minLength": 1 },
+    "lineage": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "access": { "type": "object" },
+    "support": { "type": "string", "minLength": 1 },
+    "team": { "type": "string", "minLength": 1 },
+    "description": { "type": "string", "minLength": 1 }
+  }
+}

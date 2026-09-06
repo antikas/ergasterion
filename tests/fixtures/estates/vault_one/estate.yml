@@ -1,0 +1,98 @@
+# A self-contained estate that exercises the data_vault shape
+# (architecture section 6): two delivered feeds, one integrated product
+# that curates them into one row per customer and models that as a vault,
+# and one consumer reading a single named relation of it.
+#
+# The layer labels "delivered", "conformed" and "published" are names the
+# engine has never seen and never interprets. Each is a key into the
+# tables below. "conformed" maps to the integration profile, whose
+# mandatory Data Curation occurrence is exactly what the data_vault shape
+# requires of the composition it models.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    delivered:
+      profiles: [serving]
+    conformed:
+      profiles: [integration]
+    published:
+      profiles: [serving]
+    # A label whose profile combines two or more products. The register
+    # product sits here: it merges a relation of the vault with a delivered
+    # feed, which is the consolidating generation over a shaped product.
+    combined:
+      profiles: [consolidation]
+    # A label whose profile forbids Data Curation. No product declares it;
+    # it is here so the data_vault shape's own constraint -- the
+    # composition must curate -- is reachable and testable independently
+    # of the integration profile, which would mandate the occurrence
+    # before the shape is ever asked.
+    computed:
+      profiles: [derivation]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    delivered:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    conformed:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_enrichment: dbt
+      data_curation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      data_vault: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    computed:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_enrichment: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      data_vault: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    combined:
+      batch_transfer: dbt
+      data_validation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    published:
+      batch_transfer: dbt
+      data_validation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      metadata_capture: publication
+      lineage_capture: publication

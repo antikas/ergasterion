@@ -1,0 +1,56 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "The delivered catalogue of the classification types an investment is classified by.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "reference",
+    "major": 1,
+    "name": "investment_classification_type",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "reference.investment_classification_type_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "classification_type_code must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "classification_type_code must be unique",
+      "dimension": "uniqueness"
+    },
+    {
+      "description": "classification_type_name must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "classification_type_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_type_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "description",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "reference.investment_classification_type"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

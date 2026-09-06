@@ -1,8 +1,178 @@
 # The target-neutral estate root. `estate.namespace` is the mandatory production
-# qualifier for every Bronze Product Contract's globally qualified identity
+# qualifier for every Landing Product Contract's globally qualified identity
 # `(estate_namespace, source.name, tables.<key>)`; a seed-only legacy estate may
 # omit this file entirely (ergasterion.source_delivery.load_estate_namespace()
 # returns None and every table stays seed-backed). It is never derived from a
-# path. See docs/specifications/bronze-product-v1.md.
+# path. See docs/specifications/landing-product-v1.md.
+#
+# `estate.support` and `estate.team` are the required declarations behind
+# every generated product contract's ownership and support elements
+# (architecture section 7; section 13's ban on inferring ownership from
+# names). ergasterion.framework.contract.load_estate_ownership() reads
+# namespace/support/team together and fails closed, naming whichever key
+# is absent: there is no engine default for any of the three.
+#
+# `expression_mode`, `structured_types` and `labels` are read by
+# ergasterion/framework/declaration.py (architecture sections 3.2, 3.3, 9,
+# 11; owner ruling R1). Layer labels and estate.yml carrying them are the
+# one place in this estate allowed to name a layer word (docs/items/
+# CONSTRAINTS.md, "Layer neutrality"); ergasterion/ itself never branches
+# on what a label means, only looks it up here.
+#
+#   expression_mode   -- estate policy for inline SQL, "sql" (the default)
+#                        or "named_only". Never a per-product or per-column
+#                        choice: a document naming either key anywhere
+#                        outside this file fails closed on schema shape.
+#   structured_types  -- the structured type names this estate enables
+#                        beyond the five fixed neutral scalars (string,
+#                        integer, boolean, date, timestamp) and decimal
+#                        (never a bare scalar token, always an object
+#                        carrying precision and scale). A declaration
+#                        naming a structured type not listed here fails
+#                        closed.
+#   labels            -- for each layer label a product may declare, the
+#                        reference profiles it admits. A label admitting
+#                        exactly one profile lets a product omit `profile`;
+#                        a label admitting more than one requires it. This
+#                        mirrors architecture section 5's own worked
+#                        example verbatim (Bronze -> landing; Silver ->
+#                        integration, derivation, consolidation; Gold ->
+#                        serving) -- a live demonstration that the engine
+#                        reads a label only as a lookup key, never as
+#                        meaning.
+#
+# `adapters`, `final_target` and `translators` are read by
+# ergasterion/estate.py's load_estate_adapters() / load_translator_table()
+# (architecture sections 10, 11; owner rulings R1, R10; plan decisions D29,
+# D35). They are estate configuration, never engine logic: the router looks
+# a label up in `translators` as a key and never branches on what it means
+# (architecture section 13).
+#
+#   adapters          -- every platform this estate declares, named with its
+#                        kind: "reference" (DuckDB, which executes the whole
+#                        estate locally and is the engine's executable
+#                        truth) or "deployment" (BigQuery). Structural
+#                        budgets and interface boundaries for each stay in
+#                        declarations/targets/<adapter>.yml; dialect deny
+#                        lists, physical type mapping and identifier rules
+#                        stay in ergasterion/adapters/<adapter>/
+#                        conventions.yml. No Snowflake surface remains
+#                        anywhere (owner ruling R10).
+#   final_target      -- the adapter held to the highest evidence standard
+#                        (architecture section 11; plan decision D35).
+#   translators       -- for each layer label, the translator that renders
+#                        each pattern and each shape (owner ruling R1). The
+#                        router resolves every occurrence through this
+#                        table by the product's label and the occurrence's
+#                        pattern, then requires the named translator to have
+#                        registered the capability for every adapter above.
+#                        The bronze label's split is the real landing route:
+#                        local-ingestion owns the runtime patterns, and the
+#                        publication translator owns the four
+#                        publication-shaped patterns -- data_contracts,
+#                        schema_publish, metadata_capture and
+#                        lineage_capture -- under every label, bronze
+#                        included. The silver and gold labels name dbt for
+#                        every remaining pattern their admitted profiles
+#                        carry plus the one shape registered so far
+#                        ("declared"); dbt registers those capabilities as
+#                        its SQL-model route lands, so a silver or gold
+#                        product cannot route its dbt-owned patterns yet --
+#                        that is expected, not a gap in this table. Changing
+#                        an entry changes the owner with no engine change
+#                        (architecture check 12).
 estate:
   namespace: io.antikas.ergasterion
+  support: platform-support
+  team: data-product-factory
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    # The label the e-commerce estate lands its delivered extracts under.
+    # It is a second landing label beside bronze, and it exists because the
+    # two are owned differently: bronze's relations arrive from the
+    # ingestion runtime, while a landed product's relation is materialised
+    # by the SQL translator from the extract the source system delivered.
+    # The engine reads either name only as a key into the table below.
+    landed:
+      profiles: [landing]
+    bronze:
+      profiles: [landing]
+    silver:
+      profiles: [integration, derivation, consolidation]
+    gold:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    # The landed label's split. The extract itself stays with the ingestion
+    # runtime, which is the translator that owns Batch Ingestion; the
+    # relation the landing product publishes, its validation, its
+    # publication and its retry wrapper are the SQL translator's, because
+    # in this estate a landing relation is materialised from the delivered
+    # extract rather than written by the runtime. Changing these four
+    # entries changes the owner with no engine change (architecture check
+    # 12), which is exactly the difference between this label and bronze.
+    landed:
+      batch_ingestion: local-ingestion
+      data_validation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    bronze:
+      batch_ingestion: local-ingestion
+      data_validation: local-ingestion
+      data_publish: local-ingestion
+      checkpoint_retries: local-ingestion
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    silver:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_curation: dbt
+      calculated_fields: dbt
+      data_enrichment: dbt
+      data_filtering: dbt
+      data_aggregation: dbt
+      data_contracts: publication
+      lineage_capture: publication
+      metadata_capture: publication
+      schema_publish: publication
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      # The second shape this estate declares. The investment domain models
+      # its five curated entities as vaults, so the silver label needs the
+      # entry that names who renders that shape; changing it changes the
+      # owner with no engine change (architecture check 12).
+      data_vault: dbt
+    gold:
+      batch_transfer: dbt
+      data_validation: dbt
+      data_contracts: publication
+      lineage_capture: publication
+      metadata_capture: publication
+      data_publish: dbt
+      checkpoint_retries: dbt
+      calculated_fields: dbt
+      data_filtering: dbt
+      data_aggregation: dbt
+      data_curation: dbt
+      schema_publish: publication
+      data_enrichment: dbt
+      schema_transform: dbt
+      declared: dbt
+      canonical: dbt
+      dimensional: dbt

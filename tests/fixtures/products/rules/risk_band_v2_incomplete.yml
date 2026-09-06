@@ -1,0 +1,16 @@
+# The RED counterpart to risk_band_v2.yml: the same rule, missing its
+# bigquery implementation on purpose. Used by the CLI red-path test proving
+# `ergasterion validate` fails closed at layer 2, naming the rule and the
+# missing (translator, adapter) pair, when a product references a rule the
+# catalogue knows but cannot resolve for every declared adapter.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: risk_band_v2
+    version: 2
+    description: Bands a customer's risk score.
+    inputs:
+      - {name: risk_score, type: integer}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: risk_band_v2}

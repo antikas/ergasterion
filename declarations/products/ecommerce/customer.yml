@@ -1,0 +1,160 @@
+# The curated customer: one row per customer the estate recognises, from
+# the three source systems that state customers, resolved and survived
+# (architecture section 5, the integration profile).
+#
+# The three lanes state one schema between them, so the composition opens
+# as a union of the three (architecture section 8, the consolidating
+# generation). Resolution is deterministic over two ranked keys: two
+# records are one customer when they share a loyalty identifier or, where
+# neither system states one, a normalised address. That is what merges the
+# storefront, marketplace and contact records of the customer all three
+# hold, and the two records of the customer whose address the two systems
+# spell with different capitals.
+#
+# Survivorship is declared per column and the precedence is declared once:
+# the contact system is the estate's contact authority, so where two
+# systems state a contact attribute, its value is the one that survives.
+# The buyer segment only the marketplace states survives for the same
+# reason in reverse, because nothing else states one.
+#
+# The identity read is what gives every customer the identifier the
+# segment history is keyed by. It is a read of a published contract, on
+# the key each source record is identified by, and it happens before
+# resolution so every record carries it and the surviving value is one the
+# whole cluster agreed on.
+product:
+  name: customer
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: integration
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.cartivo_customer@1
+    expect:
+      fields: &customer_lane_fields
+        - source_record_id
+        - source_customer_id
+        - source_system
+        - loyalty_id
+        - email
+        - normalised_email
+        - customer_business_key
+        - customer_email_domain
+        - full_name
+        - phone
+        - address_line
+        - city
+        - postal_code
+        - country
+        - marketing_consent
+        - preferred_channel
+        - buyer_segment
+        - customer_status
+        - as_of_date
+  - contract: ecommerce.mercaro_customer@1
+    expect:
+      fields: *customer_lane_fields
+  - contract: ecommerce.relatio_customer@1
+    expect:
+      fields: *customer_lane_fields
+
+combine:
+  method: union
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: customer_business_key, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: source_record_id, to: customer_record_id, type: string}
+      - {from: source_customer_id, to: customer_source_id, type: string}
+      - {from: source_system, to: customer_source_system, type: string}
+      - {from: loyalty_id, to: customer_loyalty_id, type: string}
+      - {from: email, to: customer_email, type: string}
+      - {from: normalised_email, to: customer_normalised_email, type: string}
+      - {from: full_name, to: customer_name, type: string}
+      - {from: phone, to: customer_phone, type: string}
+      - {from: address_line, to: customer_address_line, type: string}
+      - {from: city, to: customer_city, type: string}
+      - {from: postal_code, to: customer_postal_code, type: string}
+      - {from: country, to: customer_country, type: string}
+      - {from: marketing_consent, to: customer_marketing_consent, type: string}
+      - {from: preferred_channel, to: customer_preferred_channel, type: string}
+      - {from: buyer_segment, to: customer_buyer_segment, type: string}
+      - {from: as_of_date, to: customer_as_of_date, type: date}
+  - pattern: calculated_fields
+    fields:
+      - {name: customer_identity_key, type: string, expression: "concat(customer_source_system, ':', customer_record_id)"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: reference.customer_identity@1
+        "on": {customer_identity_key: customer_identity_key}
+        fields: [customer_external_id]
+        no_match: null
+  - pattern: data_curation
+    entity: customer
+    resolution:
+      strategy: deterministic
+      keys: [customer_loyalty_id, customer_normalised_email]
+      record_key: customer_record_id
+      merge_iterations: 3
+    survivorship:
+      customer_record_id: most_recent
+      customer_source_id: most_recent
+      customer_source_system: most_recent
+      customer_loyalty_id: first_non_null
+      customer_email: first_non_null
+      customer_normalised_email: first_non_null
+      customer_email_domain: first_non_null
+      customer_name: first_non_null
+      customer_phone: first_non_null
+      customer_address_line: first_non_null
+      customer_city: first_non_null
+      customer_postal_code: first_non_null
+      customer_country: first_non_null
+      customer_marketing_consent: first_non_null
+      customer_preferred_channel: first_non_null
+      customer_buyer_segment: first_non_null
+      customer_status: most_recent
+      customer_as_of_date: most_recent
+      customer_business_key: first_non_null
+      customer_identity_key: most_recent
+      customer_external_id: first_non_null
+    precedence:
+      source_column: customer_source_system
+      recency_column: customer_as_of_date
+      source_priority: [relatio, cartivo, mercaro]
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - {field: customer_business_key, unique: true}
+      - {field: customer_external_id, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per customer the estate recognises, with the surviving value of every attribute the source systems state."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

@@ -1,0 +1,81 @@
+# The identifier the source systems share for a portfolio company, against
+# the business key the company vault resolved that company on.
+#
+# A deal names the company it targets by the shared identifier while the
+# company vault identifies it by its legal entity identifier, so the
+# association needs this mapping to land on one identity.
+#
+# It reads the vault's surviving record, naming that relation (owner ruling
+# R4). A company no source system gives a shared identifier is excluded by
+# the named predicate.
+product:
+  name: company_external_index
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.portfolio_company_vault@1
+    relation: golden_portfolio_company
+    expect:
+      fields:
+        - portfolio_company_hk
+        - company_business_key
+        - company_name
+        - company_sector
+        - company_sub_sector
+        - company_country
+        - company_status
+        - company_lei
+        - company_external_id
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - {field: company_business_key, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: company_external_lookup_key, type: string, expression: "upper(trim(company_external_id))"}
+  - pattern: data_filtering
+    predicates:
+      - name: shared_identifier_stated_only
+        expression: "company_external_lookup_key is not null"
+  - pattern: data_aggregation
+    grain: [company_external_lookup_key]
+    aggregates:
+      - {name: company_business_key, expression: "min(company_business_key)", type: string}
+      - {name: company_entity_count, expression: "count(distinct company_business_key)", type: integer}
+    late_arrival_policy: recompute_period
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - {field: company_external_lookup_key, not_null: true}
+      - {field: company_external_lookup_key, unique: true}
+      - {field: company_entity_count, max: 1}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Each shared company identifier against the business key the company vault resolved it to."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [company_external_lookup_key]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

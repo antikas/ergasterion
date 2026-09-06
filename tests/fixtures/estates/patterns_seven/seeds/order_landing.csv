@@ -1,0 +1,6 @@
+order_id,status_code,segment_code,ordr_dt,cust_id,ordr_ttl,junk_col
+o-1,N,seg-a,2026-03-10,c-1,1500.00,drop-me
+o-2,P,seg-a,2026-01-05,c-2,250.00,drop-me
+o-3,C,seg-b,2026-02-20,c-3,90.00,drop-me
+o-4,N,seg-b,2026-04-01,c-4,0.00,drop-me
+o-5,N,seg-c,2026-05-11,c-5,42.00,drop-me

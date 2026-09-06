@@ -1,0 +1,209 @@
+# The vault over the curated entity (architecture section 6, the data_vault
+# row). The composition resolves the conformed records into one row per
+# entity; the shape models that as hubs, satellites, a business-vault
+# surviving record and a point-in-time relation, and the contract publishes
+# every one of them (owner ruling R4). A consumer names the one it reads.
+#
+# The resolution is probabilistic within one source. Two records are one
+# deal when they carry the same external deal identifier; the two records
+# that carry none stay unmerged, and the pair they make is scored on the
+# normalised name, the strategy and the day the deal was sourced, blocked
+# on the team that originated it so only pairs a person would ever
+# compare are scored at all.
+#
+# The two relationships a deal states are modelled inside the vault, as
+# the fund vault models the manager it names: a hub for the company the
+# deal targets, a hub for the fund it converted into, and a link to each,
+# each keyed on the business key the owning vault resolved rather than on
+# the identifier the delivered feed quotes.
+# A deal that states neither contributes to neither, because a link is
+# only a row where both business keys are present.
+#
+# That pair is the seeded near-duplicate case. Their names differ by two
+# characters and their day is the same, but the strategies disagree, so
+# the score lands between the two band edges and the pair reaches the
+# pending-key relation for review rather than being merged or dropped.
+product:
+  name: deal_vault
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: integration
+  owner: investment-domain
+
+sources:
+  - contract: investment.deal_conformed@1
+    expect:
+      fields:
+        - source_record_id
+        - source_external_deal_id
+        - source_name
+        - source_target_entity_id
+        - source_strategy
+        - source_originating_team
+        - source_channel
+        - source_sourced_on
+        - source_structure
+        - source_converted_record_type
+        - source_converted_record_id
+        - deal_source_system
+        - deal_identity_key
+        - deal_normalised_name
+        - deal_external_id
+        - deal_business_key
+        - deal_target_company_external_id
+        - deal_converted_fund_external_id
+        - company_business_key
+        - fund_business_key
+        - deal_target_company_lookup_key
+        - deal_converted_fund_lookup_key
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: source_record_id, to: deal_record_id, type: string}
+      - {from: source_name, to: deal_name, type: string}
+      - {from: source_strategy, to: deal_strategy, type: string}
+      - {from: source_originating_team, to: deal_originating_team, type: string}
+      - {from: source_channel, to: deal_channel, type: string}
+      - {from: source_sourced_on, to: deal_sourced_on, type: date}
+      - {from: source_structure, to: deal_structure, type: string}
+      - {from: source_converted_record_type, to: deal_converted_record_type, type: string}
+      - {from: company_business_key, to: deal_company_business_key, type: string}
+      - {from: fund_business_key, to: deal_fund_business_key, type: string}
+      - {from: deal_target_company_lookup_key, drop: true}
+      - {from: deal_converted_fund_lookup_key, drop: true}
+      - {from: source_external_deal_id, drop: true}
+      - {from: source_target_entity_id, drop: true}
+      - {from: source_converted_record_id, drop: true}
+  - pattern: data_enrichment
+    lookups:
+      - contract: reference.deal_identity@1
+        "on": {deal_identity_key: deal_identity_key}
+        fields: [deal_external_identity]
+        no_match: null
+  - pattern: data_curation
+    entity: deal
+    resolution:
+      strategy: probabilistic
+      keys: [deal_external_id]
+      record_key: deal_identity_key
+      merge_iterations: 2
+      scoring:
+        rule: investment_entity_match_score_v1
+        rule_version: 1
+        compare: [deal_normalised_name, deal_strategy, deal_sourced_on]
+        block_on: [deal_originating_team]
+        review_band:
+          lower: 0.65
+          upper: 0.85
+    survivorship:
+      deal_record_id: most_recent
+      deal_source_system: most_recent
+      deal_identity_key: most_recent
+      deal_name: most_recent
+      deal_normalised_name: most_recent
+      deal_external_id: first_non_null
+      deal_business_key: first_non_null
+      deal_strategy: most_recent
+      deal_originating_team: first_non_null
+      deal_channel: first_non_null
+      deal_structure: most_recent
+      deal_sourced_on: most_recent
+      deal_converted_record_type: first_non_null
+      deal_target_company_external_id: first_non_null
+      deal_converted_fund_external_id: first_non_null
+      deal_company_business_key: first_non_null
+      deal_fund_business_key: first_non_null
+      deal_external_identity: first_non_null
+    precedence:
+      source_column: deal_source_system
+      recency_column: deal_sourced_on
+      source_priority: [origo]
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - {field: deal_business_key, not_null: true}
+      - {field: deal_business_key, unique: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The deal vault: identity, payload versions, the surviving record and the point-in-time relation over them."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: data_vault
+  shape_config:
+    hubs:
+      - name: deal
+        business_key: [deal_business_key]
+        description: "The deal as the estate identifies one."
+      - name: portfolio_company
+        business_key: [deal_company_business_key]
+        description: "The company a deal targets, as the company vault identifies one."
+      - name: fund
+        business_key: [deal_fund_business_key]
+        description: "The fund a deal converted into, as the fund vault identifies one."
+    links:
+      - name: deal_portfolio_company
+        hubs: [deal, portfolio_company]
+        description: "The company a deal targets."
+      - name: deal_fund
+        hubs: [deal, fund]
+        description: "The fund a deal converted into."
+    satellites:
+      - name: deal_detail
+        kind: current
+        parent: deal
+        payload: [deal_name, deal_strategy, deal_structure, deal_channel, deal_target_company_external_id]
+        change_column: deal_sourced_on
+        hashdiff_exclude: [deal_channel]
+        description: "What the deal is, versioned when any of it changes."
+      - name: deal_pipeline
+        kind: history
+        parent: deal
+        payload: [deal_originating_team, deal_converted_record_type, deal_converted_fund_external_id, deal_external_identity]
+        change_column: deal_sourced_on
+        hashdiff_exclude: [deal_external_identity]
+        description: "Every delivered observation of where the deal sat and what it became."
+    business_vault:
+      - name: deal
+        hub: deal
+        satellites: [deal_detail, deal_pipeline]
+        attributes:
+          - {name: deal_name, strategy: most_recent}
+          - {name: deal_strategy, strategy: most_recent}
+          - {name: deal_structure, strategy: most_recent}
+          - {name: deal_channel, strategy: first_non_null}
+          - {name: deal_originating_team, strategy: first_non_null}
+          - {name: deal_target_company_external_id, strategy: first_non_null}
+          - {name: deal_converted_record_type, strategy: first_non_null}
+          - {name: deal_converted_fund_external_id, strategy: first_non_null}
+          - {name: deal_external_identity, strategy: first_non_null}
+        description: "One surviving record per deal."
+    point_in_time:
+      - name: deal
+        hub: deal
+        satellites: [deal_detail, deal_pipeline]
+        description: "Each deal's satellites as they stood at every instant the vault stores."
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

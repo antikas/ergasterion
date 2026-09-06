@@ -1,364 +1,582 @@
-# Ergasterion architecture
+# The Ergasterion architecture guide
 
-Adding a source to a warehouse usually creates another set of pipeline code. The code
-must receive the data, map its fields, retain its history, apply data rules, build useful
-tables, and publish tests and contracts. Source changes then require corresponding code
-changes throughout that path.
+A warehouse is fed by many source systems. Each one arrives with its own keys, its own
+column names, its own idea of a date, and its own delivery habits. The usual answer is a
+pipeline per source. That code receives the feed, maps its fields, keeps history, applies
+rules, builds tables, and publishes tests and contracts. Every source gets a separate copy.
+Every source change means editing that copy.
 
-Ergasterion moves this repeated work into code generation. An Ergasterion project records
-the target warehouse model, the sources that feed it, the mappings between them, and the
-runtime configuration. Those definitions drive the production of the pipeline and its
-published interfaces.
+![Several source systems feeding separate hand-written pipelines before a warehouse](problem.svg)
 
-The warehouse model and its mappings can start from an existing database schema (DDL), a
-reference model, or a new design. AI assistance can help design the model, complete the
-mappings, and develop the served or gold layer. The resulting definitions and code remain
-version controlled, reviewable, and subject to the same validation as the rest of the
-estate.
+The repeated code is only part of the cost. The decisions that matter are spread through
+it. Those decisions include what a field means, which source wins a disagreement, and what
+the warehouse promises to consumers.
 
-![Several source systems feeding separate pipelines before a warehouse](problem.svg)
+Ergasterion puts those decisions in version-controlled declarations that people can read
+and change. Its engine generates the pipeline, tests, contracts, metadata, and lineage from
+those declarations.
 
-*Separate source pipelines require corresponding code changes whenever a source changes.*
+## What you can watch it do
 
-## Architecture overview
+The account-free demonstration makes the architecture visible in one run:
 
-![Source declarations entering the generator and flowing through staging, identity resolution, historical storage, golden records, canonical models and marts](pipeline.svg)
+1. It regenerates all 124 declared products and reports any output that has drifted.
+2. It builds the e-commerce and investment domains on DuckDB. Every generated test and all
+   40 known-answer assertions run against the built relations.
+3. It prints three e-commerce results: segment revenue, one resolved customer, and order
+   totals reconciled to their source.
 
-The diagram shows the warehouse data flow. It uses the investment example because that
-estate has several sources for the same entities. The e-commerce example uses the same
-components with different entity names and business rules.
+Run `bash demo/run_offline_demo.sh` from a prepared checkout. The
+[demonstration guide](../../demo/README.md) explains the outputs and the separate landing
+walkthrough.
 
-A delivered batch first crosses the Bronze ingestion boundary. Bronze preserves the
-received payload, applies the delivery contract, and publishes accepted records through a
-stable interface. Source declarations then map those records into the warehouse model.
-The generator produces the warehouse code, tests, contracts, product metadata, and domain
-maps from the estate definitions.
+## Follow one customer through the estate
 
-Platform code sits behind two adapter boundaries. The warehouse generation
-boundary handles SQL and dbt target differences. The Bronze runtime boundary connects the
-same delivery contract to the storage, state, landing, projection, scheduling, and policy
-services used by a deployment.
+CARTIVO, MERCARO, and RELATIO are three invented source systems in the e-commerce example.
+All three hold a record for Ava Thompson. The records use different keys and disagree on
+some contact details.
 
-## Inputs, generated outputs and ownership
+**Receive.** The engine preserves each delivered payload, parses it under a written
+contract, and records every quality result. Accepted rows publish. Rejected rows retain a
+locator to the raw bytes that failed. The output is a landing product.
 
-An Ergasterion project is called an **estate**. The estate keeps the design of the
-warehouse separate from the engine that produces and runs it.
+**Align.** One declaration per source maps its native names and types onto the domain's
+shared customer schema. A person can review and change each mapping. The output is a
+derivation product.
 
-| Part | What it contains | How it is produced |
+**Resolve.** Another declaration says which records describe the same customer. A shared
+loyalty ID is the first key, and a normalised email is the fallback. It also says that
+RELATIO supplies contact values when the sources disagree. The output is an integration
+product.
+
+**Combine.** Further declarations join the agreed customer to orders and products. They
+also combine order lines from two sales channels. Coverage checks catch a missing input.
+The outputs are consolidation products.
+
+**Serve.** The last declarations publish stable customer interfaces, a dimensional order
+model, and an order summary. Each product publishes a contract. The next product reads
+that contract as its input. The outputs are serving products.
+
+![Ava's three source records moving through landing, alignment, resolution, and a published customer interface](engine-architecture-graph.svg)
+
+## Architecture at a glance
+
+One file declares each product's inputs, ordered operations, and published form. The engine
+checks the file, turns it into a neutral execution plan, and assigns each operation to a
+registered generator. Database-specific rules enter only through the selected adapter. The
+engine then writes the output and records which checks passed.
+
+![The engine: a declaration and estate configuration in, a neutral plan, routed to plug-in translators and adapters, artefacts, a contract, the graph and evidence out](engine-architecture-engine.svg)
+
+An organisation can call its product groups Bronze, Silver and Gold, or use its own names.
+The names live in estate configuration. The engine uses each name as a lookup key and does
+not attach behaviour to it. The governing principle is **layers are configuration**.
+
+## Vocabulary
+
+| Term | Meaning |
+|---|---|
+| Estate | One governed set of products, profiles, shapes, adapters and configuration, owned by one organisation. |
+| Product | The unit the engine builds. A declaration with sources, a composition and a target. It emits artefacts and exactly one contract. |
+| Source | A published contract this product consumes. Never a table name. |
+| Pattern | One of the fifteen building blocks in the catalogue. The engine has no other processing vocabulary. |
+| Occurrence | One use of a pattern inside a product, with that pattern's configuration. A product may use a pattern more than once. |
+| Composition | The ordered occurrences of a product. |
+| Profile | A declared composition constraint: which patterns are mandatory, optional and forbidden, and in what order. |
+| Shape | The modelling form the target takes. A registered rendering with its own declaration schema. One per product. |
+| Target | What the product publishes: its shape, its relations, its contract, its materialisation intent. |
+| Contract | The versioned interface a product publishes. Generated from the declaration, never hand-written. |
+| Edge | A dependency between two products through a contract, or between two occurrences inside a product through a handoff schema. |
+| Graph | The acyclic set of products and their contract edges. |
+| Generation | A product's depth in the graph. First, later and consolidating generations are depth, not types. |
+| Translator | The technology axis. It renders occurrences and shapes into artefacts for one technology. |
+| Adapter | The platform axis. It owns dialect, physical types, identifier rules, layout and structural budgets. |
+| Named rule | A business rule referenced by name with a neutral signature and implemented in code per translator, and per adapter where dialects differ. |
+| Expression mode | Estate policy for inline SQL: `sql`, the default, or `named_only`. |
+| Layer label | A name an estate gives to a group of profiles. A product declares the label it sits in. |
+| Translator table | Estate configuration naming, for each label, the translator that renders each pattern and each shape. |
+| Runtime binding | Physical coordinates and environment for a deployment. Outside every product declaration. |
+
+## What you declare
+
+### A product declaration
+
+A product declaration is engine-neutral. It states what the product is, what it consumes,
+what it does, and what it publishes. It carries no engine syntax, no platform reference,
+no file path and no connection detail.
+
+```yaml
+product:
+  name: customer
+  domain: ecommerce
+  version: "1"
+  layer: silver                  # the estate's label
+  profile: integration           # required when the label admits more than one profile
+  owner: customer-domain
+
+sources:
+  - contract: ecommerce.cartivo_customer@1
+    expect:
+      fields: [customer_record_id, loyalty_id, email, customer_city]
+  - contract: ecommerce.relatio_customer@1
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    rules:
+      - {field: customer_record_id, completeness: 1.0}
+  - pattern: schema_transform
+    mapping:
+      - {from: email, to: customer_email, type: string}
+  - pattern: data_curation
+    entity: customer
+    resolution: {strategy: deterministic, keys: [loyalty_id, normalised_email]}
+    survivorship: {customer_email: contact_authority}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+  - pattern: schema_publish
+  - pattern: data_publish
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access: {classification: internal}
+```
+
+The `steps` block is the composition. Each entry is one occurrence, and its keys are that
+pattern's own configuration schema and nothing else. A shape may add a section to the
+`target` block, and only there.
+
+Two further keys appear on a product that reads more than one source. `combine` states
+how the sources come together, by `union` of their rows under one conformed schema or by
+`merge` of their columns on declared keys. Each source then carries `conform`, a mapping
+that renames and casts its fields onto the shape the combination needs. A source of a
+producer that publishes several relations also carries `relation`, naming the one it
+reads as the producer's shape names it.
+
+### Source declarations
+
+A product's first generation has to start somewhere. A **source declaration** at
+`declarations/<source>.yml` describes one source system's tables and columns, the types
+they carry, and how a delivered batch reaches the estate. It is the input a landing
+product binds to, either a fixture relation for local proof or a delivered relation
+under a Landing Product Contract.
+
+Two importers seed that file so nobody types a column list twice: `ergasterion
+import-odcs` reads a supplier's Open Data Contract Standard contract, and `ergasterion
+import-ddl` reads the source system's own `CREATE TABLE` statements. Both transcribe
+structure only, and mark every decision they cannot make with an explicit note.
+[`DEMO.md`](../../DEMO.md) works both through end to end.
+
+### Estate configuration
+
+`estate.yml` is where an organisation's own policy lives. It declares:
+
+- the **layer labels** and, for each, the reference profiles it admits;
+- the **adapters**, each marked `reference` or `deployment`, and which one is the
+  `final_target`;
+- the **translator table**: for each label, the translator that renders each pattern and
+  each shape;
+- the **expression mode** and the structured types the estate enables;
+- the estate namespace, support contact and owning team that every generated contract's
+  ownership section is built from.
+
+Per-adapter structural budgets and interface boundaries sit beside it in
+`declarations/targets/<adapter>.yml`. The estate's own named-rule signatures sit in
+`rules/`.
+
+The engine enforces what the estate gives it and fails closed on what it does not. A
+label with no translator-table entry for a pattern its profile carries fails at routing,
+naming the label, the pattern and the adapter.
+
+### Business rules: two routes, both neutral
+
+A declaration states a business rule in one of two ways, and neither is an escape hatch
+for the other.
+
+**Inline SQL** is the declaration language. A calculated field, a filter predicate, an
+aggregate, or a whole select body is written as SQL in the declaration. There is no
+closed subset and no fixed function list. A real SQL parser checks every inline
+expression. A parse error names the product, occurrence, and position. The engine resolves
+each column against the schema visible at that point. An unresolved column fails closed,
+and each resolved column becomes field-level lineage. The text is rendered verbatim. One
+text runs on every declared adapter, and the engine never transpiles.
+
+**Named rules** are the other route. A declaration references a rule by name. The rule
+has one neutral signature -- its name, its input types, its output type, its version --
+declared once in a rule catalogue. Its implementations are code, held in translator and
+adapter packages. This is the route for anything an estate wants reviewed and versioned
+as code, and for anything where dialects genuinely differ.
+
+The catalogue has two sources and merges them without shadowing: the engine's reference
+catalogue under `ergasterion/rules/reference/`, and the estate's own catalogue under
+`rules/`, which may add rules the reference catalogue does not carry. A name declared
+twice, in either source or across both, fails closed. An estate extends the reference
+catalogue; it never redefines a piece of it.
+
+Expression mode is estate policy, never a per-product or per-column choice:
+
+| Mode | What a declaration may carry | What proves it |
 |---|---|---|
-| Warehouse model | Target entities, keys, attributes, relationships, matching rules, survivorship rules, and served products | Created from DDL, a reference model, or a design for the estate |
-| Source declarations | Native source fields, data types, landing details, tests, and mappings into the warehouse model | Created from DDL, an Open Data Contract Standard (ODCS) contract, or the source specification |
-| Runtime and target configuration | Warehouse target, adapter bindings, physical limits, materialisation choices, and protection settings | Selected for each deployment environment |
-| Generated integration layers | Typed staging, optional identity resolution, historical storage, golden records, tests, and operational interfaces | Produced deterministically from the estate definitions |
-| Served or gold layer | Canonical models, dimensions, facts, calculated fields, semantic models, and measures | Produced from the warehouse design for that estate |
-| Published metadata | Data contracts, product descriptors, domain maps, runtime manifests, and lineage | Generated from the same estate definitions and built models |
-
-The engine treats entity names, field names, relationships, and rules as estate data. A
-customer estate and an investment estate therefore use the same engine while carrying
-different warehouse models and source mappings.
-
-The structured definitions are the repeatable input to generation. They can be imported
-from an existing model or developed for the estate. Once a design decision is recorded,
-generation applies it consistently whenever a source is added or changed.
-
-## Flow from source to warehouse
-
-The e-commerce example shows the complete journey. CARTIVO is a storefront, MERCARO is a
-marketplace, and RELATIO is a customer relationship system. Each source contains a record
-for the same customer under a different source key.
-
-### Receive and validate the delivery
-
-Each source table has a Bronze Product Contract. The contract records the native schema,
-delivery mode, parsing rules, quality rules, publication policy, and retention settings.
-The team responsible for the data can read and change those decisions.
-
-The runtime preserves the payload and its manifest exactly as received. It parses the
-payload under the declared codec, checks each quality rule, and records the result. A
-passing delivery is published for downstream use. A failing delivery is quarantined with
-a locator back to the source bytes.
-
-[`bronze-ingestion.md`](bronze-ingestion.md) describes this boundary in detail.
-[`bronze-product-v1.md`](../specifications/bronze-product-v1.md) is the contract reference.
-The [Bronze demonstration](../../demo/bronze-ingestion/) runs on the local reference
-platform using local files, SQLite, and DuckDB.
-
-### Map source fields into the warehouse model
-
-A source declaration describes the fields supplied by one feed and maps each field into
-the target warehouse model. It can rename fields, cast values into stable types, and state
-which entity and attribute each value supplies.
-
-The generator reads those mappings and produces a typed staging model for each source.
-Every later layer uses the warehouse vocabulary, while the declaration retains the link
-back to the source field.
-
-![Source declarations entering the generator, which emits typed staging models](pipeline_sources.svg)
-
-### Resolve records that describe the same entity
-
-Identity resolution is used when several sources describe the same customer, fund, or
-other entity. The estate defines the available matching signals and their order. Strong
-identifiers can resolve a pair directly. Weaker evidence can feed a probabilistic score
-when the estate enables that path.
-
-Pairs below the approved threshold enter a review queue. A reviewer can accept or reject
-the match, and the decision is retained for later runs. An entity supplied by one source
-passes directly into the historical layer.
-
-![Deterministic and probabilistic identity resolution leading to a review queue](pipeline_entity_resolution.svg)
-
-### Retain source history
-
-Every accepted source version is dated and stored in the raw vault. Hubs hold stable
-entity identities, links hold relationships, and satellites hold descriptive history.
-Bridge models connect source records to their resolved entity keys. Corrections and
-disagreements remain visible because new versions are appended.
-
-This history retains the source and effective date for every value. A downstream record
-can therefore be traced to the source version from which it was produced.
-
-### Evolve payload columns online
-
-A source can add a descriptive field after the warehouse already stores history. The
-generated warehouse handles that additive change as estate evolution. A payload column is
-a descriptive field stored in a satellite.
-
-The **hashdiff basis** is the exact column set an entity's stored hashdiffs were computed
-over. AutomateDV sorts columns alphabetically before hashing, so the set is the whole
-fact. The **evolution ledger** is the generated, committed file per domain that records
-each entity's payload roster, hashdiff basis, projection-expression fingerprints, and
-basis version. It is durable state for a running estate, not a disposable generation
-cache.
-
-An additive payload change is an **extension**. During an extension, the new column enters
-staging, bridge, stage, and satellite output. The hashdiff basis stays frozen, so stored
-history keeps the fingerprints it already has. Existing rows carry `null` for the new
-column, and new rows carry the mapped value.
-
-Every sibling source feeding the same entity maps the new column in its bridge select. A
-source that lacks the field maps it as `null`. The source declaration remains the visible
-place where that decision is reviewed.
-
-A **re-baseline** is the declared maintenance operation that adopts the current payload
-as the new hashdiff basis and recomputes stored hashdiffs in place. It rewrites every
-satellite row for the entity. The row count of those satellites therefore sets the
-maintenance window. Generated stage execution remains gated until the new models are
-deployed and the operator explicitly clears the gate.
-
-An **estate migration requirement** is the named fail-closed error for a non-additive
-change. It states the entity, column, change class, and remedy. Removals, renames, type
-changes, projection-expression changes, and basis conflicts use that error.
-
-The same-effective-time correction boundary is explicit. A re-presented business key and
-effective time with a changed basis payload stores a second version at that effective
-time. The narrow frozen-basis gap sits beside it: a same-effective-time correction
-confined to a post-extension column is captured only after a declared re-baseline.
-
-### Read bounded increments
-
-A source table can declare watermark increments when its effective date advances on
-redelivery. The **effective column** is the one staging output column the table's bridge
-maps to `effective_from`.
-
-A **staging increment block** is the declared per-table configuration for watermark
-increments. It carries `lookback_minutes` and `effective_advances_on_redelivery`. The
-table also declares `natural_key`, and the generated unique key is the natural key plus
-the effective column.
-
-The **consumption watermark** is the point on the effective column up to which every
-satellite fed by that table has absorbed history. The **delta window** is the interval
-from the consumption watermark minus lookback to the future. The generated filter enters
-that window with `>=` at the floor.
-
-**Replay suppression** is the satellite guard that discards a candidate row whose
-business key, hashdiff, and effective time already exist in the target. The guard is
-target-generic and has executed proof on DuckDB.
-
-Watermark increments are valid only for a table whose effective column advances when the
-source redelivers a changed record. A static effective date creates silent update loss:
-the redelivered row can sit below the lookback floor and never reach staging.
-
-The slowest satellite fed by a table holds that table's consumption watermark back. A
-rarely changing satellite that trails the others by 30 days widens the table's logical
-input window by about 30 days. Another table on the same source has its own floor. Split
-satellites by change rate where the wider window grows beyond the estate's normal batch
-budget. Whether the target physically prunes that input is a warehouse-specific design
-question, not a guarantee of the window declaration.
-
-### Apply survivorship and produce golden records
-
-The estate defines which source should supply each attribute when several sources provide
-a value. One rule may prefer the customer relationship system for contact details, while
-another prefers the storefront for marketing consent. These survivorship rules are
-readable and changeable estate configuration.
-
-The business vault applies those rules to the retained history and produces a golden
-record. The golden record stores the selected value, its source, and the date on which it
-became effective.
-
-### Produce the served or gold layer
-
-The served layer reshapes integrated records for business use. It can contain canonical
-models, dimensions, facts, calculated fields, semantic models, and measures. Canonical
-models expose consistent domain entities. Dimensions, facts, and measures organise them
-for analysis. Some platforms call this the gold layer.
-
-Ergasterion can produce this layer as part of the estate generation process. Its design is
-specific to the warehouse and the questions it must answer. Existing DDL, industry
-models, direct design, and design with AI assistance can all provide that intent. Once
-captured in the estate's generation inputs, the models can be produced and checked with
-the rest of the pipeline.
-
-A golden record and a gold layer serve different purposes. The golden record selects the
-current value for an entity after matching and survivorship. The gold layer organises
-those values into the dimensions, facts, measures, and other outputs used by consumers.
-
-![Historical source records producing golden records, canonical models and marts](pipeline_vault.svg)
-
-### Publish contracts, products, maps and runtime metadata
-
-The publication boundary is generated from the same model and mappings:
-
-- An Open Data Contract Standard (ODCS) contract describes each served table, including
-  its schema, keys, tests, ownership, and field lineage.
-- An Open Data Product Standard (ODPS, Bitol) descriptor groups the served tables into a
-  product and records its output and management ports.
-- A typed domain map records entities and relationships in relational and graph forms.
-- Runtime manifests and operational evidence record how a Bronze product is bound and
-  what happened to each delivery.
-
-The verification process regenerates these artefacts and compares them with the committed
-versions. A direct edit is reported as drift.
-
-## Platform adapters
-
-The warehouse model and source mappings describe the data. Translators and runtime
-adapters contain the platform implementation. This separation allows one estate
-design to run on different combinations of warehouse, storage, state, and scheduling
-services.
-
-### Warehouse generation and SQL targets
-
-The warehouse generator emits models and tests for dbt, the tool that builds them on the
-target database. dbt dispatch macros isolate SQL differences such as safe casts, regular
-expressions, date arithmetic, hashing, arrays, and object construction. Target
-declarations record physical limits and materialisation settings.
-
-DuckDB, Snowflake, and BigQuery are implemented targets. DuckDB is the executable reference
-implementation. Snowflake and BigQuery are generation targets whose generated projects pass
-dbt parsing, dialect linting, deterministic generation, structure checks, and adapter
-conformance tests.
-
-A new warehouse target supplies the required SQL dispatches, target limits, and dbt
-configuration. Its implementation must pass the dialect, parse, structure, and build
-checks that apply to that platform.
-
-### Bronze translators and runtime ports
-
-The Bronze framework resolves a product contract and runtime binding into an execution
-plan that is independent of any platform. Translators claim the stages they implement and
-produce the target artefacts and runtime manifest. Routing checks that each stage has one
-execution owner and that handoffs use compatible schemas.
-
-The runtime reaches external services through declared ports for source connection, raw
-storage, scratch storage, operational state, landing, remediation, projection, lifecycle
-evidence, and key services. A runtime binding selects one adapter for each port and names
-the relations used by that environment.
-
-The local reference binding uses files for delivery and raw storage, SQLite for
-operational state, and DuckDB for landing and projection. Another platform supplies
-adapters for its own services. The contract and execution plan remain unchanged.
-
-Each adapter declares its operations, supported delivery modes, codecs, limits, safety
-guarantees, and protection capabilities. The conformance runner checks those declarations
-against the implementation, including recovery and verified backup and restore.
-
-## Verification
-
-![Verification gates for regeneration, SQL dialects, dbt targets and the local estate build](pipeline_gates.svg)
-
-Verification checks the declarations, generated code, built models, and published
-metadata at several boundaries:
-
-- Regeneration must reproduce committed generated files byte for byte.
-- Dialect checks reject SQL that is incompatible with a selected target.
-- dbt parses the estate for DuckDB, Snowflake, and BigQuery.
-- A full DuckDB build executes the worked data and its business assertions.
-- Contract, product, graph, scaffold, package, and adapter checks cover the other
-  published and runtime interfaces.
-
-[`scripts/validate_offline.sh`](../../scripts/validate_offline.sh) runs the local checks.
-It needs Git, Bash, Python, dbt, and the pinned dbt packages. Snowflake and BigQuery
-credentials and deployment controls stay in the operator's target environment.
-
-## Worked examples
-
-The repository contains an e-commerce estate and an investment estate. Both use the same
-engine and adapter interfaces.
-
-The e-commerce estate models customers, products, orders, and customer segments. Its
-three sources exercise source mapping, customer identity resolution, survivorship,
-historical classification, order reconciliation, and revenue measures.
-
-The investment estate models funds, management firms, portfolio companies, legal
-vehicles, cash flows, valuations, and deal opportunities. Its sources exercise the same
-pipeline mechanisms with a different warehouse model and different business rules.
-
-The root [README.md](../../README.md#worked-domains) describes the results produced by
-both estates. [DEMO.md](../../DEMO.md) explains their source declarations and mappings.
-
-## Optional alignment with reference models
-
-An estate may align its warehouse model with an industry, enterprise, or public reference
-model. The reference model can supply a starting schema and vocabulary. The estate still
-records the model it uses and the mappings from each source.
-
-The investment example records attribute lineage to the
-[Open Investment Model (OpenIM)](https://openinvestmentmodel.org). A validation hook can
-check those references when an OpenIM checkout is supplied. BIAN, FIBO, and internal
-canonical models occupy the same architectural position when a validator exists for
-their format.
-
-Alignment with a reference model is optional. The mappings from each source into the
-warehouse and the generated pipeline work with an estate's own warehouse model.
-
-The domain file also defines a relationship vocabulary. Ergasterion uses it to produce a
-typed domain map and a binding to the physical warehouse tables. The
-[domain map guide](ontology-map-lane.md) describes that projection.
-
-## Boundaries
-
-- Business meaning enters through the warehouse model, source mappings, matching rules,
-  survivorship rules, and served layer design. AI assistance can help develop each of
-  these inputs. The reviewed estate files record the decisions generation applies.
-- DDL and ODCS importers provide structural starting points. The estate completes the
-  business meaning, source mappings, ownership, matching rules, and publication details.
-- Automated identity resolution follows the signals and thresholds approved for the
-  estate. Uncertain pairs wait for a recorded review decision.
-- DuckDB is the executable reference implementation. Snowflake and BigQuery are implemented
-  generation targets checked through dbt parsing, dialect linting, deterministic generation,
-  structure checks, and adapter conformance tests. Another target needs the required SQL
-  implementation, target configuration, and validation evidence.
-- Adapter conformance establishes compatibility with Ergasterion's interfaces.
-  Production suitability also depends on the target environment's security, resilience,
-  access control, operating model, and recovery evidence.
+| `sql`, the default | Inline SQL and named rules together. | Parse, column resolution and lineage before emission; the per-adapter parse and dialect gates and the reference-adapter build after it. |
+| `named_only` | No inline SQL. Every rule is a named rule. | The completeness gate: every referenced rule resolves for every declared translator and adapter pair. |
+
+Declarations use logical types: string, integer, decimal with precision and scale,
+boolean, date, timestamp, and the structured types the estate enables. Each adapter owns
+the mapping to its physical types. A type mapping never appears in a declaration.
+
+## How the engine builds it
+
+```text
+declaration
+  -> validate   schema per pattern, composition versus profile, shape constraints,
+                inline expression parse and column resolution, expression-mode policy,
+                reference resolution, contract compatibility, duplication
+  -> plan       occurrences, edges with handoff schemas, checkpoint wrapper, digest
+  -> route      each occurrence to the one translator the estate's table names
+  -> emit       artefacts per translator, deterministic, a generated marker on every file
+  -> gate       dialect per adapter, structural budgets per adapter, determinism, drift
+  -> evidence   what was proved, per adapter
+```
+
+**Validation** is deterministic and runs before generation. It checks the profile, pattern
+order, shape fields, expression policy, and visible columns. It also checks rule
+implementations, declaration neutrality, source contracts, and duplicate published names.
+Each failure names the declaration and rule that stopped it.
+
+**The plan** is the resolved product: occurrences with their configuration, edges
+carrying the schema handed from one occurrence to the next, and the checkpoint wrapper
+enclosing the composition. It carries a digest.
+
+**Routing is declared, never inferred.** The router looks the product's declared label up
+in the estate's translator table, takes the translator it names for that occurrence's
+pattern, and requires that translator to have registered the capability for every
+declared adapter. Every occurrence therefore has exactly one owner. Several translators
+commonly serve one product: a landing label can give its ingestion patterns to the
+ingestion runtime and its contract, schema, metadata and lineage steps to the publication
+translator.
+
+**Emission is byte-deterministic.** The same declarations produce the same artefacts.
+Every generated file carries the marker `Generated by Ergasterion from a product
+declaration`. Check mode regenerates and reports drift against what is on disk without
+writing anything. Emission prints one line per product:
+
+```text
+emitted ecommerce.order_star: label=gold profile=serving shape=dimensional owner=dbt adapters=duckdb,bigquery artefacts=21
+```
+
+**Gates** run per declared adapter: dialect rules, structural budgets, deterministic
+re-emission and drift detection. A gate failure names the artefact, the rule and the
+adapter.
+
+## The fifteen patterns
+
+The catalogue is closed. Adding a processing capability means adding a pattern to the
+catalogue, not adding a special case to the engine. Each pattern is a contract the engine
+holds once, with its own configuration schema under
+`ergasterion/schemas/patterns/`.
+
+| Pattern | Its configuration holds | It emits |
+|---|---|---|
+| Batch Ingestion | Source connection reference, scope, cadence, extract mode | Landing relations and receipt records |
+| Batch Transfer | Upstream contract reference | A read of a published product |
+| Schema Transform | Field mapping: rename, cast, flatten, drop, null handling | A structural mapping relation |
+| Calculated Fields | Named fields with SQL expressions or named rules | Derived columns |
+| Data Enrichment | Lookups against reference product contracts, join keys, no-match policy | An enriched relation |
+| Data Filtering | Named predicates | A filtered relation and a filter log |
+| Data Validation | Rules by type, stage, threshold, on-failure policy | Tests, a quarantine relation, an abort condition |
+| Data Aggregation | Grain, groups, aggregate expressions, late-arrival policy | An aggregate relation |
+| Data Curation | Entity, resolution strategy, keys, survivorship, merge rules | A surviving record and resolution evidence |
+| Data Contracts | Nothing beyond the target contract block | One ODCS contract per published relation and its compliance check |
+| Lineage Capture | Nothing; derived from the declaration | Product and field lineage in the estate graph |
+| Metadata Capture | Descriptions, ownership, classification | An ODPS product descriptor and catalogue metadata |
+| Schema Publish | Versioning policy | Version registration and change classification |
+| Data Publish | Publication mode | Atomic publication, a current pointer, an SLA record |
+| Checkpoint and Retries | Granularity, retries, backoff | A wrapper around the composition |
+
+## Profiles
+
+A profile declares which patterns are mandatory, optional and forbidden for a product,
+and the ordering constraints between them. The engine ships five reference profiles under
+`ergasterion/profiles/` and enforces whichever one a product's label admits. An estate may
+declare its own. A product naming an unknown profile fails closed.
+
+| Reference profile | The composition it constrains |
+|---|---|
+| landing | Bring external data in unchanged |
+| integration | Conform and curate entities from landed products |
+| derivation | Compute on top of integrated products |
+| consolidation | Combine two or more products into one |
+| serving | Deliver for a named consumer |
+
+Every profile makes Data Contracts mandatory, landing included, because in this engine
+the contract is the only pipe.
+
+Layer labels are an estate mapping over profiles. One estate maps Bronze to landing,
+Silver to integration, derivation and consolidation, and Gold to serving. Another uses its
+own vocabulary. A product declares the label it sits in and, when that label admits more
+than one profile, the profile.
+
+## Shapes
+
+A shape is a registered rendering of a product's target. It carries its own declaration
+schema for the target block, the relations it renders, any composition constraint it
+adds, and a rendering per translator. One shape per product; a second shape is a second
+product downstream. A shape is never a layer.
+
+| Shape | Renders | Needs in the target block |
+|---|---|---|
+| declared | The relations exactly as the composition produces them. The default. | Nothing, or an optional `select` holding one whole select body whose output columns must be exactly the relation schema the composition publishes |
+| ods | Normalised relational form: keys, effectivity, cross-reference, audit tail | Entities and keys |
+| dimensional | Facts and dimensions, declared grain, slowly changing dimension types, conformed dimensions, and the semantic model of measures and metrics | Grain, dimensions, measures, metrics |
+| canonical | One relation per canonical entity over a curated product | An entity list, and an upstream curated product |
+| data_vault | Identity, association and version stores, a surviving record and a point-in-time relation, with an evolution ledger and a declared re-baseline | Its stores and its surviving-record rules, and a Data Curation occurrence in the composition |
+
+Registering a shape is a plug-in act under `ergasterion/shapes/<name>/`, never an engine
+change. A shape that renders more than one relation says so once, and the contract, the
+graph and the translator all read that one answer. A consumer of such a product declares
+which relation it reads.
+
+## Contracts: the only pipe
+
+Every product publishes one contract, generated from its declaration and its shape. Its
+elements are identity, schema, freshness, quality guarantees, versioning policy, lineage,
+access and support. Two serialisations are emitted, both under
+`contracts/products/<domain>/<product>/`:
+
+- an **Open Data Contract Standard (ODCS)** document per published relation, the artefact
+  of the Data Contracts pattern and the version registered by Schema Publish;
+- an **Open Data Product Standard (ODPS)** descriptor per product, the artefact of
+  Metadata Capture at product level.
+
+Neither is ever hand-written. Both are schema-validated against their published schemas
+and checked for drift on every run.
+
+A consumer names the contract and major version it consumes and declares what it expects
+from it. At emission the engine checks that expectation against the producer's current
+published contract and fails closed on any incompatibility. Schema evolution follows one
+rule: additive nullable fields are minor and non-breaking; removals, renames, type changes
+and new required fields are major and breaking. A consumer pinned to a major version is
+unaffected by minor changes and blocked by major ones until it re-declares.
+
+## The product graph and generations
+
+Nodes are products. Edges are contract dependencies. The graph is acyclic. The engine
+orders it topologically and emits in that order.
+
+Generation is depth, defined structurally. A **first generation** product takes every
+source edge from a landing product. A **later generation** product takes at least one from
+a non-landing product. A **consolidating** product takes two or more from non-landing
+products and combines them by a declared union or merge, with each source conformed onto
+the combined schema. A consolidated product proves its coverage with a Data Validation
+occurrence whose rules reference its upstream contracts. A union that drops a base fails
+its coverage check.
+
+The graph itself is an emitted artefact under `graphs/products/`: nodes, edges,
+field-level lineage and the validations each product declares, in both JSON and CSV.
+Product-level and field-level lineage come from the declarations at build time. Run-level
+lineage comes from the runtime at execution.
+
+## Landing: receiving a delivered batch
+
+The generated pipeline starts from rows that have already crossed a controlled delivery
+boundary. The landing profile is that boundary.
+
+Each source table has one Landing Product Contract describing its native schema, its
+delivery mode (change events, append-only rows, or complete snapshots), its parsing rules,
+its quality rules, its publication policy and its retention. The runtime preserves the
+received bytes and manifest, then parses the payload under the declared codec. It evaluates
+every rule and publishes accepted rows. Rejected rows enter quarantine with a locator to
+the exact bytes that failed. The contract determines the outcome; the runtime applies it.
+
+[`bronze-ingestion.md`](bronze-ingestion.md) is the deep dive on that mechanism.
+[`landing-product-v1.md`](../specifications/landing-product-v1.md) is the field-by-field
+contract reference. The [landing demonstration](../../demo/landing-ingestion/) runs the
+whole sequence on the local reference platform, account-free and network-free.
+
+A landing product does not have to arrive through that runtime. The estate's translator
+table decides: one label can give its landing relations to the ingestion runtime, and
+another can give them to the SQL translator, which materialises the relation from an
+extract the source system delivered. Changing which one owns a pattern is an estate
+configuration change with no engine change.
+
+## Translators and adapters
+
+Producing any kind of target and forbidding specifics in declarations are two different
+guarantees, and two different mechanisms meet them.
+
+![The split: a neutral declaration through the neutrality gate, a neutral plan, the completeness gate resolving every rule against every declared translator and adapter pair, specifics only in implementation packages](engine-architecture-split.svg)
+
+**Any target** comes from two independent axes, both plug-ins.
+
+| Axis | What it owns |
+|---|---|
+| Translator, the technology | How an occurrence and a shape are rendered for that technology, the generated tests, and that technology's deployment artefacts |
+| Adapter, the platform | Dialect, physical type mapping, identifier rules, physical layout, structural budgets |
+
+A capability is a tuple of pattern or shape, translator and adapter. Routing matches
+occurrences to capabilities. Adding a technology is a translator. Adding a platform is an
+adapter. Neither touches the engine or any declaration.
+
+The reference translator set is three:
+
+- a **SQL-model translator** that renders the transformation patterns, the shapes, the
+  generated tests and the contract compliance checks into a dbt project;
+- an **ingestion-runtime translator** that renders Batch Ingestion, landing validation,
+  Checkpoint and Retries and Data Publish for landing products against the runtime's
+  ports;
+- a **publication translator** that renders Data Contracts, Lineage Capture, Metadata
+  Capture and Schema Publish into ODCS contracts, ODPS descriptors and the estate graph.
+
+A translator may render private auxiliary relations for a named rule or a staged
+computation, under the product's namespace. They are excluded from the product's contract
+and registered in the graph as auxiliary lineage.
+
+This repository's estate declares two adapters. **DuckDB is the reference adapter**: it
+executes the whole estate locally and is the engine's executable truth. **BigQuery is the
+deployment adapter and the final target**: the estate is generated for it and gated for it
+offline. Each adapter owns its conventions in `ergasterion/adapters/<adapter>/` and its
+budgets and interface boundaries in `declarations/targets/<adapter>.yml`. Another platform
+is another adapter package; the engine does not change for it.
+
+**No specifics** comes from where specifics are allowed to live, and two gates that
+enforce it. A declaration holds only pattern configuration, neutral types, inline SQL,
+contract references and named-rule references. Specifics live only inside translator
+packages, adapter packages and named-rule implementations. The **neutrality gate** rejects
+any declaration carrying technology syntax, a platform reference, a file path, a URL
+scheme, a connection detail or executable code; it never polices which SQL constructs an
+expression uses. The **completeness gate** resolves every referenced rule against every
+declared translator and adapter pair and fails closed on a gap, naming the rule and the
+pair.
+
+The ingestion runtime reaches external services through declared ports for source
+connection, raw storage, scratch storage, operational state, landing, remediation,
+projection, lifecycle evidence and key services. A runtime binding selects one adapter for
+each port and names the relations that environment writes. The local reference binding
+uses files for delivery and raw storage, SQLite for operational state, and DuckDB for
+landing and projection. A packaged conformance runner checks another platform's adapters
+against the runtime contract, including failure recovery and verified backup and restore.
+
+## What keeps it honest
+
+![The offline verification gates: byte-stable re-emission, per-adapter dialect rules and structural budgets, dbt parse for both adapters, the DuckDB build, and the publication drift checks](pipeline_gates.svg)
+
+The engine proves the following deterministically, with no warehouse account:
+
+1. every declaration validates, every inline expression parses with its column references
+   resolved, and no declaration contains engine syntax;
+2. emission is byte-stable and drift-free, and re-emission of the committed tree changes
+   nothing;
+3. every artefact parses for both declared adapters and passes each one's dialect and
+   structural gates;
+4. both worked domains execute on the reference adapter, with every generated test and all
+   40 known-answer assertions passing;
+5. every product's contract and descriptor is generated, schema-valid and drift-free, and
+   every consumer's expectation is compatible with what its producer publishes.
+
+`bash scripts/validate_offline.sh` runs that set. `bash
+scripts/validate_engine_architecture.sh` runs the thirteen architecture acceptance checks
+over it and prints one line per check.
+
+BigQuery evidence stops at generated artefacts. The gate parses them, checks their dialect
+and budgets, and regenerates them byte for byte. No query from this repository has run in
+a BigQuery project. A live run needs a runtime binding plus credentials, permissions, and
+cost controls supplied by the account owner.
+
+The `ods` shape is proved on a fixture estate only. The declared root estate uses the
+`declared`, `canonical`, `dimensional`, and `data_vault` shapes. Data Vault also has a
+smaller fixture that isolates its own generation and DuckDB build.
+
+The layer-neutrality gate covers Python modules under `ergasterion/`. Package data,
+scripts, tests, and documentation sit outside that scan. Layer labels in `estate.yml` are
+estate data by design.
+
+Reconciling a candidate output against an expected output -- frozen inputs, a comparison
+policy, first-divergence traceback -- is outside this engine. It belongs to a verification
+product that consumes Ergasterion. The engine supplies hooks only: fixture-backed source
+relations for local proof, a checkpoint flag that forces materialisation and registers the
+relation in the emitted graph, and stable relation names.
+
+## The two worked domains
+
+The repository carries 124 product declarations across two worked domains and their
+reference data. Each domain exercises a different set of modelling problems.
+
+The e-commerce domain uses 29 domain products and 4 customer reference products. Its 33
+products receive three overlapping customer feeds, resolve customer, product, and order
+identity, combine two sales channels, and publish canonical and dimensional outputs. The
+18 known-answer assertions under `tests/ecommerce/` check results a person can inspect.
+
+The investment domain uses 75 domain products and 16 investment reference products. Its 91
+products receive five source systems, curate five entities in Data Vault shapes, publish
+five canonical interfaces mapped to the Open Investment Model, and build review and
+decision surfaces for uncertain matches. The 22 assertions under `tests/investment/` cover
+those results, including a near-duplicate deal that stays separate and enters review.
+
+The root DuckDB build executes both domains and all 40 assertions. The account-free
+demonstration runs that build, then prints three e-commerce results.
+
+## Architectural rules
+
+The design keeps these constraints true:
+
+- Layer labels are configuration keys. Validation, planning, routing, and emission contain
+  no branch tied to a label's name.
+- Profiles hold composition rules as data. Engine code contains no composition table.
+- Each shape owns its declaration fields and rendering. Products use only the shape they
+  declare.
+- Declarations contain business rules and neutral types. Technology syntax, platform
+  references, file paths, and connection details fail validation.
+- Every named rule resolves for every translator and adapter pair the estate declares.
+- Products consume contracts. Physical table names stay behind the contract boundary.
+- One generated project serves all declared adapters. Adapter packages own their dialect
+  differences.
+- People declare mappings, meaning, ownership, and tolerances. The engine does not infer
+  them from names.
+- Every product artefact is generated. A missing capability becomes a profile, pattern,
+  translator, adapter, or shape change.
+- The engine proves the artefacts it generates. A separate verification product compares a
+  candidate result with an expected result.
+
+## What this is not
+
+- Ergasterion does not author business meaning. People set composition, mappings,
+  resolution keys, survivorship rules, tolerances, and output shapes in readable files.
+- The DDL and contract importers create structural starting points. A person fills every
+  business decision their input did not state.
+- Identity resolution applies declared keys and thresholds. Records without an approved
+  identity signal stay separate.
+- DuckDB executes. BigQuery is a generation target with offline evidence. Every additional
+  platform needs an adapter package and evidence from that platform.
+- Adapter conformance proves compatibility with runtime interfaces. The target environment
+  still owns production security, resilience, access control, cost control, and operations.
 
 ## For engineers
 
 | Location | Responsibility |
 |---|---|
-| `domains/` | Warehouse models, matching rules, survivorship rules, product definitions, and relationship vocabularies |
-| `declarations/` | Source schemas, landing configuration, and mappings into the warehouse model |
-| `ergasterion/emit.py` and `ergasterion/templates/` | Deterministic warehouse model generation |
-| `ergasterion/framework/` | Typed contracts, execution plans, routing, bindings, and translator conformance |
-| `ergasterion/translators/` | Translation from execution plans into target artefacts |
-| `ergasterion/ingestion/` | Bronze runtime, ports, local adapters, operational evidence, and adapter conformance |
-| `models/` | Generated integration models and the estate's canonical, mart, calculated field, and semantic outputs |
-| `contracts/`, `products/`, and `graphs/` | Generated publication interfaces |
+| `declarations/products/` | Product declarations: the label, the source contracts, the composition and the published shape |
+| `declarations/` | Source schemas and landing configuration |
+| `declarations/targets/` | Per-adapter structural budgets and interface boundaries |
+| `estate.yml`, `rules/` | Estate policy: labels, adapters, the translator table, expression mode, named-rule signatures |
+| `ergasterion/framework/` | The engine: declaration validation, plan, routing, shapes, contracts, graph, the rule catalogue |
+| `ergasterion/profiles/`, `ergasterion/schemas/patterns/` | The reference profiles and the fifteen pattern schemas, as data |
+| `ergasterion/shapes/` | The registered shape plug-ins |
+| `ergasterion/translators/` | The SQL-model, ingestion-runtime and publication translators |
+| `ergasterion/adapters/` | Per-platform conventions: dialect rules, type mapping, identifier rules |
+| `ergasterion/ingestion/` | The landing runtime, its ports, its local adapters and its conformance runner |
+| `models/products/`, `contracts/products/`, `graphs/products/`, `manifests/products/` | Generated output, one tree per product |
+| `macros/` | Named-rule implementations and the adapter-dispatch layer |
+| `tests/` | Known-answer assertions, engine tests and the acceptance run |
 
-The root [README.md](../../README.md#for-engineers) covers installation, commands, and the
-complete repository layout. [RUNBOOK.md](../../RUNBOOK.md) covers local operation, Bronze
-commands, and adapter operation. [`bronze-ingestion.md`](bronze-ingestion.md) and
-[`ontology-map-lane.md`](ontology-map-lane.md) provide the detailed architecture for those
-two areas.
+The root [README.md](../../README.md) is the short introduction and the command reference.
+[`RUNBOOK.md`](../../RUNBOOK.md) is the operator sequence. [`DEMO.md`](../../DEMO.md) walks
+source onboarding through both importers.
+[`bronze-ingestion.md`](bronze-ingestion.md) is the deep dive on the landing boundary.
+[`engine-architecture.md`](engine-architecture.md) is the design record this guide
+describes the implementation of, including its open questions.
+[`../migration/0.5-to-0.6.md`](../migration/0.5-to-0.6.md) is the declaration migration
+guide for an estate moving off the 0.5 line.

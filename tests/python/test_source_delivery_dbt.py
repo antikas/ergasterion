@@ -2,9 +2,8 @@
 
 Exercises macros/source_delivery.sql against the stock dbt Core 1.11.12
 collect_freshness_custom_sql call path. DuckDB executes pass/stale freshness,
-signal separation and fail-closed projection diagnostics. Snowflake, BigQuery
-and DuckDB parse. --write-project DIR materialises the isolated fixture used by
-scripts/validate_snowflake_delivery_freshness.sh.
+signal separation and fail-closed projection diagnostics; both declared adapters
+parse. --write-project DIR materialises the isolated fixture project.
 
 Usage:
     python tests/python/test_source_delivery_dbt.py
@@ -37,7 +36,7 @@ if __package__ in (None, ""):
 from ergasterion.sync_scaffold import SCAFFOLD_MACROS, generated_set
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-FIXTURE = REPO_ROOT / "tests" / "fixtures" / "snowflake_delivery_freshness"
+FIXTURE = REPO_ROOT / "tests" / "fixtures" / "delivery_freshness"
 CASES_PATH = FIXTURE / "cases.json"
 MACRO_SRC = REPO_ROOT / "macros" / "source_delivery.sql"
 STOCK_FRESHNESS = (
@@ -566,7 +565,7 @@ def test_duckdb_freshness_integrity_and_parse() -> None:
         assert wrong_target["expect_integrity_reason"] == "missing_projection"
         assert wrong_target["expect_freshness"] == "runtime_error"
 
-        for target in ("snowflake", "bigquery"):
+        for target in ("duckdb", "bigquery"):
             parsed = _run_dbt(
                 ["parse", "--profiles-dir", profiles, "--no-partial-parse", "-t", target],
                 dest,

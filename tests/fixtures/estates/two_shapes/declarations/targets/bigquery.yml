@@ -1,0 +1,18 @@
+# Structural budget declaration for the bigquery deployment target, which
+# this fixture estate gates offline.
+adapter: bigquery
+kind: deployment
+budgets:
+  # Consecutive view levels a single statement expands. The canonical shape's
+  # relations are one-deep interface views over materialised relations, and the
+  # dimensional shape's are tables; the ceiling is set by the private relations
+  # the translator renders under a product's namespace, where the resolution
+  # relation a data_curation occurrence reads sits under its validation's
+  # checked relation, two views deep.
+  max_view_chain_depth: 2
+  max_statement_bytes: 262144
+  max_relation_identifier_chars: 255
+  max_column_identifier_chars: 255
+  max_description_bytes: 1024
+  max_seed_rows: 10000
+  max_seed_bytes: 10485760

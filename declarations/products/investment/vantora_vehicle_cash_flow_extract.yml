@@ -1,0 +1,69 @@
+# Landing product: The VANTORA book-of-record legal vehicle cash flow feed as it was delivered, one row per delivered vehicle cash flow.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: vantora_vehicle_cash_flow_extract
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.vantora_vehicle_cash_flow_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_vantora_vehicle_cash_flows
+      fields:
+        - {name: vehicle_cash_flow_id, type: string}
+        - {name: vehicle_id, type: string}
+        - {name: cash_flow_date, type: string}
+        - {name: cash_flow_type, type: string}
+        - {name: direction, type: string}
+        - {name: amount_usd, type: string}
+        - {name: currency, type: string}
+    expect:
+      fields: [vehicle_cash_flow_id, vehicle_id, cash_flow_date]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: vehicle_cash_flow_id, not_null: true}
+      - {field: vehicle_cash_flow_id, unique: true}
+      - {field: vehicle_id, not_null: true}
+      - {field: cash_flow_date, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The VANTORA book-of-record legal vehicle cash flow feed as it was delivered, one row per delivered vehicle cash flow."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

@@ -1,0 +1,16 @@
+{
+  "description": "Every column of each listed relation matches this contract's published schema (name, type and required-ness); the product is not published if it violates its own contract.",
+  "product": "investment.deal_vault",
+  "relations": [
+    "investment.deal_vault__hub_deal",
+    "investment.deal_vault__hub_portfolio_company",
+    "investment.deal_vault__hub_fund",
+    "investment.deal_vault__link_deal_portfolio_company",
+    "investment.deal_vault__link_deal_fund",
+    "investment.deal_vault__sat_deal_detail",
+    "investment.deal_vault__sat_deal_pipeline",
+    "investment.deal_vault__golden_deal",
+    "investment.deal_vault__pit_deal"
+  ],
+  "schema": "ergasterion.contract-compliance/v1"
+}

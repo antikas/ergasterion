@@ -1,0 +1,8 @@
+{
+  "description": "Every column of each listed relation matches this contract's published schema (name, type and required-ness); the product is not published if it violates its own contract.",
+  "product": "investment.chrono_gp",
+  "relations": [
+    "investment.chrono_gp"
+  ],
+  "schema": "ergasterion.contract-compliance/v1"
+}

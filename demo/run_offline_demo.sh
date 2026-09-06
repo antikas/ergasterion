@@ -1,19 +1,10 @@
 #!/usr/bin/env bash
-# demo/run_offline_demo.sh: full, account-free DuckDB demonstration.
+# demo/run_offline_demo.sh: the account-free demonstration of the worked estate.
 #
-# Runs the complete dbt project locally, then presents the same three business
-# queries as the live Snowflake demo. Runtime evidence is written under
-# demo/offline-runs/<UTC-id>/; source data and SQL remain in their existing SSOTs.
-#
-# `--evolution` selects the estate-evolution scenario instead: a machine-checked run
-# that adds one payload field to a scratch copy of the estate and proves the generated
-# warehouse absorbs it while it keeps every version it already stores. The scenario
-# lives in demo/scenarios/evolution.sh.
-#
-# `--watermark` selects the watermark-increment scenario: a machine-checked run that
-# declares a staging increment block on one table of a scratch copy of the estate and
-# proves the generated warehouse reads only the bounded delta while it keeps the full
-# history it already stores. The scenario lives in demo/scenarios/watermark.sh.
+# It regenerates the estate from its product declarations and reports any drift,
+# builds the generated project on DuckDB, and prints three business results from
+# the built relations. Every byte it writes lands under demo/offline-runs/<UTC-id>/,
+# which Git ignores. No warehouse account, no credentials and no network call.
 
 set -euo pipefail
 
@@ -25,25 +16,16 @@ cd "${REPO_ROOT}"
 
 usage() {
     cat <<'USAGE'
-usage: bash demo/run_offline_demo.sh [--evolution | --watermark]
+usage: bash demo/run_offline_demo.sh [--help]
 
-  (no argument)  run the complete dbt project on DuckDB and print the three
-                 business results, writing evidence under demo/offline-runs/<UTC-id>/
-  --evolution    run the estate-evolution scenario and check its outcome by machine
-  --watermark    run the watermark-increment scenario and check its outcome by machine
+  (no argument)  regenerate the estate, check it for drift, build it on DuckDB
+                 and print the three business results, writing evidence under
+                 demo/offline-runs/<UTC-id>/
   --help         print this message
 USAGE
 }
 
 case "${1-}" in
-    --evolution)
-        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-        exec bash "${SCRIPT_DIR}/scenarios/evolution.sh"
-        ;;
-    --watermark)
-        [ "$#" -eq 1 ] || { usage >&2; exit 2; }
-        exec bash "${SCRIPT_DIR}/scenarios/watermark.sh"
-        ;;
     --help|-h)
         usage
         exit 0
@@ -108,7 +90,7 @@ DB_PATH="${TARGET_DIR}/${DB_FILE}"
 # The evidence path gets the same exact physical-identity treatment, through the shared
 # guard in demo/scenarios/common.sh: the canonical direct demo child is validated before
 # offline-runs is created, and each expected direct child before creating or opening
-# transcript.log or any metric file.
+# transcript.log or any result file.
 OFFLINE_RUNS_DIR="$(dpf_offline_runs_dir "${REPO_ROOT}")" \
     || dpf_fail "could not verify the offline-runs directory"
 
@@ -123,20 +105,11 @@ dpf_assert_direct_physical_child "${RUN_DIR}" "${OFFLINE_RUNS_DIR}" "${RUN_ID}" 
 LOG_FILE="${RUN_DIR}/transcript.log"
 exec > >(tee "${LOG_FILE}") 2>&1
 
-echo "== Ergasterion: account-free DuckDB demo =="
+echo "== Ergasterion: account-free DuckDB demonstration =="
 echo "   database      : ${DB_PATH}"
 echo "   catalog       : ${CATALOG}"
 echo "   run directory : demo/offline-runs/${RUN_ID}"
 echo
-
-# The offline lane must be unable to inherit warehouse credentials accidentally.
-while IFS='=' read -r env_name _; do
-    case "${env_name}" in DPF_SF_*) unset "${env_name}" ;; esac
-done < <(env)
-if env | grep -q '^DPF_SF_'; then
-    dpf_fail "Snowflake environment variables remained after offline credential scrub"
-fi
-echo "Snowflake environment variables: 0"
 
 echo "== [0/5] Pinned runtime preflight =="
 DBT_VERSION_OUTPUT="$("${DBT_BIN}" --version)"
@@ -150,17 +123,22 @@ DUCKDB_VERSION="$("${PY_BIN}" -c 'import duckdb; print(duckdb.__version__)')" \
 echo "duckdb Python module: ${DUCKDB_VERSION}"
 echo
 
-echo "== [1/5] Reset verified local database =="
+echo "== [1/5] Regenerate the estate from its product declarations, and report drift =="
+"${PY_BIN}" ergasterion/emit_products.py --check \
+    || dpf_fail "the committed project does not match the product declarations"
+echo
+
+echo "== [2/5] Reset verified local database =="
 rm -f -- "${DB_PATH}" "${DB_PATH}.wal"
 export DPF_DUCKDB_PATH="${DB_PATH}"
 echo "reset: ${DB_PATH}"
 echo
 
-echo "== [2/5] Full dbt build =="
+echo "== [3/5] Full dbt build on the reference adapter =="
 "${DBT_BIN}" build --profiles-dir profiles -t duckdb
 echo
 
-BASE_SCHEMA="$("${PY_BIN}" - "${DB_PATH}" <<'PY'
+SCHEMA="$("${PY_BIN}" - "${DB_PATH}" <<'PY'
 import duckdb
 import sys
 
@@ -168,13 +146,8 @@ with duckdb.connect(sys.argv[1], read_only=True) as connection:
     print(connection.execute("select current_schema()").fetchone()[0])
 PY
 )" || dpf_fail "could not derive DuckDB's profile schema"
-[[ "${BASE_SCHEMA}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
-    || dpf_fail "DuckDB returned an unsafe base schema: ${BASE_SCHEMA}"
-CALC_SCHEMA="${BASE_SCHEMA}_calculated_fields"
-MARTS_SCHEMA="${BASE_SCHEMA}_marts"
-RESOLUTION_SCHEMA="${BASE_SCHEMA}_resolution"
-RAW_SCHEMA="${BASE_SCHEMA}_raw"
-CANONICAL_SCHEMA="${BASE_SCHEMA}_canonical"
+[[ "${SCHEMA}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] \
+    || dpf_fail "DuckDB returned an unsafe schema name: ${SCHEMA}"
 
 run_query() {
     local title="$1"
@@ -228,38 +201,34 @@ PY
     echo
 }
 
-echo "== [3/5] E-commerce headline metrics =="
-ECOMMERCE_QUERY="$(dpf_render_query "${SCRIPT_DIR}/queries/ecommerce-headline-metrics.sql" \
+echo "== [4/5] Business results from the built relations =="
+REVENUE_QUERY="$(dpf_render_query "${SCRIPT_DIR}/queries/revenue-by-segment.sql" \
     CATALOG "${CATALOG}" \
-    MARTS_SCHEMA "${MARTS_SCHEMA}")" \
-    || dpf_fail "could not render e-commerce headline query"
-run_query "revenue by segment/month + average order value" \
-    ecommerce-headline-metrics "${ECOMMERCE_QUERY}"
+    SCHEMA "${SCHEMA}")" \
+    || dpf_fail "could not render the revenue query"
+run_query "revenue and units by conformed segment" revenue-by-segment "${REVENUE_QUERY}"
 
-echo "== [4/5] Customer entity-resolution proof =="
-CUSTOMER_RESOLUTION_QUERY="$(dpf_render_query "${SCRIPT_DIR}/queries/ecommerce-resolution-metrics.sql" \
+RESOLUTION_QUERY="$(dpf_render_query "${SCRIPT_DIR}/queries/customer-resolution.sql" \
     CATALOG "${CATALOG}" \
-    RAW_SCHEMA "${RAW_SCHEMA}" \
-    RESOLUTION_SCHEMA "${RESOLUTION_SCHEMA}" \
-    CANONICAL_SCHEMA "${CANONICAL_SCHEMA}")" \
-    || dpf_fail "could not render customer-resolution query"
-run_query "tri-source collapse + CRM-wins-contact survivorship" \
-    ecommerce-resolution-metrics "${CUSTOMER_RESOLUTION_QUERY}"
+    SCHEMA "${SCHEMA}")" \
+    || dpf_fail "could not render the customer-resolution query"
+run_query "tri-source collapse and surviving contact values" \
+    customer-resolution "${RESOLUTION_QUERY}"
 
-echo "== [5/5] Investment headline metrics =="
-METRICS_QUERY="$(dpf_render_query "${SCRIPT_DIR}/queries/headline-metrics.sql" \
+RECONCILIATION_QUERY="$(dpf_render_query "${SCRIPT_DIR}/queries/order-reconciliation.sql" \
     CATALOG "${CATALOG}" \
-    CALC_SCHEMA "${CALC_SCHEMA}" \
-    MARTS_SCHEMA "${MARTS_SCHEMA}")" \
-    || dpf_fail "could not render investment headline query"
-run_query "fund performance + hurdle" headline-metrics "${METRICS_QUERY}"
+    SCHEMA "${SCHEMA}")" \
+    || dpf_fail "could not render the order-reconciliation query"
+run_query "summarised order lines against the stated order total" \
+    order-reconciliation "${RECONCILIATION_QUERY}"
 
+echo "== [5/5] Evidence written =="
 OUTPUT_COUNT="$(find "${RUN_DIR}" -maxdepth 1 -type f | wc -l | tr -d ' ')"
 [ "${OUTPUT_COUNT}" = "7" ] \
-    || dpf_fail "expected transcript plus three output pairs, found ${OUTPUT_COUNT} files"
+    || dpf_fail "expected transcript plus three result pairs, found ${OUTPUT_COUNT} files"
 
 echo "== Done in ${SECONDS}s =="
 echo "   transcript : demo/offline-runs/${RUN_ID}/transcript.log"
-echo "   outputs    : ecommerce-headline-metrics.{txt,csv}"
-echo "                ecommerce-resolution-metrics.{txt,csv}"
-echo "                headline-metrics.{txt,csv}"
+echo "   results    : revenue-by-segment.{txt,csv}"
+echo "                customer-resolution.{txt,csv}"
+echo "                order-reconciliation.{txt,csv}"

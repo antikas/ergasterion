@@ -1,0 +1,56 @@
+# The integrated product: it reads the delivered feed's published contract
+# and adds one calculated field. Its target is the `declared` shape, so what
+# it publishes is exactly what its composition carries. The estate declares
+# no Data Vault product and needs none.
+#
+# The seeded population is what makes the known answer known: four accounts,
+# one of them closed with a zero balance, one under the hundred-unit
+# threshold and two above it, so the calculated band carries all three of its
+# declared values across the four published rows.
+product:
+  name: account_summary
+  domain: bank
+  version: "1.0"
+  layer: integrated
+  profile: serving
+  owner: fixture-team
+
+sources:
+  - contract: bank.account_events@1
+    expect:
+      fields: [event_id, account_ref, balance, account_status]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: account_ref
+        not_null: true
+      - field: account_ref
+        unique: true
+  - pattern: calculated_fields
+    fields:
+      - name: balance_band
+        type: string
+        expression: "CASE WHEN account_status = 'closed' THEN 'closed' WHEN balance >= 1000 THEN 'high' ELSE 'standard' END"
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per account with its declared balance band."
+    ownership: fixture-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

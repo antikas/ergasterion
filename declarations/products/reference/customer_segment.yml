@@ -1,0 +1,61 @@
+# The customer segment history the estate publishes: one row per version
+# of a customer's segment, effective from a date, so a product that asks
+# which segment was in force on a given day has a relation to ask.
+#
+# The delivered history states its dates as text, which is what a
+# delivered extract does; this product is where they become dates, so the
+# as-of read downstream compares an instant with an instant.
+product:
+  name: customer_segment
+  domain: reference
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: reference-domain
+
+sources:
+  - contract: reference.customer_segment_history@1
+    expect:
+      fields:
+        - customer_external_id
+        - segment
+        - effective_from
+        - record_source
+        - load_datetime
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: customer_external_id, not_null: true}
+      - {field: segment, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: segment, to: segment_name, type: string}
+      - {from: effective_from, to: segment_effective_from, type: date}
+      - {from: record_source, to: segment_record_source, type: string}
+      - {from: load_datetime, to: segment_load_datetime, type: timestamp}
+  - pattern: calculated_fields
+    fields:
+      - {name: segment_label, type: string, expression: "upper(segment_name)"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The segment each customer sat in, one row per version, effective from a date."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

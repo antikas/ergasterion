@@ -1,0 +1,52 @@
+# Serving product, generation "later": exactly one of its source contracts
+# is published by a non-landing product. Its aggregation carries grain and
+# group fields through and derives each aggregate from the columns its
+# expression reads.
+product:
+  name: order_mart
+  domain: retail
+  version: "1.0"
+  layer: served
+  owner: retail-domain
+
+sources:
+  - contract: retail.order_360@1
+    expect:
+      fields: [order_id, customer_id, is_open, ordered_on, order_total]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: data_filtering
+    predicates:
+      - name: open_only
+        expression: "is_open = true"
+  - pattern: data_aggregation
+    grain: [customer_id]
+    groups: [ordered_on]
+    aggregates:
+      - {name: order_count, type: integer, expression: "COUNT(order_id)"}
+      - {name: order_value, type: {name: decimal, precision: 14, scale: 2}, expression: "SUM(order_total)"}
+    late_arrival_policy: restate
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Served order summary by customer and order date."
+    ownership: retail-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: composition
+  max_retries: 2
+  backoff: fixed

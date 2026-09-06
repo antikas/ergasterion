@@ -1,0 +1,37 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.portfolio_company_canonical",
+  "relations": {
+    "auxiliary": [
+      "investment.portfolio_company_canonical__base",
+      "investment.portfolio_company_canonical__checked",
+      "investment.portfolio_company_canonical__portfolio_company_sla",
+      "investment.portfolio_company_canonical__quarantine"
+    ],
+    "published": [
+      "investment.portfolio_company_canonical__portfolio_company"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

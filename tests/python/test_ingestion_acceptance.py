@@ -1,5 +1,5 @@
 """Independent source-to-platform acceptance: a wheel-installed consumer in a
-temporary directory exercises three Bronze products end to end -- CDC JSON
+temporary directory exercises three Landing products end to end -- CDC JSON
 Lines with an explicit tombstone, append-only CSV with one recoverable
 quarantined row plus an additive migration, and a signed complete snapshot.
 
@@ -55,7 +55,7 @@ EXPECTED_STEPS = [
     "operational state after dead-letter: commit_blocked",
     "exact repair publishes evidence and flips the pointer",
     "verified local-backup restores the complete local runtime root byte-for-byte",
-    "whole-file Bronze loss surfaces bronze_store_restore_required rather than silent data loss",
+    "whole-file Landing loss surfaces landing_store_restore_required rather than silent data loss",
     "loss of applied-unconfirmed target evidence remains visibly commit_blocked",
     "local-backup create is refused while a commit-blocked attempt is in flight",
     "operator commands show commit-blocked recovery (state=committed)",

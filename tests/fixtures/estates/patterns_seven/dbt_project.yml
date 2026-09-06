@@ -1,0 +1,25 @@
+name: patterns_seven
+version: "1.0.0"
+config-version: 2
+
+profile: patterns_seven
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The fixture relations the estate's fixture-bound sources read. Their column
+# types are declared here rather than inferred, so the executed build proves
+# the generated casts against the types the declarations state.
+seeds:
+  patterns_seven:
+    order_landing:
+      +column_types:
+        ordr_dt: date
+        ordr_ttl: "decimal(12,2)"
+    segment_history:
+      +column_types:
+        effective_from: date

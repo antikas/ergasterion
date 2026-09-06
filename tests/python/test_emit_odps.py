@@ -39,157 +39,19 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion import emit
+from ergasterion.estate import EstateContext
 from ergasterion import emit_contracts as ec
 from ergasterion import emit_odps as eo
 from ergasterion.source_delivery import load_typed_declarations
 from ergasterion.translators.dbt import (
     bind_production_sources,
-    bronze_odcs_id,
-    bronze_odps_id,
-    bronze_plan_digest,
+    landing_odcs_id,
+    landing_odps_id,
+    landing_plan_digest,
     graph_contract_identity,
     landing_handle,
     load_runtime_bindings,
 )
-
-
-def test_determinism_byte_identical() -> None:
-    first = eo.generate()
-    second = eo.generate()
-    assert set(first) == set(second), "descriptor path set changed between two generations"
-    for path in first:
-        assert first[path] == second[path], f"non-deterministic output for {path}"
-
-
-def test_no_volatile_tokens() -> None:
-    uuid_re = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-    ts_re = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
-    for path, text in eo.generate().items():
-        assert not uuid_re.search(text), f"UUID-like token in {path}"
-        assert not ts_re.search(text), f"timestamp-like token in {path}"
-
-
-def test_two_domains_one_descriptor_each() -> None:
-    files = eo.generate()
-    names = {yaml.safe_load(t)["domain"] for t in files.values()}
-    assert names == {"investment", "ecommerce"}, f"expected exactly investment+ecommerce, got {names}"
-    assert len(files) == 2, f"expected one descriptor per domain, got {len(files)}"
-
-
-def test_all_descriptors_schema_valid() -> None:
-    validator = eo.load_schema_validator()
-    errors = eo.validate_all(eo.generate(), validator)
-    assert not errors, "schema-invalid descriptor(s):\n" + "\n".join(errors)
-
-
-def test_output_ports_resolve_to_emitted_contract_files() -> None:
-    """Acceptance criterion 2: every output-port contract ref resolves to an actually-
-    emitted contract file on this same run -- never a dangling name or a stale id/version."""
-    contract_files = ec.generate()
-    contract_docs = {p: yaml.safe_load(t) for p, t in contract_files.items()}
-    contract_by_id = {doc["id"]: doc for doc in contract_docs.values()}
-
-    files = eo.generate()
-    checked = 0
-    for path, text in files.items():
-        doc = yaml.safe_load(text)
-        domain = doc["domain"]
-        for port in doc["outputPorts"]:
-            contract_path = eo.CONTRACTS_DIR / domain / f"{port['name']}.odcs.yml"
-            assert contract_path in contract_docs, (
-                f"{path.name}: output port {port['name']!r} contractId {port['contractId']!r} "
-                f"names no file at {contract_path.relative_to(eo.REPO_ROOT).as_posix()}"
-            )
-            contract_doc = contract_docs[contract_path]
-            assert contract_doc["id"] == port["contractId"], (
-                f"{path.name}: output port {port['name']!r} contractId {port['contractId']!r} "
-                f"!= emitted contract id {contract_doc['id']!r} at "
-                f"{contract_path.relative_to(eo.REPO_ROOT).as_posix()}"
-            )
-            assert contract_doc["version"] == port["version"], (
-                f"{path.name}: output port {port['name']!r} version {port['version']!r} "
-                f"!= emitted contract version {contract_doc['version']!r}"
-            )
-            assert port["contractId"] in contract_by_id, (
-                f"{path.name}: output port {port['name']!r} contractId {port['contractId']!r} "
-                f"is not any emitted contract's id"
-            )
-            checked += 1
-    assert checked >= 2, "expected multiple output ports checked across both domains"
-
-
-def test_investment_cites_openim_ecommerce_does_not() -> None:
-    files = eo.generate()
-    docs = {yaml.safe_load(t)["domain"]: yaml.safe_load(t) for t in files.values()}
-    assert docs["investment"].get("authoritativeDefinitions"), (
-        "investment descriptor lacks an authoritativeDefinitions link"
-    )
-    assert "authoritativeDefinitions" not in docs["ecommerce"], (
-        "e-commerce descriptor carries authoritativeDefinitions -- breaks the agnosticism "
-        "story (e-commerce validates against no external model, same as its ODCS contracts)"
-    )
-
-
-def test_current_real_descriptors_have_no_input_ports() -> None:
-    """Documents today's honest state (see module + emit_odps.py docstrings): none of the
-    committed declarations/*.yml were seeded from an ODCS contract yet, so neither real
-    descriptor carries inputPorts today. This is EXPECTED to start failing the moment a
-    source is imported via ergasterion/import_odcs.py -- at which point flip this assertion to
-    check the new port's shape, don't delete it; it is proving the mechanism wires
-    end-to-end into real output, not that it stays permanently empty."""
-    for path, text in eo.generate().items():
-        doc = yaml.safe_load(text)
-        assert "inputPorts" not in doc, (
-            f"{path.name}: unexpectedly has inputPorts -- a source was imported; update "
-            f"this test's assertion to check the new port instead of removing it"
-        )
-
-
-def test_input_port_from_seeded_declaration() -> None:
-    """The imported/derived contract-pointer mechanism itself, exercised directly since no
-    committed declaration trips it (see test_current_real_descriptors_have_no_input_ports).
-    A declaration file carrying the import seeder's header (ergasterion/import_odcs.py's own
-    convention) must produce exactly one input port pointing at the contract it names; a
-    declaration with no such header must produce none."""
-    header = (
-        "# Seeded by ergasterion/import_odcs.py from ODCS contract: "
-        "contracts/ecommerce/dim_customer_segment.odcs.yml\n"
-        "#   id='dpf:ecommerce:dim_customer_segment'  version='1.0.0'  domain='ecommerce'\n"
-        "# (further prose lines, as the real seeder writes, are irrelevant to the parse)\n"
-    )
-    plain = "source:\n  name: unseeded\n  display_name: UNSEEDED\n  priority: 5\n"
-
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_dir = Path(tmp)
-        (tmp_dir / "seeded_source.yml").write_text(header, encoding="utf-8")
-        (tmp_dir / "unseeded_source.yml").write_text(plain, encoding="utf-8")
-
-        # Context construction, not global monkeypatching: a context whose
-        # declarations/ points at the temp dir carrying the seeded/unseeded files.
-        ctx = eo.EstateContext.resolve(estate_root=eo.REPO_ROOT, declarations_dir=tmp_dir)
-        seeded_decl = {
-            "source": {"name": "seeded_source", "declaration_file": "seeded_source.yml", "priority": 5},
-            "tables": {"widgets": {"vault_entities": [{"entity": "customer", "enabled": True}]}},
-        }
-        unseeded_decl = {
-            "source": {"name": "unseeded_source", "declaration_file": "unseeded_source.yml", "priority": 10},
-            "tables": {"widgets": {"vault_entities": [{"entity": "customer", "enabled": True}]}},
-        }
-
-        ref = eo.imported_contract_ref(seeded_decl, ctx=ctx)
-        assert ref == {"id": "dpf:ecommerce:dim_customer_segment", "version": "1.0.0"}, ref
-
-        assert eo.imported_contract_ref(unseeded_decl, ctx=ctx) is None, "unseeded declaration must resolve to no contract"
-
-        ports = eo.build_input_ports({"customer"}, [seeded_decl, unseeded_decl], ctx=ctx)
-        assert ports == [
-            {"name": "seeded_source", "version": "1.0.0", "contractId": "dpf:ecommerce:dim_customer_segment"}
-        ], ports
-
-        # A domain whose entity footprint doesn't include this source's fed entity
-        # gets no input port from it, seeded or not.
-        assert eo.build_input_ports({"unrelated_entity"}, [seeded_decl], ctx=ctx) == []
 
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
@@ -205,7 +67,7 @@ def _vector_payload(case: str) -> dict:
 
 
 def _binding_template() -> dict:
-    data = json.loads((_FIXTURES / "bronze_schema_vectors.json").read_text(encoding="utf-8"))
+    data = json.loads((_FIXTURES / "landing_schema_vectors.json").read_text(encoding="utf-8"))
     for entry in data["positive"]:
         if entry.get("record") == "RuntimeBinding":
             return copy.deepcopy(entry["payload"])
@@ -218,29 +80,17 @@ def _write_production_estate(root: Path, payload: dict):
         yaml.safe_dump({"estate": {"namespace": ident["estate_namespace"]}}, sort_keys=False),
         encoding="utf-8",
     )
-    domains = root / "domains"
-    domains.mkdir()
-    (domains / "ops.yml").write_text(
-        yaml.safe_dump(
-            {
-                "bronze": {
-                    "domain": {"name": "operations", "display_name": "Operations"},
-                    "products": [{"source": ident["source"], "table": ident["table"]}],
-                }
-            },
-            sort_keys=False,
-        ),
-        encoding="utf-8",
-    )
     decls = root / "declarations"
     decls.mkdir()
-    product = {key: value for key, value in payload["product"].items() if key != "domain"}
+    # The table's domain is one of the product block's own declared facts.
+    product = dict(payload["product"])
     (decls / f"{ident['source']}.yml").write_text(
         yaml.safe_dump(
             {
                 "source": {"name": ident["source"], "display_name": ident["source"].upper(), "priority": 10},
                 "tables": {
                     ident["table"]: {
+                        "layer": "bronze",
                         "landing": payload["landing"],
                         "product": product,
                         "delivery": payload["delivery"],
@@ -252,7 +102,7 @@ def _write_production_estate(root: Path, payload: dict):
         ),
         encoding="utf-8",
     )
-    return emit.EstateContext.resolve(estate_root=root)
+    return EstateContext.resolve(estate_root=root)
 
 
 def _bind(root: Path, ctx, environment: str = "local"):
@@ -267,7 +117,7 @@ def _bind(root: Path, ctx, environment: str = "local"):
         "table": ident.table,
     }
     payload["contract_digest"] = table.contract_digest
-    payload["execution_plan_digest"] = bronze_plan_digest()
+    payload["execution_plan_digest"] = landing_plan_digest()
     payload["environment"] = environment
     payload["landing_ports"] = {handle: payload["landing_ports"]["raw"]}
     binding_path = root / "runtime.yml"
@@ -281,9 +131,6 @@ def _write_draft_estate(root: Path, *, with_seed: bool = False):
         yaml.safe_dump({"estate": {"namespace": "scratch.estate"}}, sort_keys=False),
         encoding="utf-8",
     )
-    domains = root / "domains"
-    domains.mkdir()
-    (domains / "ops.yml").write_text("{}\n", encoding="utf-8")
     decls = root / "declarations"
     decls.mkdir()
     tables = {
@@ -312,19 +159,10 @@ def _write_draft_estate(root: Path, *, with_seed: bool = False):
         ),
         encoding="utf-8",
     )
-    return emit.EstateContext.resolve(estate_root=root)
+    return EstateContext.resolve(estate_root=root)
 
 
-def test_committed_odps_generate_stays_on_contracts_odps() -> None:
-    files = eo.generate()
-    for path in files:
-        rel = path.as_posix().replace("\\", "/")
-        assert "/contracts/odps/" in rel, rel
-        assert "/contracts/bronze/" not in rel, rel
-    assert eo.generate_bronze() == {}
-
-
-def test_bronze_odps_identity_matches_odcs_for_managed_and_external() -> None:
+def test_landing_odps_identity_matches_odcs_for_managed_and_external() -> None:
     validator = eo.load_schema_validator()
     odcs_validator = ec.load_schema_validator()
     for case in ("append_only_managed_opaque_batch", "csv_external_append_only"):
@@ -333,8 +171,8 @@ def test_bronze_odps_identity_matches_odcs_for_managed_and_external() -> None:
             root = Path(tmp)
             ctx = _write_production_estate(root, payload)
             typed, _bound, binding_path = _bind(root, ctx)
-            odps_files = eo.generate_bronze(ctx, binding_path=binding_path, environment="local")
-            odcs_files = ec.generate_bronze(ctx, binding_path=binding_path, environment="local")
+            odps_files = eo.generate_landing(ctx, binding_path=binding_path, environment="local")
+            odcs_files = ec.generate_landing(ctx, binding_path=binding_path, environment="local")
             assert len(odps_files) == 1 and len(odcs_files) == 1
             errors = eo.validate_all(odps_files, validator, ctx=ctx)
             assert not errors, "\n".join(errors)
@@ -346,8 +184,8 @@ def test_bronze_odps_identity_matches_odcs_for_managed_and_external() -> None:
             doc = yaml.safe_load(text)
             table = next(iter(typed.tables.values()))
             identity = graph_contract_identity(table)
-            assert doc["id"] == bronze_odps_id(identity)
-            odcs_id = bronze_odcs_id(identity)
+            assert doc["id"] == landing_odps_id(identity)
+            odcs_id = landing_odcs_id(identity)
             assert doc["outputPorts"][0]["contractId"] == odcs_id
             found = next(item["value"] for item in doc["customProperties"] if item["property"] == "dpf.identity")
             assert found == identity
@@ -363,7 +201,7 @@ def test_bronze_odps_draft_only_fails_closed() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _write_draft_estate(Path(tmp))
         try:
-            files = eo.generate_bronze(ctx)
+            files = eo.generate_landing(ctx)
         except ValueError as exc:
             assert "delivery_contract_required" in str(exc), str(exc)
             assert "draft delivery cannot generate" in str(exc), str(exc)
@@ -375,7 +213,7 @@ def test_bronze_odps_seed_plus_draft_fails_closed() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _write_draft_estate(Path(tmp), with_seed=True)
         try:
-            files = eo.generate_bronze(ctx)
+            files = eo.generate_landing(ctx)
         except ValueError as exc:
             assert "delivery_contract_required" in str(exc), str(exc)
             assert "draft delivery cannot generate" in str(exc), str(exc)
@@ -393,14 +231,126 @@ def test_bronze_odps_mismatched_plan_digest_fails_bind() -> None:
         data["execution_plan_digest"] = "0" * 64
         binding_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         try:
-            files = eo.generate_bronze(ctx, binding_path=binding_path, environment="local")
+            files = eo.generate_landing(ctx, binding_path=binding_path, environment="local")
         except ValueError as exc:
             assert "execution_plan_digest" in str(exc), str(exc)
-            assert "resolved Bronze graph" in str(exc), str(exc)
+            assert "resolved Landing graph" in str(exc), str(exc)
         else:
             raise AssertionError(
-                f"mismatched execution_plan_digest must fail Bronze ODPS bind, got {files!r}"
+                f"mismatched execution_plan_digest must fail Landing ODPS bind, got {files!r}"
             )
+
+
+_PRODUCT_FIXTURES_DIR = _FIXTURES / "products" / "valid"
+
+# Same fixture-only external schemas as tests/python/test_emit_contracts.py
+# and tests/python/test_contract_pipe.py: a landing product's real schema
+# would come from a Landing Product Contract's typed projection
+# (ergasterion.emit_contracts.landing_schemas_from_typed_declarations);
+# "customer_segment" and "storefront_customer" are referenced only as
+# external contracts (an enrichment lookup, a consolidation source).
+from ergasterion.framework.contract import RelationField, RelationSchema  # noqa: E402
+
+_PRODUCT_LANDING_SCHEMAS = {
+    "ecommerce.crm_customer_landing": RelationSchema(
+        "ecommerce.crm_customer_landing",
+        (
+            RelationField("customer_id", "string", True),
+            RelationField("email", "string", False),
+            RelationField("status_code", "string", False),
+            RelationField("cust_nm", "string", False),
+            RelationField("crtd_dt", "string", False),
+            RelationField("tag_list", "string", False),
+        ),
+    ),
+    "ecommerce.customer_segment": RelationSchema(
+        "ecommerce.customer_segment",
+        (
+            RelationField("segment_code", "string", False),
+            RelationField("segment_name", "string", False),
+        ),
+    ),
+    "ecommerce.storefront_customer": RelationSchema(
+        "ecommerce.storefront_customer",
+        (
+            RelationField("customer_id", "string", True),
+            RelationField("email", "string", False),
+            RelationField("channel", "string", False),
+        ),
+    ),
+}
+
+
+def test_generate_products_one_descriptor_per_fixture_product() -> None:
+    files = eo.generate_products(products_dir=_PRODUCT_FIXTURES_DIR, landing_schemas=_PRODUCT_LANDING_SCHEMAS)
+    names = {yaml.safe_load(t)["name"] for t in files.values()}
+    assert names == {
+        "ecommerce.crm_customer_landing",
+        "ecommerce.customer",
+        "ecommerce.customer_360",
+        "ecommerce.customer_risk_score",
+        "ecommerce.customer_mart",
+    }, names
+    assert len(files) == 5, files
+
+
+def test_generate_products_output_ports_resolve_to_generate_products_odcs() -> None:
+    contract_files = ec.generate_products(products_dir=_PRODUCT_FIXTURES_DIR, landing_schemas=_PRODUCT_LANDING_SCHEMAS)
+    contract_docs = {yaml.safe_load(t)["id"]: yaml.safe_load(t) for p, t in contract_files.items() if p.name.endswith(".odcs.yml")}
+    for text in eo.generate_products(products_dir=_PRODUCT_FIXTURES_DIR, landing_schemas=_PRODUCT_LANDING_SCHEMAS).values():
+        doc = yaml.safe_load(text)
+        for port in doc["outputPorts"]:
+            assert port["contractId"] in contract_docs, port["contractId"]
+            assert contract_docs[port["contractId"]]["version"] == port["version"]
+
+
+def test_generate_products_carries_no_support_key() -> None:
+    # Blind-review correction: ODPS's Support schema requires a url; since
+    # none is declared, the descriptor must omit "support" rather than
+    # invent one.
+    files = eo.generate_products(products_dir=_PRODUCT_FIXTURES_DIR, landing_schemas=_PRODUCT_LANDING_SCHEMAS)
+    for text in files.values():
+        doc = yaml.safe_load(text)
+        assert "support" not in doc, doc
+        assert doc["team"] == {"name": "data-product-factory"}, doc["team"]
+
+
+def test_main_wires_the_declared_product_route_through_check() -> None:
+    """Blind-review correction: emit_odps.py's main() must actually call
+    generate_products/validate_all/check_product_files for the declaration-
+    driven route, never leave it reachable only from tests. Proven with
+    --check (read-only, safe against the real committed contracts/ tree)
+    with generate_products patched to return one concrete descriptor so
+    main()'s own wiring has something to check on disk."""
+    import contextlib
+    import io
+    import sys
+
+    fake_path = eo._DEFAULT_CTX.contracts_dir / "products" / "ecommerce" / "crm_customer_landing" / "crm_customer_landing.odps.yml"
+    fake_descriptor = yaml.safe_dump(
+        {
+            "apiVersion": "v1.0.0", "kind": "DataProduct", "id": "dpf:ecommerce:crm_customer_landing",
+            "name": "ecommerce.crm_customer_landing", "version": "1.0.0", "status": "active", "domain": "ecommerce",
+            "description": {"purpose": "fixture"}, "outputPorts": [],
+        }
+    )
+
+    original = eo.generate_products
+    eo.generate_products = lambda *a, **k: {fake_path: fake_descriptor}
+    original_argv = sys.argv
+    captured = io.StringIO()
+    try:
+        sys.argv = ["emit_odps", "--check"]
+        with contextlib.redirect_stdout(captured):
+            rc = eo.main()
+    finally:
+        eo.generate_products = original
+        sys.argv = original_argv
+
+    output = captured.getvalue()
+    assert rc == 1, output
+    assert "declared product descriptor" in output, output
+    assert "MISSING" in output, output
 
 
 def main() -> int:
@@ -420,3 +370,9 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_the_committed_estate_generates_no_landing_descriptor() -> None:
+    """No table in the committed estate declares a production landing delivery, so
+    the landing route emits nothing rather than guessing a binding."""
+    assert eo.generate_landing() == {}

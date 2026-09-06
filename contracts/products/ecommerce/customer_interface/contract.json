@@ -1,0 +1,98 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The canonical customer interface: one relation per entity over the curated customer.",
+  "freshness": "daily by 09:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "customer_interface",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.customer@1"
+  ],
+  "quality": [
+    {
+      "description": "customer_business_key must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "customer_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "customer_external_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "customer_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_buyer_segment",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.customer_interface__customer"
+    },
+    {
+      "fields": [
+        {
+          "name": "customer_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "customer_email",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_email_domain",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_phone",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_address_line",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_city",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_postal_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_country",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.customer_interface__customer_contact"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

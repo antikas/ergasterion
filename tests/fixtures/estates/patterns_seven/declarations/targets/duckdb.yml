@@ -1,0 +1,27 @@
+# Structural budget declaration for the duckdb reference target of this
+# fixture estate. `ergasterion emit-products` runs these budgets over the
+# product tree once per declared adapter; an artefact exceeding one fails the
+# command naming the artefact, the rule and the adapter. Every value except
+# the view-chain ceiling is the one the engine's own estate declares.
+adapter: duckdb
+kind: reference
+budgets:
+  # Consecutive view levels a single statement expands. Every relation a
+  # product publishes materialises, so this ceiling binds the private
+  # relations the translator renders under a product's namespace.
+  # Here the audited relation a data_filtering occurrence reads sits under the
+  # checked relation of each of the two data_validation occurrences above it,
+  # three views deep.
+  max_view_chain_depth: 3
+  # Source bytes of one model statement.
+  max_statement_bytes: 262144
+  # Relation identifiers: model, seed, and source table names.
+  max_relation_identifier_chars: 255
+  # Column identifiers: schema-file columns and seed CSV headers.
+  max_column_identifier_chars: 255
+  # One description string shipped as relation or column metadata.
+  max_description_bytes: 1024
+  # Data rows in one declared dbt seed.
+  max_seed_rows: 10000
+  # Source bytes in one declared dbt seed CSV.
+  max_seed_bytes: 10485760

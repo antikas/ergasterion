@@ -1,0 +1,280 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The legal vehicle vault: identity, payload versions, the surviving record and the point-in-time relation over them.",
+  "freshness": "daily by 08:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "legal_vehicle_vault",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.legal_vehicle_conformed@1"
+  ],
+  "quality": [
+    {
+      "description": "source_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "source_name must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "vehicle_business_key must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "vehicle_business_key must be unique",
+      "dimension": "uniqueness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "legal_vehicle_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.legal_vehicle_vault__hub_legal_vehicle"
+    },
+    {
+      "fields": [
+        {
+          "name": "fund_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_fund_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.legal_vehicle_vault__hub_fund"
+    },
+    {
+      "fields": [
+        {
+          "name": "legal_vehicle_fund_lhk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "legal_vehicle_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "fund_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.legal_vehicle_vault__link_legal_vehicle_fund"
+    },
+    {
+      "fields": [
+        {
+          "name": "legal_vehicle_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "hashdiff",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "hashdiff_basis_version",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "name": "vehicle_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_jurisdiction",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_incorporated_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "vehicle_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_fund_business_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_fund_source_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_parent_source_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "effective_from",
+          "required": true,
+          "type": "date"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.legal_vehicle_vault__sat_legal_vehicle_detail"
+    },
+    {
+      "fields": [
+        {
+          "name": "legal_vehicle_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_jurisdiction",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_incorporated_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "vehicle_fund_source_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_parent_source_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_fund_business_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.legal_vehicle_vault__golden_legal_vehicle"
+    },
+    {
+      "fields": [
+        {
+          "name": "legal_vehicle_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "as_of",
+          "required": true,
+          "type": "date"
+        },
+        {
+          "name": "legal_vehicle_detail_effective_from",
+          "required": false,
+          "type": "date"
+        }
+      ],
+      "name": "investment.legal_vehicle_vault__pit_legal_vehicle"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

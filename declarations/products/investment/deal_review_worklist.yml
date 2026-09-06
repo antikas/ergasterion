@@ -1,0 +1,76 @@
+# The worklist a person works from: the deals the estate recognises that
+# nobody has settled.
+#
+# It starts from the vault's surviving deal record, naming that relation
+# (owner ruling R4), reads whatever decision is in force and whatever stage
+# the deal sits at, and keeps the deals where no final decision has been
+# made. A deal nobody has decided at all is on the worklist; a deal somebody
+# deferred is still on it; a deal that was approved or declined is off it.
+#
+# The exclusions the predicate makes are counted and logged, so the size of
+# the worklist and the number of settled deals always add up to the deals
+# the estate holds.
+product:
+  name: deal_review_worklist
+  domain: investment
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: investment-domain
+
+sources:
+  - contract: investment.deal_vault@1
+    relation: golden_deal
+    expect:
+      fields:
+        - deal_hk
+        - deal_business_key
+        - deal_name
+        - deal_strategy
+        - deal_originating_team
+        - deal_target_company_external_id
+        - deal_converted_record_type
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: deal_business_key, not_null: true}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.deal_decision_current@1
+        "on": {deal_business_key: deal_external_identity}
+        fields: [decision_outcome, decision_actor, decision_decided_at, decision_is_final]
+        no_match: null
+      - contract: reference.deal_stage_current@1
+        "on": {deal_business_key: deal_external_identity}
+        fields: [stage_value_code, classification_sort_order]
+        no_match: null
+  - pattern: calculated_fields
+    fields:
+      - {name: deal_awaiting_decision, type: boolean, expression: "coalesce(decision_is_final, false) = false"}
+      - {name: deal_decision_state, type: string, expression: "case when decision_outcome is null then 'undecided' else decision_outcome end"}
+  - pattern: data_filtering
+    predicates:
+      - name: deals_no_final_decision_settles
+        expression: "coalesce(decision_is_final, false) = false"
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every deal the estate holds that no final decision settles, with the decision in force and the stage it sits at."
+    ownership: investment-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

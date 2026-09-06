@@ -1,0 +1,76 @@
+# One source system's lane onto the schema the general partner products
+# share. Three of the four systems state the manager only as columns of
+# their fund feed, so this lane reads that feed and keeps the manager
+# columns alone.
+#
+# This source delivers no snapshot date. The estate reads its extract as
+# standing at the reporting date the dated sources report at, 2025-12-31,
+# declared here once so every product downstream orders one instant
+# against another rather than against nothing.
+product:
+  name: meridex_gp
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.meridex_fund_extract@1
+    expect:
+      fields:
+        - meridex_fund_id
+        - gp_name
+        - gp_lei
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: gp_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: meridex_fund_id, to: source_record_id, type: string}
+      - {from: gp_name, to: source_name, type: string}
+      - {from: gp_lei, to: source_lei, type: string}
+      - {from: fund_name, drop: true}
+      - {from: fund_lei, drop: true}
+      - {from: shared_external_id, drop: true}
+      - {from: asset_class, drop: true}
+      - {from: strategy, drop: true}
+      - {from: vintage_year, drop: true}
+      - {from: currency, drop: true}
+      - {from: domicile, drop: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_gp_id, type: string, expression: "null"}
+      - {name: source_external_id, type: string, expression: "null"}
+      - {name: source_domicile, type: string, expression: "null"}
+      - {name: source_relationship_start_date, type: date, expression: "null"}
+      - {name: source_reported_on, type: date, expression: "date '2025-12-31'"}
+      - {name: gp_source_system, type: string, expression: "'meridex'"}
+      - {name: gp_identity_key, type: string, expression: "concat('meridex', ':', source_record_id)"}
+      - {name: gp_normalised_name, type: string, rule: investment_normalised_name_v1, rule_version: 1}
+      - {name: gp_lei, type: string, expression: "nullif(trim(source_lei), '')"}
+      - {name: gp_external_id, type: string, expression: "null"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "General partners as MERIDEX states them, on the schema the four manager feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

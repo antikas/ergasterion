@@ -1,0 +1,85 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The CHRONO provider holding valuation feed as it was delivered, one row per delivered mark.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "chrono_valuation_extract",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.chrono_valuation_extract_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "mark_uid must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "mark_uid must be unique",
+      "dimension": "uniqueness"
+    },
+    {
+      "description": "vehicle_code must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "mark_date must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "mark_uid",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "asset_uid",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "mark_date",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "usd_fair_value",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "mark_method",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "fair_value_bucket",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "extraction_confidence",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.chrono_valuation_extract"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

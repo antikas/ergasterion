@@ -11,14 +11,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     ProcessingOutcome,
     ProjectionIntentKind,
     SnapshotReconciliationStatus,
     TimelinessState,
 )
 from ergasterion.framework.runtime_binding import ProjectionCursor
-from ergasterion.ingestion.duckdb_bronze import (
+from ergasterion.ingestion.duckdb_landing import (
     PROJECTION_RELATIONS,
     DuckDBStore,
     dumps,
@@ -47,7 +47,7 @@ def _kind(value) -> str:
 
 
 class DuckDBProjectionPublisher:
-    """``ProjectionPublisherPort`` over the shared DuckDB Bronze file."""
+    """``ProjectionPublisherPort`` over the shared DuckDB Landing file."""
 
     def __init__(
         self,
@@ -142,10 +142,10 @@ class DuckDBProjectionPublisher:
         self.store.require_available()
         if len(batch.intents) != len(batch.confirmations):
             raise PortError("unconfirmed_revision", "intents and confirmations count mismatch")
-        if not self.store._bronze_tables_ok() or self.store._lost:
+        if not self.store._landing_tables_ok() or self.store._lost:
             raise PortError(
-                "bronze_store_restore_required",
-                "bronze partitions must remain while projection relations rebuild",
+                "landing_store_restore_required",
+                "landing partitions must remain while projection relations rebuild",
             )
         self.store._ensure_schema()
         if not batch.intents:
@@ -321,7 +321,7 @@ class DuckDBProjectionPublisher:
             delivery_claim_digest=getattr(payload, "delivery_claim_digest", getattr(payload, "original_delivery_claim_digest", "")),
             transport_payload_digest=payload.transport_payload_digest,
             raw_receipt_ref=payload.raw_receipt_ref, raw_receipt_digest=payload.raw_receipt_digest,
-            bronze_partition_ref=payload.bronze_partition_ref, accepted_content_digest=payload.accepted_content_digest,
+            landing_partition_ref=payload.landing_partition_ref, accepted_content_digest=payload.accepted_content_digest,
             ruleset_digest=payload.ruleset_digest, validation_result_digest=payload.validation_result_digest,
             accepted_count=payload.accepted_count, progress_claim=payload.progress_claim,
             execution_plan_digest=intent.execution_plan_digest, runtime_manifest_digest=intent.runtime_manifest_digest,

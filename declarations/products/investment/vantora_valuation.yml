@@ -1,0 +1,64 @@
+# One source system's lane onto the schema the holding valuation products
+# share: one row per delivered mark, against the fund and the company the
+# system states the mark for.
+product:
+  name: vantora_valuation
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.vantora_valuation_extract@1
+    expect:
+      fields:
+        - valuation_id
+        - vantora_fund_id
+        - vantora_company_id
+        - valuation_date
+        - value_usd
+        - method
+        - valuation_level
+        - confidence_score
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: valuation_id, not_null: true}
+      - {field: valuation_date, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: valuation_id, to: source_record_id, type: string}
+      - {from: vantora_fund_id, to: source_fund_id, type: string}
+      - {from: vantora_company_id, to: source_company_id, type: string}
+      - {from: valuation_date, to: source_valued_on, type: date}
+      - {from: value_usd, to: source_value_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: method, to: source_method, type: string}
+      - {from: valuation_level, to: source_valuation_level, type: string}
+      - {from: confidence_score, to: source_confidence_score, type: {name: decimal, precision: 5, scale: 4}}
+  - pattern: calculated_fields
+    fields:
+      - {name: valuation_source_system, type: string, expression: "'vantora'"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Holding valuations as VANTORA states them, on the schema both valuation feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

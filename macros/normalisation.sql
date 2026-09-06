@@ -1,7 +1,7 @@
 {#-
   Normalisation helpers. All dialect-specific SQL (regexp_* family, to_hex+md5) is
   routed through the cross-db adapter-dispatch macros in cross_db.sql so these
-  render correctly on BigQuery, Snowflake, and DuckDB. Patterns are plain quoted
+  render correctly on every declared adapter. Patterns are plain quoted
   literals -- never BigQuery r'...' raw strings.
 -#}
 

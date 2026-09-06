@@ -1,0 +1,129 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Every portfolio company record all four source systems state, under one schema, with the identifier the estate resolves it on.",
+  "freshness": "daily by 07:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "portfolio_company_conformed",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.chrono_portfolio_company@1",
+    "investment.meridex_portfolio_company@1",
+    "investment.portiq_portfolio_company@1",
+    "investment.vantora_portfolio_company@1"
+  ],
+  "quality": [
+    {
+      "description": "source_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "company_identity_key must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "row_count reconciles to ['investment.chrono_portfolio_company@1', 'investment.meridex_portfolio_company@1', 'investment.portiq_portfolio_company@1', 'investment.vantora_portfolio_company@1']",
+      "dimension": "consistency"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "source_company_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_fund_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_sector",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_sub_sector",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_country",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_status",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_reported_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "source_record_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "company_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "company_identity_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "company_normalised_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "company_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "company_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "company_business_key",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.portfolio_company_conformed"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

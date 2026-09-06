@@ -1,0 +1,62 @@
+# One source system's lane onto the schema the fund cash flow products
+# share: one row per delivered cash flow event, under the fund identifier
+# that system states it against.
+product:
+  name: meridex_cash_flow
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.meridex_cash_flow_extract@1
+    expect:
+      fields:
+        - cash_flow_id
+        - meridex_fund_id
+        - cash_flow_date
+        - cash_flow_type
+        - direction
+        - amount_usd
+        - currency
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: cash_flow_id, not_null: true}
+      - {field: cash_flow_date, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: cash_flow_id, to: source_record_id, type: string}
+      - {from: meridex_fund_id, to: source_fund_id, type: string}
+      - {from: cash_flow_date, to: source_cash_flow_on, type: date}
+      - {from: cash_flow_type, to: source_cash_flow_type, type: string}
+      - {from: direction, to: source_direction, type: string}
+      - {from: amount_usd, to: source_amount_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: currency, to: source_currency, type: string}
+  - pattern: calculated_fields
+    fields:
+      - {name: cash_flow_source_system, type: string, expression: "'meridex'"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Fund cash flows as MERIDEX states them, on the schema the four cash flow feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

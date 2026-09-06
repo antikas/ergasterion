@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ergasterion.framework.bronze_contract import EvidenceKind, LifecycleEventType
-from ergasterion.ingestion.duckdb_bronze import (
+from ergasterion.framework.landing_contract import EvidenceKind, LifecycleEventType
+from ergasterion.ingestion.duckdb_landing import (
     DuckDBStore,
     cursor_token,
     dumps,
@@ -48,20 +48,20 @@ _EVENT_TO_EVIDENCE = {
     LifecycleEventType.COMMIT_BLOCKED.value: EvidenceKind.ATTEMPT.value,
     LifecycleEventType.COMMITTED.value: EvidenceKind.ATTEMPT.value,
     LifecycleEventType.FAILED.value: EvidenceKind.ATTEMPT.value,
-    LifecycleEventType.BRONZE_CONTRACT.value: EvidenceKind.CONTRACT.value,
-    LifecycleEventType.BRONZE_SCHEMA.value: EvidenceKind.SCHEMA.value,
-    LifecycleEventType.BRONZE_RECEIPT.value: EvidenceKind.RECEIPT.value,
-    LifecycleEventType.BRONZE_QUALITY.value: EvidenceKind.QUALITY.value,
-    LifecycleEventType.BRONZE_QUARANTINE.value: EvidenceKind.QUARANTINE.value,
-    LifecycleEventType.BRONZE_PUBLICATION.value: EvidenceKind.PUBLICATION.value,
-    LifecycleEventType.BRONZE_DELETION_EVIDENCE.value: EvidenceKind.DELETION_EVIDENCE.value,
-    LifecycleEventType.BRONZE_LINEAGE.value: EvidenceKind.LINEAGE.value,
-    LifecycleEventType.BRONZE_METADATA.value: EvidenceKind.METADATA.value,
+    LifecycleEventType.LANDING_CONTRACT.value: EvidenceKind.CONTRACT.value,
+    LifecycleEventType.LANDING_SCHEMA.value: EvidenceKind.SCHEMA.value,
+    LifecycleEventType.LANDING_RECEIPT.value: EvidenceKind.RECEIPT.value,
+    LifecycleEventType.LANDING_QUALITY.value: EvidenceKind.QUALITY.value,
+    LifecycleEventType.LANDING_QUARANTINE.value: EvidenceKind.QUARANTINE.value,
+    LifecycleEventType.LANDING_PUBLICATION.value: EvidenceKind.PUBLICATION.value,
+    LifecycleEventType.LANDING_DELETION_EVIDENCE.value: EvidenceKind.DELETION_EVIDENCE.value,
+    LifecycleEventType.LANDING_LINEAGE.value: EvidenceKind.LINEAGE.value,
+    LifecycleEventType.LANDING_METADATA.value: EvidenceKind.METADATA.value,
 }
 
 
 class DuckDBLifecycleSink:
-    """``LifecycleSinkPort`` over the shared DuckDB Bronze file."""
+    """``LifecycleSinkPort`` over the shared DuckDB Landing file."""
 
     def __init__(self, store: DuckDBStore | str | Path) -> None:
         self.store = store if isinstance(store, DuckDBStore) else DuckDBStore(store)
@@ -170,7 +170,7 @@ class DuckDBLifecycleSink:
     def _project_read_model(self, event: LifecycleEvent) -> None:
         payload = event.payload
         kind = event.event_type.value if hasattr(event.event_type, "value") else event.event_type
-        if kind == LifecycleEventType.BRONZE_CONTRACT.value:
+        if kind == LifecycleEventType.LANDING_CONTRACT.value:
             self.store.execute(
                 """INSERT INTO contract_registry(identity_key, contract_digest, json)
                    VALUES (?, ?, ?)
@@ -181,33 +181,33 @@ class DuckDBLifecycleSink:
                     dumps(payload.contract),
                 ],
             )
-        elif kind == LifecycleEventType.BRONZE_QUALITY.value:
+        elif kind == LifecycleEventType.LANDING_QUALITY.value:
             digest = payload.validation.validation_result_digest
             self.store.execute(
                 """INSERT INTO quality_projection(validation_result_digest, json)
                    VALUES (?, ?) ON CONFLICT (validation_result_digest) DO NOTHING""",
                 [digest, dumps(payload.validation)],
             )
-        elif kind == LifecycleEventType.BRONZE_LINEAGE.value:
+        elif kind == LifecycleEventType.LANDING_LINEAGE.value:
             self.store.execute(
                 """INSERT INTO lineage_projection(lineage_digest, json)
                    VALUES (?, ?) ON CONFLICT (lineage_digest) DO NOTHING""",
                 [payload.lineage.lineage_digest, dumps(payload)],
             )
-        elif kind == LifecycleEventType.BRONZE_METADATA.value:
+        elif kind == LifecycleEventType.LANDING_METADATA.value:
             self.store.execute(
                 """INSERT INTO product_metadata_projection(identity_key, contract_digest, json)
                    VALUES (?, ?, ?)
                    ON CONFLICT (identity_key, contract_digest) DO UPDATE SET json = excluded.json""",
                 [identity_key(event.logical_identity), payload.metadata.contract_digest, dumps(payload.metadata)],
             )
-        elif kind == LifecycleEventType.BRONZE_DELETION_EVIDENCE.value:
+        elif kind == LifecycleEventType.LANDING_DELETION_EVIDENCE.value:
             self.store.execute(
                 """INSERT INTO deletion_evidence_projection(deletion_evidence_digest, json)
                    VALUES (?, ?) ON CONFLICT (deletion_evidence_digest) DO NOTHING""",
                 [payload.evidence.deletion_evidence_digest, dumps(payload.evidence)],
             )
-        elif kind == LifecycleEventType.BRONZE_PUBLICATION.value:
+        elif kind == LifecycleEventType.LANDING_PUBLICATION.value:
             pass
 
 
@@ -216,23 +216,23 @@ def _evidence_item(event: LifecycleEvent):
     kind = event.event_type.value if hasattr(event.event_type, "value") else event.event_type
     if kind in _attempt_types():
         return AttemptEvidenceItem(kind="attempt", attempt=payload.attempt, confirmation=payload.projection_confirmation)
-    if kind == LifecycleEventType.BRONZE_CONTRACT.value:
+    if kind == LifecycleEventType.LANDING_CONTRACT.value:
         return ContractEvidenceItem(kind="contract", contract=payload.contract)
-    if kind == LifecycleEventType.BRONZE_SCHEMA.value:
+    if kind == LifecycleEventType.LANDING_SCHEMA.value:
         return SchemaEvidenceItem(kind="schema", metadata=payload.metadata)
-    if kind == LifecycleEventType.BRONZE_RECEIPT.value:
+    if kind == LifecycleEventType.LANDING_RECEIPT.value:
         return ReceiptEvidenceItem(kind="receipt", receipt=payload.receipt)
-    if kind == LifecycleEventType.BRONZE_QUALITY.value:
+    if kind == LifecycleEventType.LANDING_QUALITY.value:
         return QualityEvidenceItem(kind="quality", validation=payload.validation)
-    if kind == LifecycleEventType.BRONZE_QUARANTINE.value:
+    if kind == LifecycleEventType.LANDING_QUARANTINE.value:
         return QuarantineEvidenceItem(kind="quarantine", validation=payload.validation, decision=payload.decision)
-    if kind == LifecycleEventType.BRONZE_PUBLICATION.value:
+    if kind == LifecycleEventType.LANDING_PUBLICATION.value:
         return PublicationEvidenceItem(kind="publication", ledger=payload.ledger, confirmation=payload.confirmation)
-    if kind == LifecycleEventType.BRONZE_DELETION_EVIDENCE.value:
+    if kind == LifecycleEventType.LANDING_DELETION_EVIDENCE.value:
         return DeletionEvidenceItem(kind="deletion_evidence", evidence=payload.evidence)
-    if kind == LifecycleEventType.BRONZE_LINEAGE.value:
+    if kind == LifecycleEventType.LANDING_LINEAGE.value:
         return LineageEvidenceItem(kind="lineage", lineage=payload.lineage, run_lineage=payload.run_lineage)
-    if kind == LifecycleEventType.BRONZE_METADATA.value:
+    if kind == LifecycleEventType.LANDING_METADATA.value:
         return MetadataEvidenceItem(kind="metadata", metadata=payload.metadata)
     return None
 

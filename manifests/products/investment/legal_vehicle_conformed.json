@@ -1,0 +1,38 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "table",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.legal_vehicle_conformed",
+  "relations": {
+    "auxiliary": [
+      "investment.legal_vehicle_conformed__checked",
+      "investment.legal_vehicle_conformed__current",
+      "investment.legal_vehicle_conformed__quarantine",
+      "investment.legal_vehicle_conformed__sla"
+    ],
+    "published": [
+      "investment.legal_vehicle_conformed"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": true,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:calculated_fields",
+      "steps[3]:data_enrichment",
+      "steps[8]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

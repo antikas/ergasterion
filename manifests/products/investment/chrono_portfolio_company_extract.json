@@ -1,0 +1,35 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.chrono_portfolio_company_extract",
+  "relations": {
+    "auxiliary": [
+      "investment.chrono_portfolio_company_extract__checked",
+      "investment.chrono_portfolio_company_extract__current",
+      "investment.chrono_portfolio_company_extract__quarantine",
+      "investment.chrono_portfolio_company_extract__sla"
+    ],
+    "published": [
+      "investment.chrono_portfolio_company_extract"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

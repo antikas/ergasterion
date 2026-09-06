@@ -4,28 +4,11 @@ source:
   system: ORIGO deal-origination CRM feed
   priority: 60
 
-# DESCRIPTIVE-ONLY (see vantora.yml header): validate_canonical_mappings checks every
-# value below for spelling/schema drift against the OpenIM PM-15 Deal model on every
-# emit. It does NOT generate the canonical layer; models/canonical/canonical_deal.sql
-# is hand-authored. Deal resolution deduplicates records within the single ORIGO CRM
-# feed. Fund resolution is a separate cross-source process.
-canonical_mappings:
-  deal:
-    model_file: model/entities/specialisations/private-markets/PM-15-deal.md
-    business_keys:
-      source_deal_id: deal_id
-      external_deal_id: deal_id
-      deal_name: deal_name
-    attributes:
-      deal_name: deal_name
-      target_entity_id: target_entity_id
-      strategy: strategy
-      originating_team: originating_team
-      source_channel: source_channel
-      sourced_date: sourced_date
-      structure: structure
-      converted_record_type: converted_record_type
-      converted_record_id: converted_record_id
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   deals:

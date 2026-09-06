@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/data_publish.schema.json",
+  "title": "data_publish step configuration (architecture section 4)",
+  "description": "Publication mode: all or nothing (architecture section 4's translator semantics). 'atomic' republishes the whole relation behind one swap; 'incremental' republishes only the rows the run produced, keyed by 'unique_key', which that mode requires (ergasterion/framework/declaration.py enforces the pairing). Named 'publication_mode', deliberately not 'mode' -- that bare token is reserved by the estate's expression-mode policy and is never a legal key in any step or product-level object (architecture section 3.2: the mode is estate policy only, never a per-product or per-column choice).",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "data_publish" },
+    "publication_mode": { "type": "string", "enum": ["atomic", "incremental"] },
+    "unique_key": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    }
+  }
+}

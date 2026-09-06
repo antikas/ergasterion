@@ -1,0 +1,42 @@
+# Landing product, generation "landing": the estate's catalogue enters here.
+# It publishes retail.catalogue_landing, which the derivation product
+# consumes as a source and the integration product reads as an enrichment
+# lookup.
+product:
+  name: catalogue_landing
+  domain: retail
+  version: "1.0"
+  layer: landed
+  owner: retail-domain
+
+sources: []
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    rules:
+      - field: sku
+        not_null: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Landing copy of the catalogue extract, unchanged."
+    ownership: retail-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

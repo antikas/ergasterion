@@ -13,10 +13,6 @@
     json_value({{ expr }}, '$.{{ path }}')
 {%- endmacro %}
 
-{% macro snowflake__dpf_json_text(expr, path) -%}
-    to_varchar(get_path(try_parse_json({{ expr }}), '{{ path }}'))
-{%- endmacro %}
-
 {% macro duckdb__dpf_json_text(expr, path) -%}
     json_extract_string(cast({{ expr }} as json), '$.{{ path }}')
 {%- endmacro %}
@@ -28,10 +24,6 @@
 
 {% macro default__dpf_parse_utc_instant(expr) -%}
     timestamp({{ expr }})
-{%- endmacro %}
-
-{% macro snowflake__dpf_parse_utc_instant(expr) -%}
-    to_timestamp_tz({{ expr }})
 {%- endmacro %}
 
 {% macro duckdb__dpf_parse_utc_instant(expr) -%}
@@ -47,10 +39,6 @@
     timestamp_diff(current_timestamp(), {{ earlier_expr }}, second)
 {%- endmacro %}
 
-{% macro snowflake__dpf_age_seconds(earlier_expr) -%}
-    datediff('second', {{ earlier_expr }}, current_timestamp())
-{%- endmacro %}
-
 {% macro duckdb__dpf_age_seconds(earlier_expr) -%}
     date_diff('second', {{ earlier_expr }}, current_timestamp)
 {%- endmacro %}
@@ -62,10 +50,6 @@
 
 {% macro default__dpf_poison_timestamp() -%}
     timestamp('1970-01-01 00:00:00+00')
-{%- endmacro %}
-
-{% macro snowflake__dpf_poison_timestamp() -%}
-    to_timestamp_tz('1970-01-01T00:00:00Z')
 {%- endmacro %}
 
 {% macro duckdb__dpf_poison_timestamp() -%}

@@ -1,0 +1,92 @@
+# The order to customer relationship: each order beside the customer that
+# placed it, merged on the customer business key (architecture section 8,
+# the consolidating generation, in its merge form).
+#
+# A merge keeps every row of both sides, so a customer the contact system
+# holds who has never ordered is still a row here, with the order columns
+# empty. That row is this product's own known answer, and it is the reason
+# the relation the served star is built from is assembled elsewhere: a
+# relation of order lines cannot carry a customer who has no line.
+#
+# Both sides carry the customer identity: the order because it read it on
+# the way through, the customer because it is theirs. A merge never picks
+# one of two columns with the same name, so the order's copy is conformed
+# onto a name of its own and the two sit side by side, which is what makes
+# a disagreement between them visible rather than resolved by accident.
+#
+# The coverage rule is the same one every consolidated product in this
+# estate declares: every row either side brought is still a row here.
+product:
+  name: order_customer
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.order@1
+    expect:
+      fields:
+        - order_id
+        - order_record_id
+        - order_source_customer_id
+        - order_source_system
+        - order_date
+        - order_status
+        - order_currency
+        - order_total
+        - order_value_band
+        - order_channel
+        - customer_business_key
+        - customer_external_id
+    conform:
+      mapping:
+        - {from: customer_external_id, to: order_customer_external_id, type: string}
+  - contract: ecommerce.customer@1
+    expect:
+      fields:
+        - customer_business_key
+        - customer_record_id
+        - customer_external_id
+        - customer_name
+        - customer_email
+        - customer_city
+        - customer_country
+        - customer_buyer_segment
+
+combine:
+  method: merge
+  keys: [customer_business_key]
+  join: outer
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: customer_business_key, not_null: true}
+      - reconcile:
+          metric: row_count
+          contracts: [ecommerce.order@1, ecommerce.customer@1]
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Each order beside the customer that placed it, and each customer that has placed none."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

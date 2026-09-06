@@ -3,7 +3,7 @@
 Temporary objects are never listed. Final creation is create-if-absent with length
 and digest collision checks. The receipt marker is what ``get_receipt`` / ``open_raw``
 mean by received; a crash before that marker leaves unclaimed content. This store
-never writes delivery state or typed Bronze rows.
+never writes delivery state or typed Landing rows.
 """
 
 from __future__ import annotations

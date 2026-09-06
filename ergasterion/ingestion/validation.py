@@ -1,4 +1,4 @@
-"""Deterministic Bronze validation and runtime-owned publication policy.
+"""Deterministic Landing validation and runtime-owned publication policy.
 
 The landing adapter persists the immutable disposition index; this module owns
 the quality arithmetic, authored-rule evaluation, same-ruleset revalidation
@@ -18,8 +18,8 @@ from typing import Any
 
 import rfc8785
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     DeliveryMode,
     DiagnosticCode,
     DispositionStatus,
@@ -246,7 +246,7 @@ def _unique_key_tag(fields: Sequence[str], values: Mapping[str, TypedScalar | No
     return canonical_digest({"schema": UNIQUE_TAG_SCHEMA, "fields": list(fields), "components": components})
 
 
-def partial_publication_permitted(contract: BronzeProductContract) -> bool:
+def partial_publication_permitted(contract: LandingProductContract) -> bool:
     """``publish_valid_rows`` is admitted only for append-only opaque batches."""
 
     delivery = contract.delivery
@@ -363,7 +363,7 @@ def validation_result_digest(
 
 
 def _evaluate_field_rules(
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     values: Mapping[str, TypedScalar | None],
     locator: RawLocator,
     columns: Mapping[str, Any],
@@ -427,7 +427,7 @@ def _evaluate_field_rules(
     return findings
 
 
-def _row_count_findings(contract: BronzeProductContract, framed_count: int) -> list[Finding]:
+def _row_count_findings(contract: LandingProductContract, framed_count: int) -> list[Finding]:
     findings: list[Finding] = []
     observed = str(framed_count)
     for rule in contract.delivery.quality.rules:
@@ -847,7 +847,7 @@ def _unique_key_findings(
 
 
 def validate_frames(
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     frames: Iterable[CandidateFrame],
     *,
     claim_digest: Digest,
@@ -1056,7 +1056,7 @@ def finding_identities(dispositions: Sequence[Disposition]) -> tuple[tuple[str, 
 
 
 def revalidate_frames(
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     frames: Iterable[CandidateFrame],
     *,
     prior_ruleset_digest: Digest,

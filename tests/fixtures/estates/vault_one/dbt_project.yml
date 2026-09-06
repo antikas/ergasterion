@@ -1,0 +1,23 @@
+name: vault_one
+version: "1.0.0"
+config-version: 2
+
+profile: vault_one
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The fixture relations the estate's fixture-bound sources read. Their
+# column types are declared here rather than inferred, so the executed
+# build proves the generated casts against the types the declarations
+# state.
+seeds:
+  vault_one:
+    customer_records:
+      +column_types:
+        pts: integer
+        eff_dt: date

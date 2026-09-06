@@ -1,0 +1,83 @@
+# Every holding valuation both systems that state one deliver, under one
+# schema, with the fund the estate resolved read onto each mark.
+#
+# The confidence a source states in a mark is banded here, once, so a
+# consumer reads a band the estate agrees on rather than comparing a
+# number against a threshold of its own.
+product:
+  name: holding_valuation_conformed
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_valuation@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_company_id
+        - source_valued_on
+        - source_value_usd
+        - source_method
+        - source_valuation_level
+        - source_confidence_score
+        - valuation_source_system
+  - contract: investment.vantora_valuation@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_company_id
+        - source_valued_on
+        - source_value_usd
+        - source_method
+        - source_valuation_level
+        - source_confidence_score
+        - valuation_source_system
+
+combine:
+  method: union
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_valued_on, not_null: true}
+      - reconcile:
+          metric: row_count
+          contracts: [investment.chrono_valuation@1, investment.vantora_valuation@1]
+  - pattern: calculated_fields
+    fields:
+      - {name: valuation_confidence_band, type: string, expression: "case when source_confidence_score >= 0.90 then 'high' when source_confidence_score >= 0.75 then 'medium' else 'low' end"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.fund_conformed@1
+        "on": {valuation_source_system: fund_source_system, source_fund_id: source_fund_id}
+        fields: [fund_business_key]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every delivered holding valuation, banded by the confidence its source states, against the fund the estate resolved."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

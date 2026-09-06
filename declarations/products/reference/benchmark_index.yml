@@ -1,0 +1,59 @@
+# The public market index levels fund performance is compared against,
+# typed: one row per index and date, with the level the index closed at.
+product:
+  name: benchmark_index
+  domain: reference
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: reference-domain
+
+sources:
+  - contract: reference.benchmark_index_returns@1
+    expect:
+      fields:
+        - benchmark_id
+        - benchmark_name
+        - index_date
+        - index_value
+        - currency
+        - source_system
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: benchmark_id, not_null: true}
+      - {field: index_date, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: benchmark_id, to: benchmark_id, type: string}
+      - {from: benchmark_name, to: benchmark_name, type: string}
+      - {from: index_date, to: benchmark_on, type: date}
+      - {from: index_value, to: benchmark_index_value, type: {name: decimal, precision: 18, scale: 4}}
+      - {from: currency, to: benchmark_currency, type: string}
+      - {from: source_system, drop: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: benchmark_label, type: string, expression: "concat(benchmark_id, ' (', benchmark_currency, ')')"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The level each public market index closed at on each delivered date."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

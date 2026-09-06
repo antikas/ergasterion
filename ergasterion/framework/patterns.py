@@ -1,14 +1,29 @@
-"""The canonical fifteen-pattern registry and the Bronze composition table.
+"""The canonical fifteen-pattern registry and the five reference profiles.
 
-The fifteen-pattern universe is closed and held in frozen module-level tables.
-Bronze has an exact mandatory, optional, and forbidden classification. Silver
-and Gold do not have composition tables in this release, so resolution for
-those layers fails closed.
+The fifteen-pattern universe is closed and held in a frozen module-level
+table (``PATTERN_DISPLAY_NAMES``). Composition constraints -- which patterns
+are mandatory, optional and forbidden for a product, and the ordering
+constraints between them -- are no longer code: they are data, one YAML file
+per reference profile under ``ergasterion/profiles/`` (architecture section
+5). ``load_profile()`` reads and validates one of them; only the resolver
+(``ergasterion/framework/resolver.py``) turns the ``landing`` profile into an
+executable occurrence graph in this release.
 """
 
 from __future__ import annotations
 
-from ergasterion.framework.models import PatternDisposition, PatternId
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Mapping
+
+import yaml
+
+from ergasterion.framework.models import (
+    InvalidProfileDefinitionError,
+    PatternDisposition,
+    PatternId,
+    UnknownProfileError,
+)
 
 # Display text is separate from registry identity: identity is exact, display
 # text is human-readable. All fifteen canonical patterns, exactly.
@@ -32,75 +47,139 @@ PATTERN_DISPLAY_NAMES: dict[PatternId, str] = {
 
 assert set(PATTERN_DISPLAY_NAMES) == set(PatternId), "the registry must classify all fifteen canonical patterns"
 
-# The Bronze composition classifies all fifteen patterns. Mandatory patterns are
-# the eight occurrences the normative Bronze graph always contains. Batch
-# Transfer is the sole optional pattern and has no authoring surface in version
-# 1 (see `resolution_status`). The six forbidden patterns can never occur in a
-# Bronze graph: business-predicate transformation would violate the
-# source-aligned Bronze boundary.
-BRONZE_MANDATORY: frozenset[PatternId] = frozenset(
-    {
-        PatternId.BATCH_INGESTION,
-        PatternId.DATA_VALIDATION,
-        PatternId.DATA_CONTRACTS,
-        PatternId.LINEAGE_CAPTURE,
-        PatternId.METADATA_CAPTURE,
-        PatternId.SCHEMA_PUBLISH,
-        PatternId.DATA_PUBLISH,
-        PatternId.CHECKPOINT_RETRIES,
-    }
-)
+# The five reference profiles (architecture section 5). Order matters nowhere
+# except readability; PROFILE_NAMES is the closed set of names this engine
+# ships a data file for. Only "landing" has an authoring surface (an
+# executable occurrence graph) in this release; the other four are
+# registered composition-constraint data with no graph behind them yet.
+PROFILE_NAMES: tuple[str, ...] = ("landing", "integration", "derivation", "consolidation", "serving")
 
-BRONZE_OPTIONAL: frozenset[PatternId] = frozenset({PatternId.BATCH_TRANSFER})
-
-BRONZE_FORBIDDEN: frozenset[PatternId] = frozenset(
-    {
-        PatternId.SCHEMA_TRANSFORM,
-        PatternId.CALCULATED_FIELDS,
-        PatternId.DATA_ENRICHMENT,
-        PatternId.DATA_FILTERING,
-        PatternId.DATA_AGGREGATION,
-        PatternId.DATA_CURATION,
-    }
-)
-
-assert BRONZE_MANDATORY | BRONZE_OPTIONAL | BRONZE_FORBIDDEN == set(PatternId)
-assert not (BRONZE_MANDATORY & BRONZE_OPTIONAL & BRONZE_FORBIDDEN)
-assert len(BRONZE_MANDATORY) == 8 and len(BRONZE_OPTIONAL) == 1 and len(BRONZE_FORBIDDEN) == 6
+PROFILES_DIR = Path(__file__).resolve().parent.parent / "profiles"
 
 
-def classify_bronze(pattern_id: PatternId) -> PatternDisposition:
-    """Return the Bronze disposition for one of the fifteen canonical patterns.
-    Every pattern classifies: the classification covers the full registry."""
+@dataclass(frozen=True)
+class Profile:
+    """One profile's composition constraints: which patterns are mandatory,
+    optional and forbidden, and the ordering constraints between the patterns
+    this profile actually classifies (mandatory or optional).
 
-    if pattern_id in BRONZE_MANDATORY:
-        return PatternDisposition.MANDATORY
-    if pattern_id in BRONZE_OPTIONAL:
-        return PatternDisposition.OPTIONAL
-    if pattern_id in BRONZE_FORBIDDEN:
-        return PatternDisposition.FORBIDDEN
-    raise AssertionError(f"unclassified pattern: {pattern_id!r}")  # pragma: no cover - guarded by the module assertion above
+    Architecture section 5's table does not classify every one of the fifteen
+    patterns for every profile -- Schema Transform, for example, is neither
+    mandatory, optional nor forbidden under derivation, consolidation or
+    serving. ``mandatory``, ``optional`` and ``forbidden`` are carried
+    verbatim from that table and are pairwise disjoint, but their union need
+    not cover all fifteen patterns. A pattern outside all three sets is
+    simply not modelled for this profile; ``disposition_of`` returns ``None``
+    for it rather than forcing a fictitious classification.
+    """
+
+    name: str
+    mandatory: frozenset[PatternId]
+    optional: frozenset[PatternId]
+    forbidden: frozenset[PatternId]
+    ordering: tuple[PatternId, ...]
+
+    def disposition_of(self, pattern_id: PatternId) -> PatternDisposition | None:
+        if pattern_id in self.mandatory:
+            return PatternDisposition.MANDATORY
+        if pattern_id in self.optional:
+            return PatternDisposition.OPTIONAL
+        if pattern_id in self.forbidden:
+            return PatternDisposition.FORBIDDEN
+        return None
 
 
-class ResolutionStatus(str):
-    """String-valued resolution outcomes for a pattern's presence in the resolved
-    Bronze graph. These are graph-presence facts, held as a plain string-valued
-    class one level up from the disposition table."""
+def _pattern_set(document: Mapping[str, Any], profile_name: str, key: str) -> frozenset[PatternId]:
+    if key not in document:
+        raise InvalidProfileDefinitionError(profile_name, f"missing required key: {key!r}")
+    tokens = document[key]
+    if tokens is None:
+        tokens = []
+    result: set[PatternId] = set()
+    for token in tokens:
+        try:
+            result.add(PatternId(token))
+        except ValueError:
+            raise InvalidProfileDefinitionError(profile_name, f"{key} names an unknown pattern: {token!r}") from None
+    return frozenset(result)
 
-    IN_BRONZE_GRAPH = "in_bronze_graph"
-    UNSUPPORTED_OPTIONAL_PATTERN = "unsupported_optional_pattern"
-    FORBIDDEN = "forbidden"
+
+def parse_profile_document(profile_name: str, document: Mapping[str, Any]) -> Profile:
+    """Parse and validate one profile document (already loaded from YAML, or
+    built in memory by a test) into a ``Profile``.
+
+    Fails closed with ``InvalidProfileDefinitionError`` when: the ``schema``
+    key is not exactly ``"ergasterion.profile/v1"``; the ``mandatory``,
+    ``optional`` or ``forbidden`` key is absent or misspelled (each is
+    required, even when the set it carries is empty); a mandatory, optional,
+    forbidden or ordering entry names a token that is not one of the fifteen
+    canonical patterns; the mandatory/optional/forbidden sets are not
+    pairwise disjoint; or an ordering entry names a pattern this profile
+    does not classify as mandatory or optional. ``ordering`` must be exactly
+    a permutation of ``mandatory | optional``: architecture section 5
+    describes ordering constraints between the patterns a profile actually
+    composes, never a pattern it forbids or leaves unmodelled.
+    """
+
+    schema = document.get("schema")
+    if schema != "ergasterion.profile/v1":
+        raise InvalidProfileDefinitionError(
+            profile_name, f"schema must be 'ergasterion.profile/v1', got {schema!r}"
+        )
+
+    declared_name = document.get("name")
+    if declared_name is not None and declared_name != profile_name:
+        raise InvalidProfileDefinitionError(
+            profile_name, f"document name {declared_name!r} does not match {profile_name!r}"
+        )
+
+    mandatory = _pattern_set(document, profile_name, "mandatory")
+    optional = _pattern_set(document, profile_name, "optional")
+    forbidden = _pattern_set(document, profile_name, "forbidden")
+
+    if len(mandatory) + len(optional) + len(forbidden) != len(mandatory | optional | forbidden):
+        raise InvalidProfileDefinitionError(profile_name, "mandatory/optional/forbidden sets are not disjoint")
+
+    composed = mandatory | optional
+    ordering_tokens = document.get("ordering") or []
+    ordering: list[PatternId] = []
+    for token in ordering_tokens:
+        try:
+            pattern_id = PatternId(token)
+        except ValueError:
+            raise InvalidProfileDefinitionError(profile_name, f"ordering names an unknown pattern: {token!r}") from None
+        if pattern_id not in composed:
+            raise InvalidProfileDefinitionError(
+                profile_name,
+                f"ordering names {pattern_id.value!r}, which this profile classifies as "
+                "neither mandatory nor optional",
+            )
+        ordering.append(pattern_id)
+    if len(set(ordering)) != len(ordering):
+        raise InvalidProfileDefinitionError(profile_name, "ordering contains a duplicate pattern")
+    if set(ordering) != composed:
+        raise InvalidProfileDefinitionError(
+            profile_name, "ordering must name every mandatory and optional pattern exactly once"
+        )
+
+    return Profile(
+        name=profile_name,
+        mandatory=mandatory,
+        optional=optional,
+        forbidden=forbidden,
+        ordering=tuple(ordering),
+    )
 
 
-def resolution_status(pattern_id: PatternId) -> str:
-    """Whether a pattern occurs in the resolved Bronze graph, and why not when it
-    does not. Batch Transfer is classified optional and has no authoring surface:
-    it deterministically resolves ``unsupported_optional_pattern``. Forbidden
-    patterns never resolve into a Bronze graph."""
+def load_profile(name: str) -> Profile:
+    """Load and validate one reference profile from
+    ``ergasterion/profiles/<name>.yml``. An unrecognised name fails closed
+    with ``UnknownProfileError`` before any file access."""
 
-    disposition = classify_bronze(pattern_id)
-    if disposition is PatternDisposition.MANDATORY:
-        return ResolutionStatus.IN_BRONZE_GRAPH
-    if disposition is PatternDisposition.OPTIONAL:
-        return ResolutionStatus.UNSUPPORTED_OPTIONAL_PATTERN
-    return ResolutionStatus.FORBIDDEN
+    if name not in PROFILE_NAMES:
+        raise UnknownProfileError(name)
+    path = PROFILES_DIR / f"{name}.yml"
+    if not path.is_file():
+        raise UnknownProfileError(name)
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return parse_profile_document(name, document)

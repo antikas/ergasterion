@@ -1,0 +1,65 @@
+# Landing product: The delivered catalogue of the permitted values of each classification type.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: investment_classification_value
+  domain: reference
+  version: "1.0"
+  layer: landed
+  owner: reference-domain
+
+sources:
+  - contract: reference.investment_classification_value_delivery@1
+    kind: fixture
+    fixture:
+      relation: classification_value
+      fields:
+        - {name: classification_type_code, type: string}
+        - {name: classification_value_code, type: string}
+        - {name: classification_value_name, type: string}
+        - {name: sort_order, type: string}
+        - {name: is_unknown, type: string}
+    expect:
+      fields: [classification_type_code, classification_value_code, classification_value_name]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: classification_type_code, not_null: true}
+      - {field: classification_value_code, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The delivered catalogue of the permitted values of each classification type."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

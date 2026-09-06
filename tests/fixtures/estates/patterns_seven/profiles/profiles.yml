@@ -1,0 +1,7 @@
+patterns_seven:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/patterns_seven.duckdb
+      threads: 1

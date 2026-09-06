@@ -1,0 +1,72 @@
+# Landing product: The MERIDEX administrator fund feed as it was delivered, one row per delivered fund record.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: meridex_fund_extract
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.meridex_fund_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_meridex_funds
+      fields:
+        - {name: meridex_fund_id, type: string}
+        - {name: fund_name, type: string}
+        - {name: gp_name, type: string}
+        - {name: gp_lei, type: string}
+        - {name: fund_lei, type: string}
+        - {name: shared_external_id, type: string}
+        - {name: asset_class, type: string}
+        - {name: strategy, type: string}
+        - {name: vintage_year, type: string}
+        - {name: currency, type: string}
+        - {name: domicile, type: string}
+    expect:
+      fields: [meridex_fund_id, fund_name, gp_name]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: meridex_fund_id, not_null: true}
+      - {field: meridex_fund_id, unique: true}
+      - {field: fund_name, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The MERIDEX administrator fund feed as it was delivered, one row per delivered fund record."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

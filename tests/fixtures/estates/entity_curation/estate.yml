@@ -1,0 +1,57 @@
+# A self-contained estate that exercises three of the patterns the dbt
+# translator renders -- data_validation with a quarantine, data_curation
+# with resolution and survivorship, and data_aggregation at a declared
+# grain -- end to end: emission, the per-adapter parse gate, the dialect
+# gate and an executed DuckDB build with known answers.
+#
+# Its layer labels are "conformed" and "computed": names the engine has never
+# seen and never interprets. Each is a key into the tables below.
+#
+# The "conformed" label maps to the integration profile, whose ten mandatory
+# occurrences are the full set a curated product composes. The table gives
+# six of them plus the shape to dbt and the four publication-shaped ones to
+# the publication translator, so every mandatory occurrence has exactly one
+# owner and none is unowned.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    conformed:
+      profiles: [integration]
+    computed:
+      profiles: [derivation]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    conformed:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_curation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    computed:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_aggregation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

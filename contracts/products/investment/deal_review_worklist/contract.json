@@ -1,0 +1,138 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Every deal the estate holds that no final decision settles, with the decision in force and the stage it sits at.",
+  "freshness": "daily by 09:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "deal_review_worklist",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.deal_vault@1"
+  ],
+  "quality": [
+    {
+      "description": "deal_business_key must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "deal_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "deal_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "deal_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_strategy",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_structure",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_channel",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_originating_team",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_target_company_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_converted_record_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_converted_fund_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_external_identity",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "decision_outcome",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision_actor",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision_decided_at",
+          "required": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "decision_is_final",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "stage_value_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_sort_order",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "deal_awaiting_decision",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "deal_decision_state",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.deal_review_worklist"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

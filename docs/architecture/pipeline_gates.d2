@@ -1,6 +1,9 @@
 # docs/architecture/pipeline_gates.d2
 #
-# Focused view of the verification gates shown in pipeline.d2.
+# Focused view of the offline verification gates shown in pipeline.d2. Every one
+# of them runs without a warehouse account. Rendered with:
+#   d2 --layout elk docs/architecture/pipeline_gates.d2 docs/architecture/pipeline_gates.svg
+# The committed SVG is generated from this source with the command above.
 
 canvas: {
   label: ""
@@ -9,13 +12,15 @@ canvas: {
   near: top-left
 
   gates: {
-    label: "verification gates"
+    label: "verification gates, offline"
     class: container
     grid-columns: 2
-    byte_stable: "emit.py --check\n(byte-stable re-emit)"
-    dialect_lint: "ergasterion/dialect_lint.py"
-    target_parse: "dbt parse\nSnowflake · BigQuery · DuckDB"
-    duckdb_build: "dbt build -t duckdb\n(complete local estate)"
+    byte_stable: "emit-products --check\nbyte-stable re-emission"
+    dialect_lint: "ergasterion lint\nper-adapter dialect rules"
+    structure: "ergasterion structure\nper-adapter structural budgets"
+    target_parse: "dbt parse\nDuckDB and BigQuery"
+    duckdb_build: "dbt build -t duckdb\nthe whole estate and its\nknown-answer assertions"
+    publication: "contract, descriptor and graph\ndrift checks"
   }
 }
 
@@ -38,5 +43,7 @@ classes: {
 
 canvas.gates.byte_stable.class: gate-lit
 canvas.gates.dialect_lint.class: gate-lit
+canvas.gates.structure.class: gate-lit
 canvas.gates.target_parse.class: gate-lit
 canvas.gates.duckdb_build.class: gate-lit
+canvas.gates.publication.class: gate-lit

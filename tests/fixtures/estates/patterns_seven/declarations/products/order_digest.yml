@@ -1,0 +1,55 @@
+# A product whose relation is declared as one whole select body rather than
+# built occurrence by occurrence (architecture section 3.2's inline-SQL
+# route). The composition still declares the schema -- the schema_transform
+# occurrence is what narrows and renames it -- and the body states how the
+# relation is computed. The body names no relation: the engine binds the
+# composition's input, so the declaration stays free of table names
+# (architecture section 13).
+product:
+  name: order_digest
+  domain: retail
+  version: "1.0"
+  layer: served
+  owner: retail-domain
+
+sources:
+  - contract: retail.order@1
+    expect:
+      fields: [order_id, customer_id, order_total]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    rules:
+      - field: order_id
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: order_total, to: order_value, type: {name: decimal, precision: 12, scale: 2}}
+      - {from: status_code, drop: true}
+      - {from: segment_code, drop: true}
+      - {from: ordered_on, drop: true}
+      - {from: is_open, drop: true}
+      - {from: order_band, drop: true}
+      - {from: segment_label, drop: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per open order with the customer it belongs to and its value."
+    ownership: retail-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  shape_config:
+    select: "select order_id, customer_id, order_total as order_value"
+  contract:
+    freshness: "hourly"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: composition
+  max_retries: 1
+  backoff: none

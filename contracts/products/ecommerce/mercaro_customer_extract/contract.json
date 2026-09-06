@@ -1,0 +1,82 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The marketplace's customer extract as it was delivered. It carries fewer contact columns than the storefront's and one the storefront has none of, which is a fact about the source, not something to fix here.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "mercaro_customer_extract",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.mercaro_customer_extract_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "mercaro_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "mercaro_record_id must be unique",
+      "dimension": "uniqueness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "mercaro_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "mercaro_customer_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "loyalty_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "email",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "full_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "buyer_segment",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_status",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "as_of_date",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.mercaro_customer_extract"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

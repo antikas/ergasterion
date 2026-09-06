@@ -1,10 +1,10 @@
-"""Python-level unit tests for ergasterion/source_delivery.py, the Bronze
+"""Python-level unit tests for ergasterion/source_delivery.py, the Landing
 Product Contract compiler.
 
-The compiler turns authored YAML into validated, digested Bronze Product
+The compiler turns authored YAML into validated, digested Landing Product
 Contracts. This file proves the eleven behaviours the contract rests on:
 
-  * the typed declaration loader is the single source of typed Bronze intent,
+  * the typed declaration loader is the single source of typed Landing intent,
     and it demands every required identity, version, ownership, domain, support,
     access, classification and retention fact before it will compile anything;
   * lineage interface names are derived from logical identity, never authored;
@@ -51,11 +51,11 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion import emit, source_delivery as sd
+from ergasterion import source_delivery as sd
 from ergasterion.estate import EstateContext
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     EXPECTED_IDL_SHA256,
-    BronzeProductContract,
+    LandingProductContract,
     ContractActivationState,
     CronSchedule,
     IntervalSchedule,
@@ -65,7 +65,7 @@ from ergasterion.ingestion.records import DeliveryClaim, DeliveryManifest, Repro
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "source_delivery_vectors.json"
-IDL_PATH = REPO_ROOT / "docs" / "specifications" / "bronze-portable-idl-v1.json"
+IDL_PATH = REPO_ROOT / "docs" / "specifications" / "landing-portable-idl-v1.json"
 
 ZERO_DIGEST = "0" * 64
 ONE_DIGEST = "1" * 64
@@ -81,8 +81,8 @@ def _positive_payloads() -> dict[str, dict]:
     return {entry["case"]: entry["payload"] for entry in _vectors()["positive"]}
 
 
-def _contract(case: str) -> BronzeProductContract:
-    return BronzeProductContract.model_validate(_positive_payloads()[case])
+def _contract(case: str) -> LandingProductContract:
+    return LandingProductContract.model_validate(_positive_payloads()[case])
 
 
 def _apply_patch(payload: dict, path: str, value: object) -> dict:
@@ -110,7 +110,7 @@ def test_positive_vectors_validate_and_digest_deterministically() -> None:
     assert len(vectors["positive"]) >= 4, "expected a vector per delivery mode plus the CSV/external case"
     seen_digests = set()
     for entry in vectors["positive"]:
-        contract = BronzeProductContract.model_validate(entry["payload"])
+        contract = LandingProductContract.model_validate(entry["payload"])
         sd.validate_contract(contract, where=entry["case"])
         digests = (
             sd.compute_contract_digest(contract),
@@ -179,7 +179,7 @@ def test_negative_vectors_fail_their_named_validator() -> None:
             payload = _apply_patch(payload, path, value)
         which = entry.get("validator", "delivery")
         try:
-            contract = BronzeProductContract.model_validate(payload)
+            contract = LandingProductContract.model_validate(payload)
             if which == "contract":
                 sd.validate_contract(contract)
             else:
@@ -201,7 +201,7 @@ def test_validation_error_reports_every_violation_at_once() -> None:
         payload, "delivery.schedule_lateness", {"warn_after_minutes": 60, "error_after_minutes": 60}
     )
     payload = _apply_patch(payload, "landing.content_encodings", ["identity", "identity"])
-    contract = BronzeProductContract.model_validate(payload)
+    contract = LandingProductContract.model_validate(payload)
     try:
         sd.validate_contract(contract)
     except sd.ContractValidationError as exc:
@@ -231,7 +231,7 @@ def test_canonical_document_omits_absent_optionals_and_reparses() -> None:
     for absent in ("fingerprint_scope", "hmac_key_id"):
         assert absent not in delivery["record_key"], f"found {absent} on an absent record-key fact"
 
-    reparsed = BronzeProductContract.model_validate(document)
+    reparsed = LandingProductContract.model_validate(document)
     assert sd.canonical_contract_document(reparsed)["contract"] == document, (
         "canonicalisation must be idempotent"
     )
@@ -244,7 +244,7 @@ def test_declared_set_reordering_leaves_every_digest_equal() -> None:
     """Physical columns, projection entries, quality rules and every declared set
     are normalised before hashing, so authoring order never moves a digest."""
     payload = _positive_payloads()["csv_external_append_only"]
-    contract = BronzeProductContract.model_validate(payload)
+    contract = LandingProductContract.model_validate(payload)
 
     shuffled = copy.deepcopy(payload)
     shuffled["landing"]["physical_columns"].reverse()
@@ -253,7 +253,7 @@ def test_declared_set_reordering_leaves_every_digest_equal() -> None:
     shuffled["projection"].reverse()
     shuffled["delivery"]["quality"]["rules"].reverse()
     shuffled["delivery"]["quality"]["rules"][3]["values"].reverse()
-    reordered = BronzeProductContract.model_validate(shuffled)
+    reordered = LandingProductContract.model_validate(shuffled)
 
     assert sd.compute_contract_digest(reordered) == sd.compute_contract_digest(contract)
     assert sd.compute_source_schema_digest(reordered) == sd.compute_source_schema_digest(contract)
@@ -279,7 +279,7 @@ def test_canonicalisation_honours_every_ordering_hint_the_contract_carries() -> 
     list field that appears fails here rather than drifting silently."""
     records = _idl()["records"]
     contract_records = (
-        "BronzeProductContract", "LandingContract", "ExternalTrustPolicy", "CsvCodec",
+        "LandingProductContract", "LandingContract", "ExternalTrustPolicy", "CsvCodec",
         "RecordKeyContract", "QualityPolicy", "AcceptedValuesRule", "UniqueKeyRule",
         "TombstoneContract", "SnapshotContract",
     )
@@ -290,7 +290,7 @@ def test_canonicalisation_honours_every_ordering_hint_the_contract_carries() -> 
         if "ordering" in field
     }
     assert hints == {
-        "BronzeProductContract.projection": "declared",
+        "LandingProductContract.projection": "declared",
         "LandingContract.physical_columns": "declared",
         "LandingContract.content_encodings": "set",
         "ExternalTrustPolicy.allowed_key_ids": "set",
@@ -334,7 +334,7 @@ def test_declared_set_rejects_a_repeated_value() -> None:
     payload["delivery"]["quality"]["rules"][2]["values"].append(
         {"logical_type": "utf8_string", "value": "settled"}
     )
-    contract = BronzeProductContract.model_validate(payload)
+    contract = LandingProductContract.model_validate(payload)
     try:
         sd.compute_contract_digest(contract)
     except sd.ContractValidationError as exc:
@@ -352,7 +352,7 @@ def test_record_key_field_order_is_load_bearing() -> None:
         "delivery.record_key",
         {"fields": ["seq", "txn_id"]},
     )
-    swapped = BronzeProductContract.model_validate(payload)
+    swapped = LandingProductContract.model_validate(payload)
     assert sd.compute_contract_digest(swapped) != sd.compute_contract_digest(contract), (
         "record_key field order must reach the contract digest"
     )
@@ -364,13 +364,13 @@ def test_schema_digests_isolate_the_facts_they_name() -> None:
     digest covers the consumer-visible shape, so a change to one leaves the other
     equal."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    contract = BronzeProductContract.model_validate(base_payload)
+    contract = LandingProductContract.model_validate(base_payload)
 
     quality_changed = copy.deepcopy(base_payload)
     quality_changed["delivery"]["quality"]["rules"][5] = {
         "kind": "row_count", "min": "2", "max": "1000000", "severity": "warn"
     }
-    quality = BronzeProductContract.model_validate(quality_changed)
+    quality = LandingProductContract.model_validate(quality_changed)
     assert sd.compute_source_schema_digest(quality) == sd.compute_source_schema_digest(contract)
     assert sd.compute_published_schema_digest(quality) == sd.compute_published_schema_digest(contract)
     assert sd.compute_contract_digest(quality) != sd.compute_contract_digest(contract)
@@ -388,13 +388,13 @@ def test_schema_digests_isolate_the_facts_they_name() -> None:
     column_added["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
-    widened = BronzeProductContract.model_validate(column_added)
+    widened = LandingProductContract.model_validate(column_added)
     assert sd.compute_source_schema_digest(widened) != sd.compute_source_schema_digest(contract)
     assert sd.compute_published_schema_digest(widened) == sd.compute_published_schema_digest(contract)
 
     renamed_output = copy.deepcopy(base_payload)
     renamed_output["projection"][4]["name"] = "note"
-    republished = BronzeProductContract.model_validate(renamed_output)
+    republished = LandingProductContract.model_validate(renamed_output)
     assert sd.compute_source_schema_digest(republished) == sd.compute_source_schema_digest(contract)
     assert sd.compute_published_schema_digest(republished) != sd.compute_published_schema_digest(contract)
 
@@ -538,7 +538,7 @@ def test_derived_digest_refuses_a_record_carrying_no_derived_field() -> None:
     """Asking for the derived digest of a record the IDL gives none names the
     mistake rather than inventing a digest."""
     try:
-        sd.compute_derived_digest("BronzeProductContract", {"schema": "x"})
+        sd.compute_derived_digest("LandingProductContract", {"schema": "x"})
     except ValueError as exc:
         assert "digest_excluded" in str(exc), str(exc)
     else:
@@ -551,14 +551,14 @@ def test_classifier_grades_every_change_class() -> None:
     """The classifier grades an unchanged contract, a documentation-only edit, an
     additive change, a breaking change and a new product."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    base = BronzeProductContract.model_validate(base_payload)
+    base = LandingProductContract.model_validate(base_payload)
 
     assert sd.classify_contract_change(None, base) == sd.ChangeClass.NEW_PRODUCT
     assert sd.classify_contract_change(base, base) == sd.ChangeClass.NONE
 
     described = _apply_patch(base_payload, "product.description", "A revised description.")
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(described)
+        base, LandingProductContract.model_validate(described)
     ) == sd.ChangeClass.PATCH
 
     widened = copy.deepcopy(base_payload)
@@ -566,12 +566,12 @@ def test_classifier_grades_every_change_class() -> None:
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(widened)
+        base, LandingProductContract.model_validate(widened)
     ) == sd.ChangeClass.MINOR
 
     reclassified = _apply_patch(base_payload, "product.classification", "restricted")
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(reclassified)
+        base, LandingProductContract.model_validate(reclassified)
     ) == sd.ChangeClass.MINOR
 
     required_column = copy.deepcopy(base_payload)
@@ -579,7 +579,7 @@ def test_classifier_grades_every_change_class() -> None:
         {"name": "note", "logical_type": "utf8_string", "nullable": False}
     )
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(required_column)
+        base, LandingProductContract.model_validate(required_column)
     ) == sd.ChangeClass.MAJOR
 
     dropped_column = copy.deepcopy(base_payload)
@@ -590,13 +590,13 @@ def test_classifier_grades_every_change_class() -> None:
         entry for entry in dropped_column["projection"] if entry["source"] != "memo"
     ]
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(dropped_column)
+        base, LandingProductContract.model_validate(dropped_column)
     ) == sd.ChangeClass.MAJOR
 
     renamed = _apply_patch(base_payload, "logical_identity.table", "entries")
     renamed = _apply_patch(renamed, "interfaces", sd.derive_interfaces("ledger", "entries").model_dump())
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(renamed)
+        base, LandingProductContract.model_validate(renamed)
     ) == sd.ChangeClass.NEW_PRODUCT
 
     rescheduled = _apply_patch(
@@ -605,24 +605,24 @@ def test_classifier_grades_every_change_class() -> None:
         {"kind": "interval", "every_minutes": 30, "anchor_at": "2026-01-01T00:00:00.000000Z"},
     )
     assert sd.classify_contract_change(
-        base, BronzeProductContract.model_validate(rescheduled)
+        base, LandingProductContract.model_validate(rescheduled)
     ) == sd.ChangeClass.MINOR
 
 
 def test_classifier_covers_every_migration_matrix_row() -> None:
     """One vector per remaining migration-matrix row, in the direction the row
-    names, per docs/specifications/bronze-product-v1.md. Attestation
+    names, per docs/specifications/landing-product-v1.md. Attestation
     issuer/trust policy is Minor, not Major -- the row a prior round of this
     compiler misgraded."""
     external_base = _positive_payloads()["csv_external_append_only"]
-    external_contract = BronzeProductContract.model_validate(external_base)
+    external_contract = LandingProductContract.model_validate(external_base)
     snapshot_base = _positive_payloads()["complete_snapshot_managed"]
-    snapshot_contract = BronzeProductContract.model_validate(snapshot_base)
+    snapshot_contract = LandingProductContract.model_validate(snapshot_base)
     hmac_base = _positive_payloads()["cdc_managed_explicit_tombstone"]
-    hmac_contract = BronzeProductContract.model_validate(hmac_base)
+    hmac_contract = LandingProductContract.model_validate(hmac_base)
 
     def classify(base_payload: dict, path: str, value: object) -> sd.ChangeClass:
-        candidate = BronzeProductContract.model_validate(_apply_patch(base_payload, path, value))
+        candidate = LandingProductContract.model_validate(_apply_patch(base_payload, path, value))
         prior = {
             id(external_base): external_contract,
             id(snapshot_base): snapshot_contract,
@@ -651,7 +651,7 @@ def test_classifier_covers_every_migration_matrix_row() -> None:
         {"source": "seq", "name": "seq", "logical_type": "int64", "nullable": True}
     )
     assert sd.classify_contract_change(
-        external_contract, BronzeProductContract.model_validate(added_projection)
+        external_contract, LandingProductContract.model_validate(added_projection)
     ) == sd.ChangeClass.MINOR
 
     patch_cases = (
@@ -691,12 +691,12 @@ def test_attestation_rotation_carries_on_a_minor_bump() -> None:
     which would have forced a rotation through a reset and orphaned the prior
     epoch's published history."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
 
     rotated = copy.deepcopy(base_payload)
     rotated["landing"]["integration"]["receipt_trust"]["allowed_key_ids"] = ["key-c"]
     rotated["product"]["product_version"] = "2.4.0"
-    candidate = BronzeProductContract.model_validate(rotated)
+    candidate = LandingProductContract.model_validate(rotated)
 
     assert sd.classify_contract_change(prior, candidate) == sd.ChangeClass.MINOR
     plan = sd.plan_migration(sd.ContractRegistryState.initial(), prior, candidate)
@@ -704,7 +704,7 @@ def test_attestation_rotation_carries_on_a_minor_bump() -> None:
 
     understated = copy.deepcopy(rotated)
     understated["product"]["product_version"] = "2.3.2"
-    understated_candidate = BronzeProductContract.model_validate(understated)
+    understated_candidate = LandingProductContract.model_validate(understated)
     try:
         sd.plan_migration(sd.ContractRegistryState.initial(), prior, understated_candidate)
     except sd.ContractValidationError as exc:
@@ -742,13 +742,13 @@ def test_plan_migration_rejects_an_understated_bump() -> None:
     """The plan step refuses to migrate a breaking change carried on a patch
     bump, before any activation is attempted."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     breaking = copy.deepcopy(base_payload)
     breaking["product"]["product_version"] = "2.3.2"
     breaking["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": False}
     )
-    candidate = BronzeProductContract.model_validate(breaking)
+    candidate = LandingProductContract.model_validate(breaking)
     try:
         sd.plan_migration(sd.ContractRegistryState.initial(), prior, candidate)
     except sd.ContractValidationError as exc:
@@ -765,8 +765,8 @@ _DEFAULT_WIRE_BYTES = 1_000_000
 
 def _register_and_activate(
     state: sd.ContractRegistryState,
-    prior: BronzeProductContract | None,
-    candidate: BronzeProductContract,
+    prior: LandingProductContract | None,
+    candidate: LandingProductContract,
     activated_at: str = "2026-08-19T00:00:00.000000Z",
     *,
     max_visibility_ancestry_rows: int = _DEFAULT_ANCESTRY_ROWS,
@@ -837,7 +837,7 @@ def test_activation_reaching_active_rejects_a_null_activated_at() -> None:
     must supply a real ``activated_at``; confirming a baseline with no instant
     is refused the same way."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     state, _first = _register_and_activate(sd.ContractRegistryState.initial(), None, prior)
 
     additive = copy.deepcopy(base_payload)
@@ -845,7 +845,7 @@ def test_activation_reaching_active_rejects_a_null_activated_at() -> None:
     additive["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
-    candidate = BronzeProductContract.model_validate(additive)
+    candidate = LandingProductContract.model_validate(additive)
     registered = sd.register_candidate(state, candidate, expected_revision=state.state_revision)
     try:
         sd.activate_contract(
@@ -890,7 +890,7 @@ def test_carry_opens_the_next_epoch_and_extends_the_ancestry_closure() -> None:
     but the new epoch's ancestry closure extends the epoch it carried from, so
     published history stays one continuous series across the change."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     state, _first = _register_and_activate(sd.ContractRegistryState.initial(), None, prior)
 
     additive = copy.deepcopy(base_payload)
@@ -898,7 +898,7 @@ def test_carry_opens_the_next_epoch_and_extends_the_ancestry_closure() -> None:
     additive["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
-    candidate = BronzeProductContract.model_validate(additive)
+    candidate = LandingProductContract.model_validate(additive)
     carried, migration = _register_and_activate(state, prior, candidate)
 
     assert migration.kind == MigrationKind.CARRY
@@ -916,7 +916,7 @@ def test_carry_ancestry_capacity_is_enforced_before_activation() -> None:
     before a carry activates; a tight row ceiling fails closed with
     ``capacity_exceeded`` and changes no state."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     state, _first = _register_and_activate(sd.ContractRegistryState.initial(), None, prior)
     assert state.visibility_ancestry == (1,)
 
@@ -925,7 +925,7 @@ def test_carry_ancestry_capacity_is_enforced_before_activation() -> None:
     additive["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
-    candidate = BronzeProductContract.model_validate(additive)
+    candidate = LandingProductContract.model_validate(additive)
     registered = sd.register_candidate(state, candidate, expected_revision=state.state_revision)
     try:
         sd.activate_contract(
@@ -964,7 +964,7 @@ def test_activation_refuses_a_stale_prior_contract() -> None:
     remembered older one: a stale prior could let a breaking change reach
     activation as if it were still compatible with what is truly active."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    v1 = BronzeProductContract.model_validate(base_payload)
+    v1 = LandingProductContract.model_validate(base_payload)
     state, _first = _register_and_activate(sd.ContractRegistryState.initial(), None, v1)
 
     additive = copy.deepcopy(base_payload)
@@ -972,7 +972,7 @@ def test_activation_refuses_a_stale_prior_contract() -> None:
     additive["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
-    v2 = BronzeProductContract.model_validate(additive)
+    v2 = LandingProductContract.model_validate(additive)
     state, _second = _register_and_activate(state, v1, v2)  # active is now v2, not v1
 
     breaking = copy.deepcopy(base_payload)
@@ -980,7 +980,7 @@ def test_activation_refuses_a_stale_prior_contract() -> None:
     breaking["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": False}
     )
-    v3 = BronzeProductContract.model_validate(breaking)
+    v3 = LandingProductContract.model_validate(breaking)
     registered = sd.register_candidate(state, v3, expected_revision=state.state_revision)
     try:
         sd.activate_contract(
@@ -1002,7 +1002,7 @@ def test_reset_opens_the_next_epoch_rooted_alone() -> None:
     """A breaking change resets: the new epoch's ancestry closure discards the
     epoch it reset from entirely rather than extending it."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     state, _first = _register_and_activate(sd.ContractRegistryState.initial(), None, prior)
 
     breaking = copy.deepcopy(base_payload)
@@ -1010,7 +1010,7 @@ def test_reset_opens_the_next_epoch_rooted_alone() -> None:
     breaking["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": False}
     )
-    candidate = BronzeProductContract.model_validate(breaking)
+    candidate = LandingProductContract.model_validate(breaking)
     reset, migration = _register_and_activate(state, prior, candidate)
 
     assert migration.kind == MigrationKind.RESET
@@ -1044,7 +1044,7 @@ def test_in_flight_race_loses_on_a_stale_revision() -> None:
     """Two activators read the same registry revision; the second loses the
     compare-and-swap rather than overwriting the winner."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     state, _first = _register_and_activate(sd.ContractRegistryState.initial(), None, prior)
     read_revision = state.state_revision
 
@@ -1053,13 +1053,13 @@ def test_in_flight_race_loses_on_a_stale_revision() -> None:
     additive["landing"]["physical_columns"].append(
         {"name": "note", "logical_type": "utf8_string", "nullable": True}
     )
-    winner_candidate = BronzeProductContract.model_validate(additive)
+    winner_candidate = LandingProductContract.model_validate(additive)
     won, _migration = _register_and_activate(state, prior, winner_candidate)
     assert won.state_revision > read_revision
 
     other = copy.deepcopy(base_payload)
     other["product"]["product_version"] = "2.5.0"
-    loser_candidate = BronzeProductContract.model_validate(other)
+    loser_candidate = LandingProductContract.model_validate(other)
     try:
         sd.register_candidate(won, loser_candidate, expected_revision=read_revision)
     except sd.MigrationConflictError as exc:
@@ -1095,10 +1095,10 @@ def test_carry_refuses_an_empty_registry() -> None:
     prior, and the guard names it rather than producing an ancestry with no
     root."""
     base_payload = _positive_payloads()["csv_external_append_only"]
-    prior = BronzeProductContract.model_validate(base_payload)
+    prior = LandingProductContract.model_validate(base_payload)
     revised = _apply_patch(base_payload, "product.description", "A revised description.")
     revised = _apply_patch(revised, "product.product_version", "2.3.2")
-    candidate = BronzeProductContract.model_validate(revised)
+    candidate = LandingProductContract.model_validate(revised)
     assert sd.classify_contract_change(prior, candidate) == sd.ChangeClass.PATCH
     assert sd.required_migration_kind(sd.ChangeClass.PATCH) == MigrationKind.CARRY
 
@@ -1294,14 +1294,8 @@ def test_timezone_data_version_is_pinned_to_the_installed_release() -> None:
 
 # --- typed declaration loader -------------------------------------------------------
 
-BRONZE_DOMAIN = {
-    "bronze": {
-        "domain": {"name": "operations", "display_name": "Operations"},
-        "products": [{"source": "acme", "table": "orders"}],
-    }
-}
-
 PRODUCT_BLOCK = {
+    "domain": "operations",
     "product_version": "1.0.0",
     "display_name": "Orders",
     "description": "Synthetic source-aligned orders.",
@@ -1316,6 +1310,7 @@ PRODUCT_BLOCK = {
 def _production_table() -> dict:
     payload = _positive_payloads()["append_only_managed_opaque_batch"]
     return {
+        "layer": "bronze",
         "landing": payload["landing"],
         "product": copy.deepcopy(PRODUCT_BLOCK),
         "delivery": payload["delivery"],
@@ -1326,17 +1321,12 @@ def _production_table() -> dict:
     }
 
 
-def _estate(root: Path, *, tables: dict, namespace: str | None = "com.example.ergasterion",
-            domain: dict | None = None) -> EstateContext:
+def _estate(root: Path, *, tables: dict, namespace: str | None = "com.example.ergasterion") -> EstateContext:
     (root / "declarations").mkdir(parents=True, exist_ok=True)
-    (root / "domains").mkdir(parents=True, exist_ok=True)
     if namespace is not None:
         (root / "estate.yml").write_text(
             yaml.safe_dump({"estate": {"namespace": namespace}}, sort_keys=False), encoding="utf-8"
         )
-    (root / "domains" / "fixture.yml").write_text(
-        yaml.safe_dump(BRONZE_DOMAIN if domain is None else domain, sort_keys=False), encoding="utf-8"
-    )
     (root / "declarations" / "acme.yml").write_text(
         yaml.safe_dump({"source": {"name": "acme"}, "tables": tables}, sort_keys=False),
         encoding="utf-8",
@@ -1346,7 +1336,7 @@ def _estate(root: Path, *, tables: dict, namespace: str | None = "com.example.er
 
 def test_production_declaration_compiles_to_a_digested_contract() -> None:
     """A production table resolves to a validated contract with its domain taken
-    from the bronze membership block, its lineage derived, and all four digests
+    from the landing membership block, its lineage derived, and all four digests
     computed."""
     with tempfile.TemporaryDirectory() as tmp:
         ctx = _estate(Path(tmp), tables={"orders": _production_table()})
@@ -1355,12 +1345,12 @@ def test_production_declaration_compiles_to_a_digested_contract() -> None:
         assert typed.estate_namespace == "com.example.ergasterion"
         table = typed.tables[("acme", "orders")]
         assert table.kind == "production"
-        assert table.domain == "operations", "domain comes from the bronze membership block"
+        assert table.domain == "operations", "domain comes from the table's own product block"
         assert table.contract is not None
         assert table.contract.logical_identity.estate_namespace == "com.example.ergasterion"
         assert table.contract.product.domain == "operations"
         assert table.contract.interfaces == sd.derive_interfaces("acme", "orders")
-        assert table.contract.interfaces.published == "bronze-acme-orders-published"
+        assert table.contract.interfaces.published == "landing-acme-orders-published"
         for digest in (
             table.contract_digest, table.source_schema_digest,
             table.published_schema_digest, table.ruleset_digest,
@@ -1372,10 +1362,10 @@ def test_production_declaration_compiles_to_a_digested_contract() -> None:
 
 
 def test_production_requires_every_product_fact() -> None:
-    """Identity, version, ownership, support, access, classification and
+    """Domain, identity, version, ownership, support, access, classification and
     retention are each mandatory: omitting any one fails, naming the field."""
     required = (
-        "product_version", "display_name", "description", "owner",
+        "domain", "product_version", "display_name", "description", "owner",
         "support", "classification", "access_policy_ref", "retention_policy_ref",
     )
     for omitted in required:
@@ -1392,62 +1382,14 @@ def test_production_requires_every_product_fact() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         table = _production_table()
-        table["product"]["domain"] = "operations"
+        table["product"]["region"] = "emea"
         ctx = _estate(Path(tmp), tables={"orders": table})
         try:
             sd.load_typed_declarations(ctx)
         except ValueError as exc:
-            assert "domain" in str(exc), str(exc)
+            assert "region" in str(exc), str(exc)
         else:
-            raise AssertionError("domain is resolved from membership and cannot be authored inline")
-
-
-def test_production_requires_the_estate_namespace_and_a_domain_membership() -> None:
-    """A globally qualified identity needs the estate namespace, and generation
-    needs exactly one explicit domain membership."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ctx = _estate(Path(tmp), tables={"orders": _production_table()}, namespace=None)
-        try:
-            sd.load_typed_declarations(ctx)
-        except ValueError as exc:
-            assert "estate.namespace" in str(exc), str(exc)
-        else:
-            raise AssertionError("production delivery without estate.yml must fail")
-
-    with tempfile.TemporaryDirectory() as tmp:
-        ctx = _estate(
-            Path(tmp), tables={"orders": _production_table()},
-            domain={"bronze": {"domain": {"name": "operations", "display_name": "Operations"},
-                               "products": [{"source": "acme", "table": "other"}]}},
-        )
-        try:
-            sd.load_typed_declarations(ctx)
-        except ValueError as exc:
-            assert "domain membership" in str(exc), str(exc)
-        else:
-            raise AssertionError("production delivery without a membership must fail")
-
-
-def test_a_product_claimed_by_two_domains_fails_naming_both() -> None:
-    """One Bronze product belongs to one domain."""
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        ctx = _estate(root, tables={"orders": _production_table()})
-        (root / "domains" / "second.yml").write_text(
-            yaml.safe_dump(
-                {"bronze": {"domain": {"name": "finance", "display_name": "Finance"},
-                            "products": [{"source": "acme", "table": "orders"}]}},
-                sort_keys=False,
-            ),
-            encoding="utf-8",
-        )
-        try:
-            sd.load_typed_declarations(ctx)
-        except ValueError as exc:
-            assert "already a member of domain" in str(exc), str(exc)
-            assert "fixture.yml" in str(exc), str(exc)
-        else:
-            raise AssertionError("a product claimed twice must fail")
+            raise AssertionError("the product block is closed and an unknown field must fail")
 
 
 def test_a_source_landing_needs_an_explicit_draft_or_production_delivery() -> None:
@@ -1503,7 +1445,7 @@ def test_a_draft_delivery_resolves_to_an_explicit_placeholder() -> None:
         assert typed.drafts() == [table]
 
 
-def test_seed_tables_contribute_no_bronze_contract() -> None:
+def test_seed_tables_contribute_no_landing_contract() -> None:
     """Seed fixture meaning stays owned by the landing discriminator: the typed
     loader passes seed tables by without demanding a delivery block."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -1609,7 +1551,6 @@ def test_estate_namespace_absence_is_valid_and_a_malformed_file_is_not() -> None
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "declarations").mkdir()
-        (root / "domains").mkdir()
         assert sd.load_estate_namespace(EstateContext.resolve(estate_root=root)) is None
 
         (root / "estate.yml").write_text("estate:\n  namespace: NOT_A_NAMESPACE\n", encoding="utf-8")
@@ -1631,7 +1572,37 @@ def test_estate_namespace_absence_is_valid_and_a_malformed_file_is_not() -> None
             raise AssertionError("an unknown estate.yml field must fail")
 
 
-def test_the_committed_estate_carries_its_namespace_and_no_bronze_products_yet() -> None:
+def test_estate_namespace_loads_beside_every_sibling_key_the_product_route_owns() -> None:
+    """The product route declares profiles, labels, adapters, translators and the
+    rest under the same estate block; this loader only reads the namespace and
+    must not trip on any of those siblings, including a declared profile."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "declarations").mkdir()
+        estate_text = chr(10).join([
+            'estate:',
+            '  namespace: com.example.ergasterion',
+            '  support: fixture-support',
+            '  team: fixture-team',
+            '  expression_mode: sql',
+            '  structured_types: [struct]',
+            '  profiles:',
+            '    handover:',
+            '      schema: outbound',
+            '      patterns: [transfer, publish]',
+            '  labels:',
+            '    outbound: {profiles: [handover]}',
+            '  adapters:',
+            '    duckdb: {kind: reference}',
+            '  final_target: duckdb',
+            '  translators:',
+            '    outbound: {handover: dbt}',
+        ]) + chr(10)
+        (root / "estate.yml").write_text(estate_text, encoding="utf-8")
+        assert sd.load_estate_namespace(EstateContext.resolve(estate_root=root)) == "com.example.ergasterion"
+
+
+def test_the_committed_estate_carries_its_namespace_and_no_landing_products_yet() -> None:
     """The committed estate is seed-backed throughout, so the typed loader reads
     its namespace and compiles nothing -- which is why the committed generated
     output is unaffected by this compiler existing."""
@@ -1643,132 +1614,20 @@ def test_the_committed_estate_carries_its_namespace_and_no_bronze_products_yet()
 
 # --- legacy preservation ------------------------------------------------------------
 
-def test_the_legacy_loader_reads_a_bronze_declaration_unchanged() -> None:
-    """One authored declaration serves both loaders. emit.load_declarations()
-    keeps its exact legacy behaviour: it projects a typed projection column's
-    `source` onto the `expression` its templates read, and carries the product
-    and delivery blocks through untouched as ordinary dict entries."""
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        ctx = _estate(root, tables={"orders": _production_table()})
-        legacy_ctx = emit.EstateContext.resolve(
-            estate_root=emit.REPO_ROOT, declarations_dir=root / "declarations"
-        )
-        declarations = emit.load_declarations(ctx=legacy_ctx)
-        table = declarations[0]["tables"]["orders"]
 
-        assert table["staging_model"] == "stg_acme_orders", "the legacy defaults still apply"
-        assert [column["expression"] for column in table["projection"]] == ["order_id", "loaded_at"], (
-            "a typed projection column gains its legacy expression from `source`"
-        )
-        assert table["product"]["owner"] == "team-data-platform", "product rides through untouched"
-        assert table["delivery"]["kind"] == "production", "delivery rides through untouched"
-        assert table["landing"]["kind"] == "source"
+def test_a_staging_increment_block_is_refused_naming_the_file_and_the_table() -> None:
+    """The staging increment block configured the delta window of a staging
+    model, and no route renders one. An operator who declares it now is told
+    so, on either landing kind, rather than getting silence and no window."""
 
-        typed = sd.load_typed_declarations(ctx)
-        assert typed.tables[("acme", "orders")].contract is not None, (
-            "both loaders read the same file independently"
-        )
-
-
-def test_the_legacy_loader_still_rejects_a_projection_column_with_neither_key() -> None:
-    """A projection column declaring neither `expression` nor `source` fails with
-    the message it has always failed with."""
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
-        (root / "declarations").mkdir()
-        (root / "declarations" / "acme.yml").write_text(
-            yaml.safe_dump(
-                {"source": {"name": "acme"}, "tables": {"orders": {"projection": [{"name": "x"}]}}},
-                sort_keys=False,
-            ),
-            encoding="utf-8",
-        )
-        legacy_ctx = emit.EstateContext.resolve(
-            estate_root=emit.REPO_ROOT, declarations_dir=root / "declarations"
-        )
-        try:
-            emit.load_declarations(ctx=legacy_ctx)
-        except ValueError as exc:
-            assert "projection columns need name/expression" in str(exc), str(exc)
-        else:
-            raise AssertionError("a projection column with neither key must fail")
-
-
-def test_the_committed_estate_generates_byte_identical_output() -> None:
-    """The compiler adds a parallel typed loader and changes no generated byte:
-    a --check run over the committed estate reports no file changed and no
-    orphan."""
-    old_argv = sys.argv
-    out = io.StringIO()
-    try:
-        sys.argv = ["emit.py", "--check"]
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            exit_code = emit.main()
-    finally:
-        sys.argv = old_argv
-    printed = out.getvalue()
-    assert exit_code == 0, f"expected a clean --check over the committed estate, got {exit_code}:\n{printed}"
-    change_lines = [line for line in printed.splitlines() if line.startswith("would change ")]
-    assert change_lines, f"expected a 'would change' summary line, got:\n{printed}"
-    assert change_lines[-1].startswith("would change 0 of "), (
-        f"expected zero changed files, got: {change_lines[-1]}"
-    )
-    assert "ORPHANS=0" in printed, f"expected zero orphans, got:\n{printed}"
-
-
-def test_a_staging_increment_block_leaves_every_contract_digest_equal() -> None:
-    """The staging increment block is a consumer-side processing policy of the warehouse
-    estate. The typed loader accepts it as a closed model and keeps it out of the Bronze
-    Product Contract, so the same table with and without the block compiles to one
-    canonical document and four equal digests."""
-    plain = _production_table()
-    declared = copy.deepcopy(plain)
-    declared["staging_increment"] = {
-        "lookback_minutes": 1440,
-        "effective_advances_on_redelivery": True,
-    }
-    declared["natural_key"] = ["order_id"]
-
-    with tempfile.TemporaryDirectory() as tmp:
-        ctx = _estate(Path(tmp), tables={"orders": plain})
-        without = sd.load_typed_declarations(ctx).tables[("acme", "orders")]
-    with tempfile.TemporaryDirectory() as tmp:
-        ctx = _estate(Path(tmp), tables={"orders": declared})
-        with_block = sd.load_typed_declarations(ctx).tables[("acme", "orders")]
-
-    assert with_block.contract is not None and without.contract is not None
-    assert sd.canonical_contract_document(with_block.contract) == sd.canonical_contract_document(
-        without.contract
-    ), "the block must not reach the canonical contract document"
-    for name in (
-        "contract_digest",
-        "source_schema_digest",
-        "published_schema_digest",
-        "ruleset_digest",
-    ):
-        assert getattr(with_block, name) == getattr(without, name), (
-            f"{name} moved when a staging increment block was declared"
-        )
-    assert "staging_increment" not in json.dumps(
-        sd.canonical_contract_document(with_block.contract)
-    )
-
-
-def test_the_typed_loader_reads_the_staging_increment_block_as_a_closed_model() -> None:
-    """An unknown key, a missing acknowledgment and a false one each fail in the typed
-    loader too, naming the file and table -- the two loaders read the same block
-    independently and neither feeds the other."""
-    cases = (
-        ({"lookback_minutes": 1440, "effective_advances_on_redelivery": True, "unique_key": ["x"]}, "unique_key"),
-        ({"lookback_minutes": 1440}, "effective_advances_on_redelivery"),
-        ({"lookback_minutes": 1440, "effective_advances_on_redelivery": False}, "effective_advances_on_redelivery"),
-        ({"effective_advances_on_redelivery": True}, "lookback_minutes"),
-        ({"lookback_minutes": 0, "effective_advances_on_redelivery": True}, "lookback_minutes"),
-    )
-    for block, expected in cases:
+    for landing in ({"kind": "seed"}, None):
         table = _production_table()
-        table["staging_increment"] = block
+        if landing is not None:
+            table["landing"] = landing
+        table["staging_increment"] = {
+            "lookback_minutes": 1440,
+            "effective_advances_on_redelivery": True,
+        }
         with tempfile.TemporaryDirectory() as tmp:
             ctx = _estate(Path(tmp), tables={"orders": table})
             try:
@@ -1776,24 +1635,68 @@ def test_the_typed_loader_reads_the_staging_increment_block_as_a_closed_model() 
             except ValueError as error:
                 message = str(error)
             else:
-                raise AssertionError(f"expected {block!r} to fail the typed loader")
+                raise AssertionError(
+                    f"a staging increment block on landing {landing!r} was accepted"
+                )
         assert "staging_increment" in message, message
-        assert expected in message, message
+        assert "orders" in message, message
+        assert "no route consumes this block" in message, message
 
-    valid = _production_table()
-    valid["staging_increment"] = {
-        "lookback_minutes": 1,
-        "effective_advances_on_redelivery": True,
-    }
+    # The same table without the block still loads, so the refusal is the
+    # key and nothing else.
+    plain = _production_table()
     with tempfile.TemporaryDirectory() as tmp:
-        ctx = _estate(Path(tmp), tables={"orders": valid})
+        ctx = _estate(Path(tmp), tables={"orders": plain})
         typed = sd.load_typed_declarations(ctx)
     assert typed.tables[("acme", "orders")].kind == "production"
 
 
+def test_a_canonical_mappings_block_is_refused_naming_the_file() -> None:
+    """The block was checked against a reference model by the route that read
+    these declarations, and that route is gone. A canonical product declares
+    which entity of the reference model each of its entities reads, and
+    `ergasterion validate-canonical` proves that; a source declaration
+    carrying the old block is read by nothing, so it is refused rather than
+    accepted in silence."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _estate(Path(tmp), tables={"orders": _production_table()})
+        declaration = next(ctx.declarations_dir.glob("*.yml"))
+        document = yaml.safe_load(declaration.read_text(encoding="utf-8"))
+        document["canonical_mappings"] = {
+            "bogus_entity": {"attributes": {"not_a_column": "not_an_attribute"}}
+        }
+        declaration.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+        try:
+            sd.load_typed_declarations(ctx)
+        except ValueError as error:
+            message = str(error)
+        else:
+            raise AssertionError("a canonical_mappings block was accepted")
+    assert "canonical_mappings" in message, message
+    assert declaration.name in message, message
+    assert "no route consumes this block" in message, message
+    assert "validate-canonical" in message, message
+
+
+def test_no_shipped_source_declaration_carries_a_canonical_mappings_block() -> None:
+    """The refusal above would stop this repository's own estate loading if
+    one of its source declarations still carried the block."""
+
+    declarations = sorted((REPO_ROOT / "declarations").glob("*.yml"))
+    assert declarations, "expected the repository's own source declarations"
+    carrying = [
+        path.name
+        for path in declarations
+        if "canonical_mappings"
+        in (yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+    ]
+    assert carrying == [], carrying
+
+
 def test_no_template_owns_semantic_validation() -> None:
     """Contract semantics live in this compiler alone. Pipeline-rendering
-    templates do not read Bronze contract facts, and no template raises a
+    templates do not read Landing contract facts, and no template raises a
     validation error of its own. The declaration seeder is an authoring surface:
     it necessarily writes a safe draft delivery block and names the fields a
     person must complete, but it does not decide whether that contract is valid."""
@@ -1803,14 +1706,14 @@ def test_no_template_owns_semantic_validation() -> None:
         "publication_mode", "estate_namespace", "schedule_lateness",
     )
     raising_tokens = ("{{ raise", "ValueError", "{% do raise")
-    templates = sorted((emit.REPO_ROOT / "ergasterion" / "templates").glob("*.j2"))
+    templates = sorted((Path(__file__).resolve().parents[2] / "ergasterion" / "templates").glob("*.j2"))
     assert templates, "expected the packaged Jinja templates to exist"
     for template in templates:
         text = template.read_text(encoding="utf-8")
         if template.name != "declaration_seed.yml.j2":
             for token in contract_tokens:
                 assert token not in text, (
-                    f"{template.name} references the Bronze contract fact {token!r}; contract "
+                    f"{template.name} references the Landing contract fact {token!r}; contract "
                     "semantics belong to ergasterion.source_delivery"
                 )
         for token in raising_tokens:
@@ -1859,20 +1762,17 @@ TESTS = [
     test_timezone_data_version_is_pinned_to_the_installed_release,
     test_production_declaration_compiles_to_a_digested_contract,
     test_production_requires_every_product_fact,
-    test_production_requires_the_estate_namespace_and_a_domain_membership,
-    test_a_product_claimed_by_two_domains_fails_naming_both,
     test_a_source_landing_needs_an_explicit_draft_or_production_delivery,
     test_a_draft_delivery_resolves_to_an_explicit_placeholder,
-    test_seed_tables_contribute_no_bronze_contract,
+    test_seed_tables_contribute_no_landing_contract,
     test_source_delivery_defaults_overlay_and_a_mode_switch_clears_mode_specific_keys,
     test_the_loader_rejects_a_projection_column_it_cannot_type,
     test_estate_namespace_absence_is_valid_and_a_malformed_file_is_not,
-    test_the_committed_estate_carries_its_namespace_and_no_bronze_products_yet,
-    test_the_legacy_loader_reads_a_bronze_declaration_unchanged,
-    test_the_legacy_loader_still_rejects_a_projection_column_with_neither_key,
-    test_the_committed_estate_generates_byte_identical_output,
-    test_a_staging_increment_block_leaves_every_contract_digest_equal,
-    test_the_typed_loader_reads_the_staging_increment_block_as_a_closed_model,
+    test_estate_namespace_loads_beside_every_sibling_key_the_product_route_owns,
+    test_the_committed_estate_carries_its_namespace_and_no_landing_products_yet,
+    test_a_staging_increment_block_is_refused_naming_the_file_and_the_table,
+    test_a_canonical_mappings_block_is_refused_naming_the_file,
+    test_no_shipped_source_declaration_carries_a_canonical_mappings_block,
     test_no_template_owns_semantic_validation,
 ]
 

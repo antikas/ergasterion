@@ -1,0 +1,64 @@
+# A self-contained estate that exercises every transformation pattern the dbt
+# translator renders, plus the `declared` shape, end to end: emission, the
+# per-adapter parse gate, the dialect gate and an executed DuckDB build.
+#
+# Its layer labels are "shaped" and "served": names the engine has never seen
+# and never interprets. Each is a key into the tables below.
+#
+# The translator table is the whole point of owner ruling R1. dbt is named for
+# the seven patterns it renders and for the one registered shape. The four
+# publication-shaped patterns are the publication translator's under every
+# label. data_validation is split deliberately: the "shaped" label gives it to
+# dbt, which renders the checked and quarantine relations and the generated
+# tests, and the "served" label leaves it with the ingestion-runtime
+# translator, which also registers that capability. That split is this
+# estate's proof that the table, not the engine, decides the owner, and it is
+# what lets the served product state its relation as one select body: a body
+# renders no relation for a validation occurrence to quarantine against, so
+# the two together fail closed. A pattern named for dbt that dbt has no
+# capability for fails closed at routing, naming the pattern and the
+# adapter.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    shaped:
+      profiles: [derivation]
+    served:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    shaped:
+      batch_transfer: dbt
+      schema_transform: dbt
+      calculated_fields: dbt
+      data_enrichment: dbt
+      data_filtering: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_validation: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    served:
+      batch_transfer: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_validation: local-ingestion
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

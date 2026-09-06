@@ -1,0 +1,38 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.vantora_gp",
+  "relations": {
+    "auxiliary": [
+      "investment.vantora_gp__checked",
+      "investment.vantora_gp__current",
+      "investment.vantora_gp__quarantine",
+      "investment.vantora_gp__sla"
+    ],
+    "published": [
+      "investment.vantora_gp"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[3]:calculated_fields",
+      "steps[8]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

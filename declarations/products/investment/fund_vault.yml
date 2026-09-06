@@ -1,0 +1,219 @@
+# The vault over the curated entity (architecture section 6, the data_vault
+# row). The composition resolves the conformed records into one row per
+# entity; the shape models that as hubs, satellites, a business-vault
+# surviving record and a point-in-time relation, and the contract publishes
+# every one of them (owner ruling R4). A consumer names the one it reads.
+#
+# The resolution is probabilistic. Two records are one fund when they
+# share a legal entity identifier or the identifier the systems share.
+# Where neither is stated the records stay unmerged, and every pair of
+# them that could be the same fund is scored and banded into the
+# pending-key evidence relation, so what the declared keys could not
+# settle is visible rather than guessed.
+#
+# The band edges are the estate's: a pair at or above the upper edge
+# matches on the evidence, a pair below the lower edge does not, and a
+# pair between them is for a person to decide.
+#
+# The identity cross-reference is read before resolution so every record
+# carries it and the surviving value is one the whole cluster agreed on.
+# The resolution never reads it.
+product:
+  name: fund_vault
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: integration
+  owner: investment-domain
+
+sources:
+  - contract: investment.fund_conformed@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_name
+        - source_family_name
+        - source_vehicle_type
+        - source_lei
+        - source_external_id
+        - source_gp_id
+        - source_gp_name
+        - source_gp_lei
+        - source_asset_class
+        - source_strategy
+        - source_vintage_year
+        - source_committed_capital_usd
+        - source_currency
+        - source_domicile
+        - source_status
+        - source_reported_on
+        - fund_source_system
+        - fund_identity_key
+        - fund_normalised_name
+        - fund_normalised_gp_name
+        - fund_lei
+        - fund_external_id
+        - fund_gp_lei
+        - fund_business_key
+        - fund_gp_lookup_key
+        - gp_business_key
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: source_record_id, to: fund_record_id, type: string}
+      - {from: source_fund_id, to: fund_source_id, type: string}
+      - {from: source_name, to: fund_name, type: string}
+      - {from: source_family_name, to: fund_family_name, type: string}
+      - {from: source_vehicle_type, to: fund_vehicle_type, type: string}
+      - {from: source_gp_id, to: fund_gp_source_id, type: string}
+      - {from: source_gp_name, to: fund_gp_name, type: string}
+      - {from: source_asset_class, to: fund_asset_class, type: string}
+      - {from: source_strategy, to: fund_strategy, type: string}
+      - {from: source_vintage_year, to: fund_vintage_year, type: integer}
+      - {from: source_committed_capital_usd, to: fund_committed_capital_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: source_currency, to: fund_currency, type: string}
+      - {from: source_domicile, to: fund_domicile, type: string}
+      - {from: source_status, to: fund_status, type: string}
+      - {from: source_reported_on, to: fund_reported_on, type: date}
+      - {from: gp_business_key, to: fund_gp_business_key, type: string}
+      - {from: fund_gp_lookup_key, drop: true}
+      - {from: source_lei, drop: true}
+      - {from: source_external_id, drop: true}
+      - {from: source_gp_lei, drop: true}
+  - pattern: data_enrichment
+    lookups:
+      - contract: reference.fund_identity@1
+        "on": {fund_identity_key: fund_identity_key}
+        fields: [fund_external_identity]
+        no_match: null
+  - pattern: data_curation
+    entity: fund
+    resolution:
+      strategy: probabilistic
+      keys: [fund_lei, fund_external_id]
+      record_key: fund_identity_key
+      merge_iterations: 3
+      scoring:
+        rule: investment_entity_match_score_v1
+        rule_version: 1
+        compare: [fund_normalised_name, fund_asset_class, fund_reported_on]
+        block_on: [fund_asset_class]
+        review_band:
+          lower: 0.65
+          upper: 0.85
+    survivorship:
+      fund_record_id: most_recent
+      fund_source_id: most_recent
+      fund_source_system: most_recent
+      fund_identity_key: most_recent
+      fund_name: most_recent
+      fund_normalised_name: most_recent
+      fund_family_name: first_non_null
+      fund_vehicle_type: first_non_null
+      fund_lei: first_non_null
+      fund_external_id: first_non_null
+      fund_business_key: first_non_null
+      fund_gp_source_id: first_non_null
+      fund_gp_name: most_recent
+      fund_gp_lei: first_non_null
+      fund_normalised_gp_name: most_recent
+      fund_gp_business_key: first_non_null
+      fund_asset_class: most_recent
+      fund_strategy: most_recent
+      fund_vintage_year: most_recent
+      fund_committed_capital_usd: most_recent
+      fund_currency: first_non_null
+      fund_domicile: first_non_null
+      fund_status: most_recent
+      fund_reported_on: most_recent
+      fund_external_identity: first_non_null
+    precedence:
+      source_column: fund_source_system
+      recency_column: fund_reported_on
+      source_priority: [vantora, chrono, meridex, portiq]
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - {field: fund_business_key, not_null: true}
+      - {field: fund_business_key, unique: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The fund vault: identity, the manager association, payload versions, the surviving record and the point-in-time relation over them."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: data_vault
+  shape_config:
+    hubs:
+      - name: fund
+        business_key: [fund_business_key]
+        description: "The fund as the estate identifies one."
+      - name: gp
+        business_key: [fund_gp_business_key]
+        description: "The manager a fund names, as the estate identifies one."
+    links:
+      - name: fund_gp
+        hubs: [fund, gp]
+        description: "The manager that runs a fund."
+    satellites:
+      - name: fund_detail
+        kind: current
+        parent: fund
+        payload: [fund_name, fund_family_name, fund_vehicle_type, fund_asset_class, fund_strategy, fund_gp_business_key, fund_domicile, fund_currency]
+        change_column: fund_reported_on
+        hashdiff_exclude: [fund_domicile, fund_currency]
+        description: "What the fund is, versioned when any of it changes."
+      - name: fund_observed
+        kind: history
+        parent: fund
+        payload: [fund_status, fund_vintage_year, fund_committed_capital_usd, fund_external_identity, fund_external_id, fund_lei, fund_domicile, fund_currency]
+        change_column: fund_reported_on
+        hashdiff_exclude: [fund_domicile, fund_currency]
+        description: "Every delivered observation of the fund's standing and size."
+    business_vault:
+      - name: fund
+        hub: fund
+        satellites: [fund_detail, fund_observed]
+        attributes:
+          - {name: fund_name, strategy: most_recent}
+          - {name: fund_asset_class, strategy: most_recent}
+          - {name: fund_strategy, strategy: most_recent}
+          - {name: fund_gp_business_key, strategy: most_recent}
+          - {name: fund_vintage_year, strategy: most_recent}
+          - {name: fund_committed_capital_usd, strategy: most_recent}
+          - {name: fund_status, strategy: most_recent}
+          - {name: fund_external_identity, strategy: first_non_null}
+          - {name: fund_lei, strategy: first_non_null}
+          - {name: fund_external_id, strategy: first_non_null}
+          - {name: fund_domicile, strategy: most_recent}
+          - {name: fund_currency, strategy: first_non_null}
+        description: "One surviving record per fund."
+    point_in_time:
+      - name: fund
+        hub: fund
+        satellites: [fund_detail, fund_observed]
+        description: "Each fund's satellites as they stood at every instant the vault stores."
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

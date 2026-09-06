@@ -1,9 +1,9 @@
-"""Closed Pydantic projections of the frozen Bronze portable IDL, runtime-binding half:
+"""Closed Pydantic projections of the frozen Landing portable IDL, runtime-binding half:
 port bindings, deployment capabilities, the runtime manifest and interface readiness.
 
-Builds on ``ergasterion.framework.bronze_contract`` (the vocabulary and
+Builds on ``ergasterion.framework.landing_contract`` (the vocabulary and
 contract-declaration half); ``ergasterion.ingestion.records`` builds on both this module
-and that one. See ``bronze_contract``'s module docstring for the shared design notes
+and that one. See ``landing_contract``'s module docstring for the shared design notes
 (structural-only scope, no file I/O at import time, IDL pin).
 """
 
@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     BackoffKind,
     BackupRestoreCapability,
     CapabilityCodecKind,
@@ -51,7 +51,7 @@ class PortBinding(ClosedModel):
 
 
 class RuntimePortBindings(ClosedModel):
-    """One binding per Bronze runtime port kind. Every field is a required
+    """One binding per Landing runtime port kind. Every field is a required
     ``PortBinding``: a deployment binds all nine ports, never a subset."""
 
     source_connector: PortBinding
@@ -128,7 +128,7 @@ class RetentionBinding(ClosedModel):
 
 
 class RuntimeBinding(ClosedModel):
-    """One environment's complete deployment binding for one Bronze product: which
+    """One environment's complete deployment binding for one Landing product: which
     adapters implement each port, which target relations the projection writes to, and
     the operating envelope (scheduler cadence, outbox retry, resource ceilings,
     retention). IDL schema token ``ergasterion.runtime-binding/v1``."""
@@ -185,7 +185,7 @@ class ProtectionCapabilities(ClosedModel):
 
 
 class AdapterCapabilities(ClosedModel):
-    """The exact capability envelope an adapter/translator declares for one Bronze
+    """The exact capability envelope an adapter/translator declares for one Landing
     port. IDL schema token ``ergasterion.adapter-capabilities/v1``."""
 
     schema_: Literal["ergasterion.adapter-capabilities/v1"] = Field(alias="schema")
@@ -294,7 +294,7 @@ class DeploymentLifecycleRequest(ClosedModel):
 # carry a ``StreamState`` field; ``StreamState`` belongs to the delivery/runtime-state
 # record family and is defined in ``ergasterion.ingestion.records``, which imports this
 # module -- so both transition-result records are defined there instead, keeping the
-# ``bronze_contract`` -> ``runtime_binding`` -> ``ingestion.records`` chain one-way.
+# ``landing_contract`` -> ``runtime_binding`` -> ``ingestion.records`` chain one-way.
 
 
 # --------------------------------------------------------------------------- handoff carrier that needs InterfaceReadiness

@@ -1,0 +1,86 @@
+# One source system's lane onto the schema the fund products share.
+#
+# It keeps nothing of that system's own column names past this point. The
+# delivered value of every identifier stays beside the value the estate
+# resolves on, which is the delivered one with a blank read as nothing, so
+# two funds neither system identifies are never merged on an empty string.
+#
+# CHRONO states every fund attribute and dates its snapshot.
+product:
+  name: chrono_fund
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_fund_extract@1
+    expect:
+      fields:
+        - chrono_row_uid
+        - chrono_vehicle_code
+        - vehicle_display_name
+        - legal_entity_identifier
+        - vendor_crosswalk_id
+        - manager_master_code
+        - manager_name_text
+        - manager_lei
+        - snapshot_date
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: chrono_row_uid, not_null: true}
+      - {field: vehicle_display_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: chrono_row_uid, to: source_record_id, type: string}
+      - {from: chrono_vehicle_code, to: source_fund_id, type: string}
+      - {from: vehicle_display_name, to: source_name, type: string}
+      - {from: vehicle_group_name, to: source_family_name, type: string}
+      - {from: vehicle_form, to: source_vehicle_type, type: string}
+      - {from: legal_entity_identifier, to: source_lei, type: string}
+      - {from: vendor_crosswalk_id, to: source_external_id, type: string}
+      - {from: manager_master_code, to: source_gp_id, type: string}
+      - {from: manager_name_text, to: source_gp_name, type: string}
+      - {from: manager_lei, to: source_gp_lei, type: string}
+      - {from: private_market_bucket, to: source_asset_class, type: string}
+      - {from: investment_style, to: source_strategy, type: string}
+      - {from: launch_year, to: source_vintage_year, type: integer}
+      - {from: commitment_amount_usd, to: source_committed_capital_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: reporting_ccy, to: source_currency, type: string}
+      - {from: domicile_iso2, to: source_domicile, type: string}
+      - {from: lifecycle_state, to: source_status, type: string}
+      - {from: snapshot_date, to: source_reported_on, type: date}
+  - pattern: calculated_fields
+    fields:
+      - {name: fund_source_system, type: string, expression: "'chrono'"}
+      - {name: fund_identity_key, type: string, expression: "concat('chrono', ':', source_record_id)"}
+      - {name: fund_normalised_name, type: string, rule: investment_normalised_name_v1, rule_version: 1}
+      - {name: fund_normalised_gp_name, type: string, rule: investment_normalised_gp_name_v1, rule_version: 1}
+      - {name: fund_lei, type: string, expression: "nullif(trim(source_lei), '')"}
+      - {name: fund_external_id, type: string, expression: "nullif(trim(source_external_id), '')"}
+      - {name: fund_gp_lei, type: string, expression: "nullif(trim(source_gp_lei), '')"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Funds as CHRONO states them, on the schema the four fund feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

@@ -1,0 +1,7 @@
+ods_one:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/ods_one.duckdb
+      threads: 1

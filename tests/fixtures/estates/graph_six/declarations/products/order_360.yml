@@ -1,0 +1,79 @@
+# Consolidation product, generation "consolidating": both of its source
+# contracts are published by non-landing products. Its post-stage validation
+# carries the reconciliation rule architecture section 8 requires of a
+# consolidated product: a row-count proof against the two upstream contracts
+# it consumes.
+#
+# It also declares the checkpoint flag, so its materialisation intent is
+# table and its relation is registered in the emitted graph.
+product:
+  name: order_360
+  domain: retail
+  version: "1.0"
+  layer: shaped
+  profile: consolidation
+  owner: retail-domain
+
+sources:
+  - contract: retail.order@1
+    expect:
+      fields: [order_id, customer_id]
+  - contract: retail.product_catalogue@1
+    expect:
+      fields: [sku]
+    conform:
+      mapping:
+        - {from: category_name, to: catalogue_category_name, type: string}
+
+# How the two sources combine (architecture section 8): their columns side
+# by side on the stock key. The order product already carries a
+# category_name of its own, and a merge never picks one of two, so the
+# catalogue's is conformed to a name of its own as it is read.
+combine:
+  method: merge
+  keys: [sku]
+  join: outer
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    rules:
+      - field: order_id
+        not_null: true
+  - pattern: data_curation
+    entity: order
+    resolution:
+      strategy: deterministic
+      keys: [order_id]
+    survivorship:
+      order_total: most_recent
+  - pattern: data_validation
+    stage: post
+    rules:
+      - field: order_id
+        unique: true
+      - reconcile:
+          metric: row_count
+          contracts: [retail.order@1, retail.product_catalogue@1]
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Consolidated order view across the conformed order and the derived catalogue."
+    ownership: retail-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "hourly"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential
+  checkpoint: true

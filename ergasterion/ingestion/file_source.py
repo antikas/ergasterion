@@ -2,7 +2,7 @@
 
 The connector receives files; it does not poll or extract from a network source.
 It computes transport and CDC fingerprints from exact received bytes before any
-typed parse, and never writes delivery state or Bronze rows. ``file_ports_factory``
+typed parse, and never writes delivery state or Landing rows. ``file_ports_factory``
 hands this connector plus the local raw and scratch stores to the packaged
 conformance runner.
 """
@@ -12,7 +12,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from ergasterion.framework.bronze_contract import BronzeProductContract, ContentEncoding, MediaType
+from ergasterion.framework.landing_contract import LandingProductContract, ContentEncoding, MediaType
 from ergasterion.ingestion.codecs import (
     decode_transport,
     frame_sequence_digest,
@@ -63,7 +63,7 @@ class FileSource:
     def __init__(
         self,
         *,
-        contract: BronzeProductContract | None = None,
+        contract: LandingProductContract | None = None,
         key_resolver=None,
         max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES,
         max_uncompressed_bytes: int = DEFAULT_MAX_UNCOMPRESSED_BYTES,
@@ -189,7 +189,7 @@ class FileSource:
                     raise PortError("invalid_manifest", "CDC event_count / declared_row_count disagree with framed events")
         return input
 
-    def _check_sidecar_shape(self, manifest: DeliveryManifest, contract: BronzeProductContract) -> None:
+    def _check_sidecar_shape(self, manifest: DeliveryManifest, contract: LandingProductContract) -> None:
         mode = _wire(contract.delivery.mode)
         progress = manifest.progress_claim
         if mode == "cdc":
@@ -223,7 +223,7 @@ class FileSource:
         if self.contract is not None and manifest.logical_identity != self.contract.logical_identity:
             raise PortError("invalid_manifest", "sidecar logical_identity does not match the contract")
 
-    def _require_snapshot_attestation(self, manifest: DeliveryManifest, contract: BronzeProductContract) -> None:
+    def _require_snapshot_attestation(self, manifest: DeliveryManifest, contract: LandingProductContract) -> None:
         attestation = manifest.snapshot_attestation
         if attestation is None:
             raise PortError("invalid_manifest", "snapshot sidecar requires snapshot_attestation")
@@ -293,7 +293,7 @@ class FileSource:
 
 def file_ports_factory(
     vector: dict,
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     payload_handle: str,
     *,
     directory: str | Path | None = None,

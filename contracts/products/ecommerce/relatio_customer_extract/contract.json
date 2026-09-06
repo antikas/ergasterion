@@ -1,0 +1,97 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The contact system's customer extract as it was delivered. It covers only the customers that system holds, which is why the products downstream must survive an attribute it never states.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "relatio_customer_extract",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.relatio_customer_extract_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "relatio_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "relatio_record_id must be unique",
+      "dimension": "uniqueness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "relatio_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "relatio_customer_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "loyalty_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "email",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "full_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "phone",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "address_line",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "city",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "postal_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_status",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "as_of_date",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.relatio_customer_extract"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

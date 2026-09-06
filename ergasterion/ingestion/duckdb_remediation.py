@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ergasterion.framework.bronze_contract import RemediationDecisionKind
-from ergasterion.ingestion.duckdb_bronze import (
+from ergasterion.framework.landing_contract import RemediationDecisionKind
+from ergasterion.ingestion.duckdb_landing import (
     DuckDBStore,
     cursor_token,
     dumps,
@@ -46,7 +46,7 @@ def _locator_key(locator) -> str:
 
 
 class DuckDBRemediationRepository:
-    """``RemediationRepositoryPort`` over the shared DuckDB Bronze file."""
+    """``RemediationRepositoryPort`` over the shared DuckDB Landing file."""
 
     def __init__(self, store: DuckDBStore | str | Path) -> None:
         self.store = store if isinstance(store, DuckDBStore) else DuckDBStore(store)

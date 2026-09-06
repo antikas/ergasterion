@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/schema_transform.schema.json",
+  "title": "schema_transform step configuration (architecture section 4)",
+  "description": "Field mapping: rename, cast, flatten, drop, null handling. A mapping entry either maps 'from' to 'to' with a neutral 'type' (a rename, a cast, or both), or drops 'from' with 'drop: true' and names no target. 'type' is shaped loosely here (string or object); the neutral-type system itself -- the fixed scalar set, decimal precision/scale, and estate-enabled structured types -- is enforced once, in ergasterion/framework/declaration.py, not duplicated across schema files.",
+  "type": "object",
+  "required": ["pattern", "mapping"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "schema_transform" },
+    "mapping": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["from"],
+        "additionalProperties": false,
+        "properties": {
+          "from": { "type": "string", "minLength": 1 },
+          "to": { "type": "string", "minLength": 1 },
+          "type": { "type": ["string", "object"] },
+          "drop": { "const": true }
+        },
+        "oneOf": [
+          { "required": ["to", "type"], "not": { "required": ["drop"] } },
+          { "required": ["drop"], "not": { "anyOf": [{ "required": ["to"] }, { "required": ["type"] }] } }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# The estate's own named-rule catalogue: one neutral signature per rule
+# (architecture section 3.2). The derived catalogue product references
+# margin_band_v1 by name and version; the implementations manifest names,
+# per adapter, the dispatch macro that implements it, so the completeness
+# gate can resolve an estate-declared rule the same way it resolves the
+# engine's own reference registry.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: margin_band_v1
+    version: 1
+    description: >-
+      Band a catalogue line by its margin, from the line's cost and list
+      price, into the estate's declared margin bands.
+    inputs:
+      - {name: unit_cost, type: {name: decimal, precision: 12, scale: 2}}
+      - {name: list_price, type: {name: decimal, precision: 12, scale: 2}}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: margin_band_v1}
+      - {translator: dbt, adapter: bigquery, macro: margin_band_v1}

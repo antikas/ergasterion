@@ -7,10 +7,21 @@
 adapter: bigquery
 kind: deployment
 budgets:
-  # Consecutive view levels a single statement expands. Computation layers
-  # materialise as tables; a view is a one-deep interface artefact at a
-  # declared boundary (declarations/targets/interfaces.yml).
-  max_view_chain_depth: 1
+  # Consecutive view levels a single statement expands. A computation layer
+  # materialises as a table and an interface artefact is one view deep at a
+  # declared boundary (declarations/targets/interfaces.yml), so the ceiling
+  # was one while every relation in the estate was one of those two things.
+  #
+  # A product route relation is neither. Each occurrence that cuts a
+  # product's chain renders a view of its own between the relation the
+  # composition opens with and the table the product publishes, and the
+  # deepest chain this estate declares is a curated product validated both
+  # before and after its resolution: the published table reads the
+  # post-validation view, which reads the resolution view, which reads the
+  # pre-validation view, which reads a table. Three levels is that chain,
+  # measured rather than allowed for, so a fourth means a new chain-cutting
+  # occurrence somebody looks at rather than a number somebody raises.
+  max_view_chain_depth: 3
   # Source bytes of one model statement.
   max_statement_bytes: 262144
   # Relation identifiers: model, seed, and source table names.

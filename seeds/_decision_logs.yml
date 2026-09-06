@@ -1,0 +1,36 @@
+# The two append-only human-decision logs, declared as dbt sources and nothing else.
+#
+# Both relations are created idempotently by the on-run-start hooks in
+# dbt_project.yml (macros/entity_resolution_decisions.sql) and are never a dbt
+# model, seed or snapshot, so no `dbt build` truncates a decision somebody made.
+# tests/assert_deal_decision_log_survives_rebuild.sql asserts exactly that, and
+# tests/assert_er_decisions_log_ddl_unchanged.sql pins the rendered DDL text.
+#
+# They live here, under seed-paths, because the models tree carries only what the
+# product route generates. A source declaration is estate configuration, not a
+# generated artefact.
+version: 2
+
+sources:
+  - name: entity_resolution_raw
+    schema: "{{ target.schema }}_RAW"
+    tables:
+      - name: entity_resolution_decisions_log
+        description: >
+          Append-only analyst-decision log for the review queue. One row per
+          Approve/Reject action a steward records against a pair the resolution
+          left unmerged -- INSERT only, never UPDATE/DELETE, so re-adjudicating a
+          pair appends a new row rather than overwriting the prior one.
+
+  - name: deal_decision_raw
+    schema: "{{ target.schema }}_RAW"
+    tables:
+      - name: deal_decision_log
+        description: >
+          Append-only investment-authorisation decision log. One row per decision
+          event -- INSERT only, never UPDATE/DELETE, so a re-decided item appends a
+          new row rather than overwriting the prior one. decision is one of
+          approve, approve_with_conditions, decline and defer; conditions carries
+          any attached conditions; actor and decided_at record who decided and when;
+          external_deal_id is the item's business key; decision_id is a
+          business-assigned identifier for the decision event itself.

@@ -1,0 +1,6 @@
+# This estate's declared interface boundaries: the model paths whose
+# artefacts may materialise as views. It declares none. Every relation this
+# estate's products publish materialises as a table, and the budget beside
+# this file is what governs the views the translator renders privately under
+# a product's own namespace.
+view_layers: []

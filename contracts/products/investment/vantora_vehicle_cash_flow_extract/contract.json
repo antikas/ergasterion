@@ -1,0 +1,80 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The VANTORA book-of-record legal vehicle cash flow feed as it was delivered, one row per delivered vehicle cash flow.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "vantora_vehicle_cash_flow_extract",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.vantora_vehicle_cash_flow_extract_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "vehicle_cash_flow_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "vehicle_cash_flow_id must be unique",
+      "dimension": "uniqueness"
+    },
+    {
+      "description": "vehicle_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "cash_flow_date must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "vehicle_cash_flow_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "cash_flow_date",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "cash_flow_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "direction",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "amount_usd",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.vantora_vehicle_cash_flow_extract"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

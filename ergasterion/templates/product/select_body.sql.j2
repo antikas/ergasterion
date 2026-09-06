@@ -1,0 +1,17 @@
+{{ generated_header }}
+{{ model_config }}
+
+with
+{{ source_cte.name }} as (
+{{ source_cte.body }}
+),
+{{ body_cte_name }} as (
+{{ select_body }}
+from {{ source_cte_name }}
+)
+
+select
+{%- for column in columns %}
+    {{ column }}{{ "," if not loop.last }}
+{%- endfor %}
+from {{ body_cte_name }}

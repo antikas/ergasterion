@@ -1,0 +1,39 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "ecommerce.mercaro_order",
+  "relations": {
+    "auxiliary": [
+      "ecommerce.mercaro_order__checked",
+      "ecommerce.mercaro_order__current",
+      "ecommerce.mercaro_order__quarantine",
+      "ecommerce.mercaro_order__sla"
+    ],
+    "published": [
+      "ecommerce.mercaro_order"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[3]:calculated_fields",
+      "steps[4]:data_enrichment",
+      "steps[9]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

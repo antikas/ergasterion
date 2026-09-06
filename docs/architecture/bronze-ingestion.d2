@@ -1,7 +1,7 @@
 # docs/architecture/bronze-ingestion.d2
 #
-# Bronze's received-batch boundary: preserve, land, validate, publish/quarantine,
-# and the five named interfaces every Bronze product exposes. Rendered with:
+# The landing received-batch boundary: preserve, land, validate, publish or quarantine,
+# and the five named interfaces every landing product exposes. Rendered with:
 #   d2 --layout elk docs/architecture/bronze-ingestion.d2 docs/architecture/bronze-ingestion.svg
 # The committed SVG is generated from this source with the command above.
 
@@ -12,7 +12,7 @@ canvas: {
   near: top-left
   direction: right
 
-  contract: "Bronze Product Contract\n(schema, delivery mode, quality rules)" {
+  contract: "Landing Product Contract\n(schema, delivery mode, quality rules)" {
     class: contract
   }
 

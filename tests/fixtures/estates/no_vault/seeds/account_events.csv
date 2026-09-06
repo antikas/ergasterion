@@ -1,0 +1,5 @@
+aid,acct,holder,bal,st
+AE-01,ACC-100,Ada Byron,120,active
+AE-02,ACC-101,Grace Hopper,4200,active
+AE-03,ACC-102,Alan Turing,0,closed
+AE-04,ACC-103,Edsger Dijkstra,850,active

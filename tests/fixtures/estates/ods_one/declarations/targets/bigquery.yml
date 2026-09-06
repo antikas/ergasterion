@@ -1,0 +1,18 @@
+# Structural budget declaration for the bigquery deployment target, which
+# this fixture estate gates offline.
+adapter: bigquery
+kind: deployment
+budgets:
+  # Consecutive view levels a single statement expands. Every relation
+  # this estate's products publish materialises as a table; the one view
+  # level either product renders is data_validation's checked relation,
+  # which the product's own base table reads. The ods shape's entity,
+  # cross-reference and audit relations all read that base table, not the
+  # view, so none of them adds a further level.
+  max_view_chain_depth: 1
+  max_statement_bytes: 262144
+  max_relation_identifier_chars: 255
+  max_column_identifier_chars: 255
+  max_description_bytes: 1024
+  max_seed_rows: 10000
+  max_seed_bytes: 10485760

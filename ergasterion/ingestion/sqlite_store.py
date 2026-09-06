@@ -22,7 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     AttemptState,
     ContractLifecycleAction,
     DeleteStrategy,

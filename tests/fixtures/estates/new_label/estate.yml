@@ -1,0 +1,87 @@
+# An estate whose labels the engine has never seen, and whose second profile
+# the engine does not ship (architecture sections 5, 11; check 4).
+#
+# "harmonised" and "outbound" appear nowhere in the engine. Neither does the
+# "handover" profile below: it is this estate's own composition, declared
+# here as data and held to the same fifteen-pattern registry the reference
+# profiles are. Adding either meant no engine change, which is the whole
+# claim: the engine reads a label as a key into the tables below and a
+# profile as a composition to enforce, never as meaning.
+#
+# The "harmonised" label admits exactly one profile, so its product omits
+# `profile`; "outbound" admits two, so its product names the one it composes.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  profiles:
+    handover:
+      schema: ergasterion.profile/v1
+      name: handover
+      description: Hand a curated read to a named consumer without registering a schema version
+      mandatory:
+        - batch_transfer
+        - data_validation
+        - data_contracts
+        - lineage_capture
+        - metadata_capture
+        - data_publish
+        - checkpoint_retries
+      optional:
+        - calculated_fields
+        - data_filtering
+        - data_aggregation
+      forbidden:
+        - batch_ingestion
+        - data_curation
+        - data_enrichment
+        - schema_transform
+        - schema_publish
+      ordering:
+        - batch_transfer
+        - data_validation
+        - calculated_fields
+        - data_filtering
+        - data_aggregation
+        - data_contracts
+        - lineage_capture
+        - metadata_capture
+        - data_publish
+        - checkpoint_retries
+  labels:
+    harmonised:
+      profiles: [derivation]
+    outbound:
+      profiles: [handover, serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    harmonised:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_filtering: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    outbound:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      metadata_capture: publication
+      lineage_capture: publication

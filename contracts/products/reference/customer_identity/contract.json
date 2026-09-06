@@ -1,0 +1,62 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "The customer identity each source system's customer record belongs to, keyed by the system and record together.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "reference",
+    "major": 1,
+    "name": "customer_identity",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "reference.customer_overlap_manifest@1"
+  ],
+  "quality": [
+    {
+      "description": "source_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "true_customer_external_id must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "identity_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "identity_source_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_identity_note",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_identity_key",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "reference.customer_identity"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

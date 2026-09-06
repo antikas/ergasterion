@@ -1,0 +1,70 @@
+# The pipeline stage each deal sat in, one row per version, effective
+# from a date, with the stage's own name and its place in the funnel read
+# from the classification catalogue.
+product:
+  name: deal_stage
+  domain: reference
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: reference-domain
+
+sources:
+  - contract: reference.deal_stage_history@1
+    expect:
+      fields:
+        - entity_type
+        - entity_external_id
+        - classification_type_code
+        - classification_value_code
+        - effective_from
+        - record_source
+        - load_datetime
+        - stage_recorded_at
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: entity_external_id, not_null: true}
+      - {field: effective_from, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: entity_type, to: stage_entity_type, type: string}
+      - {from: entity_external_id, to: deal_external_identity, type: string}
+      - {from: classification_type_code, to: stage_type_code, type: string}
+      - {from: classification_value_code, to: stage_value_code, type: string}
+      - {from: effective_from, to: stage_effective_from, type: date}
+      - {from: record_source, to: stage_record_source, type: string}
+      - {from: load_datetime, to: stage_load_datetime, type: timestamp}
+      - {from: stage_recorded_at, to: stage_recorded_at, type: timestamp}
+  - pattern: calculated_fields
+    fields:
+      - {name: stage_key, type: string, expression: "concat(stage_type_code, ':', stage_value_code)"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: reference.investment_classification@1
+        "on": {stage_key: classification_key}
+        fields: [classification_value_name, classification_sort_order]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The pipeline stage each deal sat in, one row per version, effective from a date."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

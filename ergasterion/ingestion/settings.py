@@ -63,7 +63,7 @@ LOCAL_ENDPOINT_REFS: dict[str, str] = {
     "lifecycle_sink": "local-duckdb",
     "key_resolver": "local-hmac",
 }
-CLOSED_PROJECTION_TARGET = "bronze"
+CLOSED_PROJECTION_TARGET = "landing"
 PRIOR_BINDING_FILENAME = "activated-runtime-binding.json"
 
 DEFAULT_ENDPOINT_PATHS: dict[str, str] = {

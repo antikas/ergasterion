@@ -1,0 +1,71 @@
+# Landing product: The CHRONO provider portfolio company feed as it was delivered, one row per delivered company record.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: chrono_portfolio_company_extract
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_portfolio_company_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_chrono_portfolio_companies
+      fields:
+        - {name: asset_uid, type: string}
+        - {name: vehicle_code, type: string}
+        - {name: issuer_name_text, type: string}
+        - {name: issuer_lei, type: string}
+        - {name: vendor_company_id, type: string}
+        - {name: industry_group, type: string}
+        - {name: industry_detail, type: string}
+        - {name: country_iso2, type: string}
+        - {name: holding_status, type: string}
+        - {name: first_reported_on, type: string}
+    expect:
+      fields: [asset_uid, vehicle_code, issuer_name_text]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: asset_uid, not_null: true}
+      - {field: asset_uid, unique: true}
+      - {field: issuer_name_text, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The CHRONO provider portfolio company feed as it was delivered, one row per delivered company record."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

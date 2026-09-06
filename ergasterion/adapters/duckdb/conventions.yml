@@ -1,0 +1,116 @@
+# DuckDB adapter conventions (architecture sections 10, 11; owner ruling
+# R10; plan decision D35). DuckDB is the estate's reference adapter: it
+# executes the whole estate locally and is the engine's executable truth.
+# Loaded only through ergasterion/framework/adapters.py -- no other module
+# carries adapter-specific data of its own; ergasterion/dialect_lint.py
+# reaches this deny_rules list only through that loader.
+#
+# deny_rules guards the constructs that fail on DuckDB. Five of them
+# (float64, format_date, safe_divide, raw_string, select_except) were
+# verified against the installed duckdb package (1.5.5) rather than assumed;
+# int64, unnest, string_agg, bool_type and array_literal are valid DuckDB
+# syntax (confirmed the same way) and are deliberately left out. What
+# remains guards BigQuery-only constructs that break on DuckDB, plus one DuckDB-own
+# semantic gotcha (regexp_replace_global: DuckDB's 3-argument
+# regexp_replace replaces only the first match, unlike the 4-argument 'g'
+# form the factory standardises on -- see ergasterion/dialect_lint.py's
+# _duckdb_regexp_replace_offenses).
+#
+# type_mapping is the dpf_type() token table (macros/cross_db.sql) resolves
+# for this adapter, traced from the installed dbt-core/dbt-duckdb packages
+# rather than guessed: dbt.type_string/type_int/type_float/type_numeric/
+# type_boolean dispatch through dbt-core's default__ macros, which call
+# ``api.Column.translate_type`` / ``api.Column.numeric_type`` on
+# DuckDBColumn -- DuckDBColumn declares no TYPE_LABELS or numeric_type
+# override of its own, so it falls straight through to the base dbt-core
+# Column class's table and 28,6 default numeric precision/scale. 'date' is
+# the literal ANSI token dpf_type() returns directly, not through dbt's
+# dispatch. The macro remains the executed implementation; this is the same
+# mapping expressed as adapter package data (architecture section 3.3, P6).
+#
+# identifier_rules is P7's parked per-adapter case/quoting policy: no engine
+# code normalises identifiers yet, so this is the adapter's own declared
+# policy, structurally validated and ready for the item that consumes it.
+# DuckDB preserves the case an unquoted identifier is written in (confirmed
+# against the installed package: information_schema reports a mixed-case
+# name unchanged) and resolves references to it case-insensitively; it
+# never folds storage to a fixed case the way Postgres folds to lower.
+# Relation/column length budgets stay declarations/targets/duckdb.yml's job
+# (structural budgets), never duplicated here.
+adapter: duckdb
+kind: reference
+dialect: duckdb
+incremental_strategy: delete+insert
+deny_rules:
+  - token: safe_cast
+    pattern: '(?<![\w.])safe_cast\s*\('
+    message: "BigQuery safe_cast(...) -- route via {{ dpf_safe_cast(...) }}"
+  - token: safe_parse_json
+    pattern: '\bsafe\.parse_json\s*\('
+    message: "BigQuery safe.parse_json(...) -- route via {{ dpf_json_cast(...) }}"
+  - token: json_type
+    pattern: '\bjson_type\s*\('
+    message: "BigQuery json_type(...) -- route via {{ dpf_json_cast(...) }}"
+  - token: json_value
+    pattern: '\bjson_value\s*\('
+    message: "BigQuery json_value(...) -- route via {{ dpf_json_cast(...) }}"
+  - token: to_hex
+    pattern: '\bto_hex\s*\('
+    message: "BigQuery to_hex(...) -- route via {{ dpf_hash_hex(...) }}"
+  - token: to_json_string
+    pattern: '\bto_json_string\s*\('
+    message: "BigQuery to_json_string(...) -- route via {{ dpf_to_json_object(...) }} / {{ dpf_map_agg(...) }}"
+  - token: struct
+    pattern: '\bstruct\s*\('
+    message: "BigQuery struct(...) -- route via {{ dpf_to_json_object(...) }}"
+  - token: regexp_replace_global
+    pattern: '(?!)'
+    message: "Three-argument regexp_replace(...) is first-match-only on DuckDB -- route via {{ dpf_regexp_replace(...) }}"
+  - token: regexp_contains
+    pattern: '\bregexp_contains\s*\('
+    message: "BigQuery regexp_contains(...) -- route via {{ dpf_regexp_contains(...) }}"
+  - token: regexp_extract
+    pattern: '\bregexp_extract\s*\('
+    message: "BigQuery regexp_extract(...) -- route via {{ dpf_regexp_extract(...) }}"
+  - token: array_type
+    pattern: '\barray\s*<'
+    message: "BigQuery array<...> type -- route via {{ dpf_empty_array(...) }}"
+  - token: date_trunc_bigquery_order
+    pattern: '\bdate_trunc\s*\(\s*[^''"(),][^,()]*\s*,\s*(?:day|month|quarter|year)\b'
+    message: "BigQuery date_trunc(date, part) argument order -- route via {{ dpf_date_trunc(...) }}"
+  - token: generate_date_array
+    pattern: '\bgenerate_date_array\s*\('
+    message: "BigQuery generate_date_array(...) -- route via {{ dpf_date_series(...) }}"
+  - token: edit_distance
+    pattern: '\bedit_distance\s*\('
+    message: "BigQuery edit_distance(...) -- route via {{ dpf_edit_distance(...) }}"
+  - token: date_diff_bigquery_order
+    pattern: '\bdate_diff\s*\(\s*[^,()]+\s*,\s*[^,()]+\s*,\s*(?:day|month|quarter|year)\b'
+    message: "BigQuery date_diff(date_a, date_b, part) -- route via {{ dpf_date_diff_days(...) }}"
+  - token: float64
+    pattern: '\bfloat64\b'
+    message: "BigQuery type FLOAT64 does not exist on DuckDB -- use dbt.type_float()"
+  - token: format_date
+    pattern: '\bformat_date\s*\('
+    message: "BigQuery format_date(...) has no DuckDB equivalent -- use a cross-db date-format macro"
+  - token: safe_divide
+    pattern: '\bsafe_divide\s*\('
+    message: "BigQuery safe_divide(...) has no DuckDB equivalent -- use (a) / nullif(b, 0)"
+  - token: raw_string
+    pattern: "(?<![\\w])r'"
+    message: "BigQuery raw-string literal r'...' does not parse on DuckDB -- use a plain quoted pattern"
+  - token: select_except
+    pattern: '\*\s*except\s*\('
+    message: "BigQuery SELECT * EXCEPT(...) does not parse on DuckDB (which uses EXCLUDE) -- list columns explicitly or use QUALIFY"
+type_mapping:
+  int: INTEGER
+  float: FLOAT
+  numeric: "NUMERIC(28,6)"
+  string: TEXT
+  timestamp: TIMESTAMP
+  date: DATE
+  boolean: BOOLEAN
+identifier_rules:
+  quote_character: '"'
+  unquoted_case_folding: none
+  case_comparison: insensitive

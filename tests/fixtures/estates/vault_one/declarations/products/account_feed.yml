@@ -1,0 +1,60 @@
+# The delivered account feed: the account each customer holds. The second
+# of the two fixture relations this estate is fed by, and the one the
+# vault product enriches from, so the vault's account hub and its
+# customer-to-account link come from a different delivery than its
+# customer hub.
+#
+# Known answers on the seeded feed: two customers, one account each.
+product:
+  name: account_feed
+  domain: crm
+  version: "1.0"
+  layer: delivered
+  profile: serving
+  owner: crm-domain
+
+sources:
+  - contract: crm.account_deliveries@1
+    kind: fixture
+    fixture:
+      relation: account_records
+      fields:
+        - {name: cust_ref, type: string}
+        - {name: acct_ref, type: string}
+    expect:
+      fields: [cust_ref, acct_ref]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: cust_ref
+        not_null: true
+      - field: acct_ref
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: cust_ref, to: customer_ref, type: string}
+      - {from: acct_ref, to: account_ref, type: string}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The account each delivered customer holds."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

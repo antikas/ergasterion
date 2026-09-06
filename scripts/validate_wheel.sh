@@ -6,7 +6,7 @@
 # dependency version, proves DuckDB connects/queries and dbt reports the pinned
 # core + adapter versions (the "ingestion and dbt proof" an empty venv owes before
 # anything else), and then from a working directory OUTSIDE the source tree runs
-# `ergasterion init`, declares the toy fixture domain, and runs `ergasterion emit`
+# `ergasterion init` and runs the product route from the installed wheel
 # twice (the second in --check mode, so the emitted estate is byte-stable).
 #
 # The final section proves the SHIPPED `--binding runtime/local.yml` end to end against
@@ -104,6 +104,10 @@ echo "--- build the wheel"
 # --no-build-isolation: the backend (setuptools, pinned in [build-system].requires) is borrowed
 # from $PY's own already-bootstrapped environment rather than fetched into an ephemeral isolated
 # build env from the package index -- this is the ONLY way this build step stays offline.
+# A stale build/ tree from an earlier build is reused by setuptools and would pack files the
+# source tree no longer has (a removed target declaration, for example) into the wheel under
+# test. Clear it so the wheel is built from the tracked sources alone.
+"$PY" -c "import shutil, sys; shutil.rmtree(sys.argv[1], ignore_errors=True)" "$REPO_ROOT_PY/build"
 "$PY" -m pip wheel "$REPO_ROOT_PY" --no-deps --no-build-isolation -w "$WORK_PY/dist" -q \
   || fail "wheel build (offline, --no-build-isolation borrowing \$PY's own setuptools)"
 WHEEL=$(ls "$WORK"/dist/ergasterion_factory-*.whl 2>/dev/null | head -n1)
@@ -204,15 +208,15 @@ for module, name in (
     if repo in pkg_file.parents:
         raise SystemExit(f"{name} imported from the source tree, {pkg_file} -- the wheel is not under test")
 
-from ergasterion.framework import Layer, compute_plan_digest, resolve
+from ergasterion.framework import compute_plan_digest, resolve
 
-plan = resolve(Layer.BRONZE)
+plan = resolve("landing")
 digest = compute_plan_digest(plan)
 if len(digest) != 64:
     raise SystemExit(f"unexpected digest length from the wheel-installed framework: {digest!r}")
 
 # ergasterion.ingestion.records contributes 153 of the IDL's 224 records directly, and
-# re-exports the other 71 from ergasterion.framework.bronze_contract and
+# re-exports the other 71 from ergasterion.framework.landing_contract and
 # ergasterion.framework.runtime_binding into ALL_RECORD_MODELS, the aggregate the assert
 # below checks. This step constructs one of its closed models and confirms it round-trips,
 # from the wheel install.
@@ -227,7 +231,7 @@ if len(ing_records.ALL_RECORD_MODELS) != 224:
 # The two generated schema/equivalence JSON files are package-data. This step confirms they
 # are present and load as JSON from the installed wheel.
 schemas_dir = Path(fw.__file__).resolve().parent.parent / "schemas"
-for filename in ("bronze-product-v1.schema.json", "bronze-portable-idl-equivalence.json"):
+for filename in ("landing-product-v1.schema.json", "landing-portable-idl-equivalence.json"):
     schema_path = schemas_dir / filename
     if not schema_path.is_file():
         raise SystemExit(f"{filename} is missing from the wheel-installed ergasterion/schemas/ directory")
@@ -237,7 +241,7 @@ for filename in ("bronze-product-v1.schema.json", "bronze-portable-idl-equivalen
 
 print(
     "ergasterion.framework, ergasterion.translators and ergasterion.ingestion import from "
-    f"the wheel (224 records, schema + equivalence JSON present); Bronze digest {digest}"
+    f"the wheel (224 records, schema + equivalence JSON present); Landing digest {digest}"
 )
 PYEOF
 [ $? -eq 0 ] || fail "framework/translators/ingestion import from the installed wheel"
@@ -255,6 +259,7 @@ if repo in pkg.parents:
     raise SystemExit(f"factory imported from the source tree, {pkg} -- the wheel is not under test")
 
 from ergasterion.init import scaffold
+from ergasterion.sync_scaffold import SEED_PRODUCT_NAME
 
 est = Path("estate").resolve()
 scaffold(est)
@@ -265,6 +270,7 @@ for expect in (
     "macros/cross_db.sql",
     "macros/survivorship.sql",
     "declarations/targets/interfaces.yml",
+    f"declarations/products/{SEED_PRODUCT_NAME}.yml",
     "estate.yml",
     ".gitignore",
     "runtime/local.yml",
@@ -285,60 +291,49 @@ print("scaffold from the installed wheel complete")
 PYEOF
 [ $? -eq 0 ] || fail "init from the installed wheel"
 
-echo "--- declare the toy fixture domain"
-"$PY" - "$REPO_ROOT_PY" <<'PYEOF'
-import sys
+echo "--- seed the fixture relation the scaffolded product declaration binds"
+"$PY" - <<'PYEOF'
 from pathlib import Path
 
 import yaml
 
-repo = Path(sys.argv[1]).resolve()
-sys.path.insert(0, str(repo / "tests" / "python"))
-from test_emit import FIXTURE_DOMAIN, _fixture_declaration
-
+# The one manual step GETTING-STARTED.md documents: the fixture relation the seeded
+# product binds, plus its authored seeds: column_types block, so the later dbt build
+# proof has real data to build from.
 est = Path("estate")
-(est / "domains" / "fixture.yml").write_text(
-    yaml.safe_dump(FIXTURE_DOMAIN, sort_keys=False), encoding="utf-8"
-)
-(est / "declarations" / "toysrc.yml").write_text(
-    yaml.safe_dump(_fixture_declaration(), sort_keys=False), encoding="utf-8"
-)
-
-# The one manual step GETTING-STARTED.md documents: a raw seed for the toy source, plus
-# its authored seeds: column_types block, so the later dbt build proof has real data.
-(est / "seeds" / "raw_toysrc_things.csv").write_text(
-    "id,alpha_name,alpha_code,beta_name\n"
-    "1,Alpha One,A1,Beta One\n"
-    "2,Alpha Two,A2,Beta Two\n",
+rows = ["order_id,loaded_at", "ORD-1,2026-01-05 09:00:00", "ORD-2,2026-01-06 09:00:00", ""]
+(est / "seeds" / "raw_reference_orders.csv").write_text(
+    chr(10).join(rows),
     encoding="utf-8",
 )
 project = yaml.safe_load((est / "dbt_project.yml").read_text(encoding="utf-8"))
 project["seeds"] = {
     "ergasterion": {
         "+quote_columns": False,
-        "raw_toysrc_things": {
-            "+column_types": {
-                "id": "string", "alpha_name": "string", "alpha_code": "string", "beta_name": "string",
-            },
+        "raw_reference_orders": {
+            "+column_types": {"order_id": "string", "loaded_at": "timestamp"},
         },
     },
 }
 (est / "dbt_project.yml").write_text(yaml.safe_dump(project, sort_keys=False), encoding="utf-8")
 PYEOF
-[ $? -eq 0 ] || fail "toy fixture declaration"
+[ $? -eq 0 ] || fail "seeding the scaffolded estate's fixture relation"
 
-echo "--- emit from the installed wheel"
-"$ERG" emit --estate-root estate || fail "emit from the installed wheel"
-for expect in \
-  estate/models/raw_vault/hubs/hub_alpha.sql \
-  estate/models/raw_vault/links/link_alpha_beta.sql \
-  estate/models/business_vault/bv_alpha_golden_record.sql \
-  estate/models/entity_resolution/res_alpha.sql; do
-  [ -f "$expect" ] || fail "expected emitted model missing: $expect"
-done
+echo "--- emit the scaffolded estate's own seeded product declaration from the wheel"
+"$ERG" emit-products --estate-root estate || fail "emit-products from the installed wheel"
+[ -d estate/models/products ] || fail "expected the product route to write estate/models/products"
+[ -d estate/manifests/products ] || fail "expected the product route to write estate/manifests/products"
 
-echo "--- second emit in --check mode (byte-stable)"
-"$ERG" emit --check --estate-root estate || fail "emitted estate is not byte-stable from the wheel"
+echo "--- second emit-products in --check mode (byte-stable)"
+"$ERG" emit-products --check --estate-root estate \
+  || fail "emitted product tree is not byte-stable from the wheel"
+
+echo "--- contracts and the product graph from the wheel"
+"$ERG" contracts --estate-root estate || fail "contracts from the installed wheel"
+"$ERG" odps --estate-root estate || fail "odps from the installed wheel"
+"$ERG" product-graph --estate-root estate || fail "product-graph from the installed wheel"
+[ -d estate/contracts/products ] || fail "expected the contract route to write estate/contracts/products"
+[ -d estate/graphs/products ] || fail "expected the graph route to write estate/graphs/products"
 
 echo "--- materialize pinned dbt Hub packages from DPF_DBT_PACKAGE_CACHE (no dbt deps, no network)"
 "$PY" - "$DBT_PACKAGE_CACHE_PY" "$REPO_ROOT_PY" <<'PYEOF' || fail "DPF_DBT_PACKAGE_CACHE does not match packages.yml's pins"
@@ -383,7 +378,9 @@ from ergasterion.estate import EstateContext
 from ergasterion.ingestion.codecs import transport_payload_fingerprint
 from ergasterion.ingestion.reference_runtime import contract_digest as runtime_contract_digest
 from ergasterion.source_delivery import load_typed_declarations
-from ergasterion.sync_scaffold import REFERENCE_SOURCE, REFERENCE_TABLE, reference_contract
+from ergasterion.sync_scaffold import (
+    REFERENCE_LABEL, REFERENCE_SOURCE, REFERENCE_TABLE, reference_contract,
+)
 
 
 def _run(argv):
@@ -417,22 +414,17 @@ contract = reference_contract()
 
 landing = _omit_nulls(contract.landing.model_dump(mode="json", by_alias=True))
 delivery = _omit_nulls(contract.delivery.model_dump(mode="json", by_alias=True))
+# The table's domain is one of the product block's own declared facts.
 product = _omit_nulls(contract.product.model_dump(mode="json", by_alias=True))
-product.pop("domain", None)
 projection = [_omit_nulls(item.model_dump(mode="json", by_alias=True)) for item in contract.projection]
-(est / "domains" / "reference.yml").write_text(
-    yaml.safe_dump({
-        "bronze": {
-            "domain": {"name": "reference", "display_name": "Reference"},
-            "products": [{"source": REFERENCE_SOURCE, "table": REFERENCE_TABLE}],
-        },
-    }, sort_keys=False),
-    encoding="utf-8",
-)
 (est / "declarations" / f"{REFERENCE_SOURCE}.yml").write_text(
     yaml.safe_dump({
         "source": {"name": REFERENCE_SOURCE},
         "tables": {REFERENCE_TABLE: {
+            # A production-classed table declares the estate layer label it sits in; the
+            # runtime route looks that key up in estate.yml's translator table (owner
+            # ruling R1), and the scaffold's estate.yml declares REFERENCE_LABEL.
+            "layer": REFERENCE_LABEL,
             "landing": landing, "delivery": delivery, "product": product, "projection": projection,
         }},
     }, sort_keys=False),

@@ -1,0 +1,60 @@
+# The estate's delivered feed: one row per delivered ticket event, bound to a
+# fixture relation for local proof (architecture section 12), with the fields
+# that relation delivers. It carries no inline expression, which is what
+# named_only estate policy requires of every declaration here.
+product:
+  name: ticket_events
+  domain: service
+  version: "1.0"
+  layer: delivered
+  profile: serving
+  owner: fixture-team
+
+sources:
+  - contract: service.ticket_feed@1
+    kind: fixture
+    fixture:
+      relation: ticket_events
+      fields:
+        - {name: tid, type: string}
+        - {name: q, type: string}
+        - {name: st, type: string}
+        - {name: mins, type: integer}
+    expect:
+      fields: [tid, st, mins]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: tid
+        not_null: true
+      - field: tid
+        unique: true
+  - pattern: schema_transform
+    mapping:
+      - {from: tid, to: ticket_id, type: string}
+      - {from: q, to: queue, type: string}
+      - {from: st, to: ticket_state, type: string}
+      - {from: mins, to: open_minutes, type: integer}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per delivered ticket event, no column changed."
+    ownership: fixture-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "hourly"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

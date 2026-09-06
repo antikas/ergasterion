@@ -1,0 +1,143 @@
+# The vault over the curated customer entity (architecture section 6, the
+# data_vault row). The composition resolves the two delivered feeds into
+# one row per customer; the shape models that as hubs, a link, two
+# satellites, a business-vault surviving record and a point-in-time
+# relation, and the contract publishes every one of them (owner ruling
+# R4).
+#
+# Known answers on the seeded feeds, first build:
+#   * two customers survive curation, so both hubs, the link and both
+#     satellites carry two rows each;
+#   * the surviving record carries the crm email for C-001: both deliveries
+#     of that customer are effective on the same date, and the declared
+#     source precedence puts crm before billing;
+#   * postcode and email are stored by both satellites and excluded from
+#     both hashdiffs, which is what separates the two survivorship
+#     strategies: a delivery that changes only those two columns adds no
+#     version to customer_detail (its fingerprint is unchanged) and one to
+#     customer_observed (it records every observation), so the two
+#     satellites then hold different values for them. most_recent reads the
+#     later instant and takes customer_observed's; first_non_null reads the
+#     declared satellite order and takes customer_detail's;
+#   * the point-in-time relation carries one snapshot per customer, the
+#     one instant its versions came into force at.
+#
+# Later builds are what the two satellite kinds separate: customer_detail
+# records changes, so an unchanged payload delivered at a later instant
+# adds nothing to it, and customer_observed records observations, so the
+# same delivery adds a row to it.
+product:
+  name: customer_vault
+  domain: crm
+  version: "1.0"
+  layer: conformed
+  profile: integration
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_feed@1
+    expect:
+      fields: [record_id, source_system, customer_ref, full_name, postcode, email, customer_status, loyalty_points, effective_from]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - field: customer_ref
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: record_id, to: source_record_id, type: string}
+  - pattern: data_enrichment
+    lookups:
+      - contract: crm.account_feed@1
+        "on": {customer_ref: customer_ref}
+        fields: [account_ref]
+        no_match: null
+  - pattern: data_curation
+    entity: customer
+    resolution:
+      strategy: deterministic
+      keys: [customer_ref]
+      record_key: source_record_id
+      merge_iterations: 2
+    survivorship:
+      source_record_id: most_recent
+      source_system: most_recent
+      customer_ref: first_non_null
+      full_name: most_recent
+      postcode: most_recent
+      email: most_recent
+      customer_status: most_recent
+      loyalty_points: most_recent
+      effective_from: most_recent
+      account_ref: first_non_null
+    precedence:
+      source_column: source_system
+      recency_column: effective_from
+      source_priority: [crm, billing]
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The customer vault: identity, association, payload versions, the surviving record and the point-in-time relation over them."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: data_vault
+  shape_config:
+    hubs:
+      - name: customer
+        business_key: [customer_ref]
+        description: "The customer as the estate identifies one."
+      - name: account
+        business_key: [account_ref]
+        description: "The account as the estate identifies one."
+    links:
+      - name: customer_account
+        hubs: [customer, account]
+        description: "The account a customer holds."
+    satellites:
+      - name: customer_detail
+        kind: current
+        parent: customer
+        payload: [full_name, postcode, email]
+        change_column: effective_from
+        hashdiff_exclude: [postcode, email]
+        description: "The customer's descriptive payload, versioned when the name changes."
+      - name: customer_observed
+        kind: history
+        parent: customer
+        payload: [customer_status, loyalty_points, postcode, email]
+        change_column: effective_from
+        hashdiff_exclude: [postcode, email]
+        description: "Every delivered observation of the customer's status and loyalty points."
+    business_vault:
+      - name: customer
+        hub: customer
+        satellites: [customer_detail, customer_observed]
+        attributes:
+          - {name: full_name, strategy: most_recent}
+          - {name: loyalty_points, strategy: most_recent}
+          - {name: postcode, strategy: most_recent}
+          - {name: email, strategy: first_non_null}
+        description: "One surviving record per customer."
+    point_in_time:
+      - name: customer
+        hub: customer
+        satellites: [customer_detail, customer_observed]
+        description: "Each customer's satellites as they stood at every instant the vault stores."
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/data_filtering.schema.json",
+  "title": "data_filtering step configuration (architecture section 4)",
+  "description": "Named predicates, each a SQL predicate. Every exclusion is auditable by predicate name (architecture section 4's translator semantics).",
+  "type": "object",
+  "required": ["pattern", "predicates"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "data_filtering" },
+    "predicates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "expression"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "expression": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

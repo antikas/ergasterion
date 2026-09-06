@@ -1,10 +1,11 @@
 """Ergasterion's platform-neutral pattern registry, composition graph and router.
 
-This package classifies the canonical fifteen patterns, resolves the Bronze
-layer to its exact, normative, immutable, digest-bearing execution graph, and
-routes that graph to a fixed set of translators. It imports no dbt, DuckDB,
-SQLite or orchestrator package. It never imports ``ergasterion.translators``:
-the dependency flows one way.
+This package classifies the canonical fifteen patterns, resolves a named
+profile (only ``landing`` has an execution graph in this release) to its
+exact, normative, immutable, digest-bearing execution graph, and routes that
+graph to a fixed set of translators. It imports no dbt, DuckDB, SQLite or
+orchestrator package. It never imports ``ergasterion.translators``: the
+dependency flows one way.
 """
 
 from ergasterion.framework.models import (
@@ -15,27 +16,25 @@ from ergasterion.framework.models import (
     ExecutionPlan,
     FrameworkError,
     HandoffSchemaId,
-    InvalidLayerArgumentError,
-    Layer,
+    InvalidProfileDefinitionError,
     Occurrence,
     PatternDisposition,
     PatternId,
     Role,
     TranslationResult,
     TranslatorValidationResult,
-    UnsupportedLayerError,
+    UnknownProfileError,
+    UnsupportedProfileError,
     ValidationFinding,
     ValidationSeverity,
     compute_plan_digest,
 )
 from ergasterion.framework.patterns import (
-    BRONZE_FORBIDDEN,
-    BRONZE_MANDATORY,
-    BRONZE_OPTIONAL,
     PATTERN_DISPLAY_NAMES,
-    ResolutionStatus,
-    classify_bronze,
-    resolution_status,
+    PROFILE_NAMES,
+    Profile,
+    load_profile,
+    parse_profile_document,
 )
 from ergasterion.framework.resolver import resolve
 from ergasterion.framework.routing import (
@@ -54,9 +53,6 @@ from ergasterion.framework.routing import (
 )
 
 __all__ = [
-    "BRONZE_FORBIDDEN",
-    "BRONZE_MANDATORY",
-    "BRONZE_OPTIONAL",
     "BadHandoffError",
     "ConventionsDocument",
     "DigestMismatchError",
@@ -68,15 +64,15 @@ __all__ = [
     "ExecutionPlan",
     "FrameworkError",
     "HandoffSchemaId",
-    "InvalidLayerArgumentError",
-    "Layer",
+    "InvalidProfileDefinitionError",
     "MissingExecutionOwnerError",
     "Occurrence",
     "PATTERN_DISPLAY_NAMES",
+    "PROFILE_NAMES",
     "PatternDisposition",
     "PatternId",
+    "Profile",
     "ReorderedOwnershipError",
-    "ResolutionStatus",
     "Role",
     "RoutableTranslator",
     "RouteAssignment",
@@ -85,12 +81,13 @@ __all__ = [
     "TranslationResult",
     "TranslationRouter",
     "TranslatorValidationResult",
+    "UnknownProfileError",
+    "UnsupportedProfileError",
     "UndeclaredAttachmentError",
-    "UnsupportedLayerError",
     "ValidationFinding",
     "ValidationSeverity",
-    "classify_bronze",
     "compute_plan_digest",
-    "resolution_status",
+    "load_profile",
+    "parse_profile_document",
     "resolve",
 ]

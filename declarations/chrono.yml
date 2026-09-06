@@ -4,33 +4,11 @@ source:
   system: Chronograph-shaped GP data provider
   priority: 40
 
-# DESCRIPTIVE-ONLY: documents intended attribute lineage to the OpenIM canonical
-# model for onboarding review. ergasterion/emit.py's validate_canonical_mappings checks
-# every business_keys/attributes value for spelling and schema drift against the
-# OpenIM canonical model (model_file below) on every emit. It does NOT generate or
-# drive the canonical layer -- models/canonical/*.sql is hand-authored, not
-# templated from this block.
-canonical_mappings:
-  fund:
-    model_file: model/entities/specialisations/private-markets/PM-01-fund-and-vehicle.md
-    business_keys: {chrono_vehicle_code: external_ids, legal_entity_identifier: lei, vendor_crosswalk_id: external_ids, vehicle_display_name: known_aliases}
-    attributes: {vehicle_display_name: fund_name, manager_master_code: gp_id, private_market_bucket: asset_class, investment_style: strategy, launch_year: vintage_year, commitment_amount_usd: committed_capital_usd, reporting_ccy: currency, domicile_iso2: domicile, lifecycle_state: fund_status, snapshot_date: last_reviewed_at}
-  gp:
-    model_file: model/entities/specialisations/private-markets/PM-02-gp-management-company.md
-    business_keys: {manager_master_code: external_ids, manager_lei: lei, manager_name_text: known_aliases}
-    attributes: {manager_name_text: gp_name, domicile_iso2: domicile}
-  portfolio_company:
-    model_file: model/entities/specialisations/private-markets/PM-04-portfolio-company.md
-    business_keys: {asset_uid: external_ids, issuer_lei: lei, vendor_company_id: external_ids, issuer_name_text: known_aliases}
-    attributes: {issuer_name_text: company_name, industry_group: sector, industry_detail: sub_sector, country_iso2: country, holding_status: status, first_reported_on: first_seen_at}
-  cash_flow:
-    model_file: model/entities/core/E-06-cash-flow-event.md
-    business_keys: {event_uid: cash_flow_id, vehicle_code: instrument_id}
-    attributes: {event_date: cash_flow_date, event_kind: cash_flow_type, investor_direction: direction, usd_amount: amount, currency_code: currency, source_system: source}
-  valuation:
-    model_file: model/entities/core/E-07-valuation.md
-    business_keys: {mark_uid: valuation_id, vehicle_code: instrument_id}
-    attributes: {mark_date: valuation_date, usd_fair_value: value_usd, mark_method: method, fair_value_bucket: valuation_level, extraction_confidence: confidence_score}
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   funds:

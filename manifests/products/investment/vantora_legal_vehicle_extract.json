@@ -1,0 +1,35 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.vantora_legal_vehicle_extract",
+  "relations": {
+    "auxiliary": [
+      "investment.vantora_legal_vehicle_extract__checked",
+      "investment.vantora_legal_vehicle_extract__current",
+      "investment.vantora_legal_vehicle_extract__quarantine",
+      "investment.vantora_legal_vehicle_extract__sla"
+    ],
+    "published": [
+      "investment.vantora_legal_vehicle_extract"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

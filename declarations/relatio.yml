@@ -13,8 +13,11 @@ source:
 # CRM does not cover -- their golden record simply falls through the coalesce to the next
 # non-null source.
 #
-# NO canonical_mappings: the e-commerce domain has no OpenIM model repo (delta 2 skip
-# path -- part of the agnosticism proof).
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   customers:

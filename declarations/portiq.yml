@@ -4,29 +4,11 @@ source:
   system: PORTIQ performance analytics database
   priority: 30
 
-# DESCRIPTIVE-ONLY: documents intended attribute lineage to the OpenIM canonical
-# model for onboarding review. ergasterion/emit.py's validate_canonical_mappings checks
-# every business_keys/attributes value for spelling and schema drift against the
-# OpenIM canonical model (model_file below) on every emit. It does NOT generate or
-# drive the canonical layer -- models/canonical/*.sql is hand-authored, not
-# templated from this block.
-canonical_mappings:
-  fund:
-    model_file: model/entities/specialisations/private-markets/PM-01-fund-and-vehicle.md
-    business_keys: {source_fund_id: external_ids, lei: lei, shared_external_id: external_ids, fund_name: known_aliases}
-    attributes: {fund_name: fund_name, gp_id: gp_id, asset_class: asset_class, strategy: strategy, vintage_year: vintage_year, currency: currency}
-  gp:
-    model_file: model/entities/specialisations/private-markets/PM-02-gp-management-company.md
-    business_keys: {source_gp_id: external_ids, lei: lei, gp_name: known_aliases}
-    attributes: {gp_name: gp_name}
-  portfolio_company:
-    model_file: model/entities/specialisations/private-markets/PM-04-portfolio-company.md
-    business_keys: {source_company_id: external_ids, lei: lei, shared_external_id: external_ids, company_name: known_aliases}
-    attributes: {company_name: company_name, sector: sector, country: country}
-  cash_flow:
-    model_file: model/entities/core/E-06-cash-flow-event.md
-    business_keys: {cash_flow_id: cash_flow_id, source_fund_id: instrument_id}
-    attributes: {cash_flow_date: cash_flow_date, cash_flow_type: cash_flow_type, direction: direction, amount_usd: amount, currency: currency, source_system: source}
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   funds:

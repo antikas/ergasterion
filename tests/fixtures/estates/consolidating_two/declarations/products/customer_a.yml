@@ -1,0 +1,50 @@
+# The first source system's lane. It reads the landing contract of that
+# system's feed and keeps that system's own column names: conforming the
+# two systems to one schema is the union product's job, one generation
+# further on, so this product carries nothing of the other feed.
+#
+# The calculated field is what says which system a row came from, and it is
+# the column the union's known answer is counted by.
+product:
+  name: customer_a
+  domain: crm
+  version: "1.0"
+  layer: shaped
+  profile: derivation
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_feed_a@1
+    expect:
+      fields: [customer_id, email, signed_up_on, lifetime_value, loyalty_tier]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - {name: source_system, type: string, expression: "'feed_a'"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Customers as the first source system states them."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

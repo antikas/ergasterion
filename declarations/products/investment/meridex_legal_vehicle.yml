@@ -1,0 +1,73 @@
+# One source system's lane onto the schema the legal vehicle products
+# share. One delivered incorporation date is blank, so the date is read
+# from the delivered text with a blank read as nothing rather than cast
+# straight out of the extract.
+#
+# This source delivers no snapshot date. The estate reads its extract as
+# standing at the reporting date the dated sources report at, 2025-12-31,
+# declared here once so every product downstream orders one instant
+# against another rather than against nothing.
+product:
+  name: meridex_legal_vehicle
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.meridex_legal_vehicle_extract@1
+    expect:
+      fields:
+        - vehicle_id
+        - meridex_fund_id
+        - vehicle_name
+        - vehicle_lei
+        - incorporation_date
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: vehicle_id, not_null: true}
+      - {field: vehicle_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: vehicle_id, to: source_vehicle_id, type: string}
+      - {from: meridex_fund_id, to: source_fund_id, type: string}
+      - {from: parent_vehicle_id, to: source_parent_vehicle_id, type: string}
+      - {from: vehicle_name, to: source_name, type: string}
+      - {from: vehicle_type, to: source_vehicle_type, type: string}
+      - {from: jurisdiction, to: source_jurisdiction, type: string}
+      - {from: incorporation_date, to: source_incorporation_text, type: string}
+      - {from: vehicle_lei, to: source_lei, type: string}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_record_id, type: string, expression: "source_vehicle_id"}
+      - {name: source_incorporated_on, type: date, expression: "nullif(trim(source_incorporation_text), '')"}
+      - {name: source_reported_on, type: date, expression: "date '2025-12-31'"}
+      - {name: vehicle_source_system, type: string, expression: "'meridex'"}
+      - {name: vehicle_identity_key, type: string, expression: "concat('meridex', ':', source_vehicle_id)"}
+      - {name: vehicle_normalised_name, type: string, rule: investment_normalised_name_v1, rule_version: 1}
+      - {name: vehicle_lei, type: string, expression: "nullif(trim(source_lei), '')"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Legal vehicles as MERIDEX states them, on the schema both vehicle feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

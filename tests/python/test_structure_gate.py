@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import shutil
 import sys
 import tempfile
 import traceback
@@ -28,7 +29,12 @@ if __package__ in (None, ""):
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
 from ergasterion.estate import EstateContext
-from ergasterion.structure_gate import check_structure, load_structure_declarations, normalise_landing
+from ergasterion.structure_gate import (
+    check_structure,
+    load_structure_declarations,
+    normalise_landing,
+    route_private_models,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -345,6 +351,62 @@ def test_deployment_target_rejects_view_exceptions() -> None:
             raise AssertionError("expected ValueError for view_exceptions on a deployment target")
 
 
+def test_reference_kind_does_not_require_the_full_budget_family() -> None:
+    """The reference adapter (architecture section 10: DuckDB, which executes
+    the whole estate locally) carries the same structural boundaries a
+    deployment target does, but is not required to declare the full budget
+    family the way "deployment" is -- a fresh estate's reference adapter can
+    ship with a minimal or empty budgets block."""
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _fixture_estate(
+            Path(tmp),
+            targets={
+                "duckplug": DEFAULT_BUDGETS.format(adapter="duckplug"),
+                "refplug": "adapter: refplug\nkind: reference\n",
+            },
+        )
+        offenses = check_structure(ctx)
+        assert offenses == [], f"expected the minimal reference target to pass, got: {offenses}"
+
+
+def test_reference_kind_rejects_view_exceptions() -> None:
+    """View exceptions are lane-only config; a reference target declaring
+    them fails loading exactly like a deployment target does."""
+    bad = "adapter: refplug\nkind: reference\nview_exceptions:\n  - path: models/work/x.sql\n    reason: convenience\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _fixture_estate(
+            Path(tmp),
+            targets={
+                "duckplug": DEFAULT_BUDGETS.format(adapter="duckplug"),
+                "refplug": bad,
+            },
+        )
+        try:
+            check_structure(ctx)
+        except ValueError as exc:
+            assert "lane" in str(exc), f"expected the lane-only rule named, got: {exc}"
+        else:
+            raise AssertionError("expected ValueError for view_exceptions on a reference target")
+
+
+def test_unknown_target_kind_fails_naming_the_registered_kinds() -> None:
+    """A kind outside TARGET_KINDS ("reference", "deployment", "lane") fails
+    closed, naming the registered set -- any retired or unregistered kind
+    included."""
+    bad = "adapter: duckplug\nkind: warehouse\nbudgets:\n  max_view_chain_depth: 1\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        ctx = _fixture_estate(Path(tmp), targets={"duckplug": bad})
+        try:
+            check_structure(ctx)
+        except ValueError as exc:
+            message = str(exc)
+            assert "reference" in message and "deployment" in message and "lane" in message, (
+                f"expected every registered kind named, got: {exc}"
+            )
+        else:
+            raise AssertionError("expected ValueError for an unregistered kind")
+
+
 def test_in_file_config_overrides_layer_view() -> None:
     """An in-file table config caps a chain even under a layer configured view,
     matching dbt's own precedence."""
@@ -364,23 +426,80 @@ def test_in_file_config_overrides_layer_view() -> None:
 
 
 def test_shipped_estate_passes() -> None:
-    """The committed estate clears every declared target budget as shipped."""
+    """The committed estate clears every declared target budget as shipped, with the
+    product route's private relations read from the manifests the route wrote --
+    exactly what the standalone entry point does."""
     ctx = EstateContext.resolve(estate_root=REPO_ROOT)
-    offenses = check_structure(ctx)
+    private = route_private_models(ctx)
+    assert private, "the committed estate declares products, so the private set cannot be empty"
+    offenses = check_structure(ctx, non_interface_views=private)
     assert offenses == [], f"the shipped estate must pass its own gate, got: {offenses}"
 
 
+def test_a_published_relation_rendered_as_a_view_outside_the_boundary_is_an_offence() -> None:
+    """The boundary rule still bites on the committed estate. A published relation --
+    one the route never registered as private -- rendered as a view outside the
+    declared boundary is reported, so narrowing the boundary to the canonical path
+    did not turn the rule off over the product tree.
+
+    The defect is planted in a scratch copy of the estate, never in the committed
+    tree: a red proof that edits a tracked file leaves the estate dirty if the run
+    is interrupted between the write and the restore."""
+
+    published = "ecommerce__cartivo_customer"
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "estate"
+        root.mkdir()
+        for part in ("declarations", "manifests", "models"):
+            shutil.copytree(REPO_ROOT / part, root / part)
+        ctx = EstateContext.resolve(estate_root=root)
+        private = route_private_models(ctx)
+        assert private, "the copied estate carries the route's manifests"
+        assert published not in private, "the fixture relation must be a published one"
+        assert _offenses_for(check_structure(ctx, non_interface_views=private), "view_boundary") == [], (
+            "the copied estate must be clean before the defect is planted"
+        )
+
+        # Bytes, not text: the committed model is LF-terminated and rewriting it
+        # through a text handle on Windows would leave it CRLF-terminated.
+        model = root / "models" / "products" / "ecommerce" / f"{published}.sql"
+        original = model.read_bytes()
+        assert b"materialized='table'" in original, original[:200]
+        model.write_bytes(original.replace(b"materialized='table'", b"materialized='view'", 1))
+        offenses = _offenses_for(check_structure(ctx, non_interface_views=private), "view_boundary")
+
+    assert any(published in offense.artefact for offense in offenses), (
+        f"expected a view_boundary offence naming {published}, got: {offenses}"
+    )
+
+
+def test_the_private_set_comes_from_the_manifests_and_not_from_a_path() -> None:
+    """route_private_models reads the auxiliary relations the route recorded, and
+    rebuilds each model name from the relation's own qualified name."""
+    ctx = EstateContext.resolve(estate_root=REPO_ROOT)
+    private = route_private_models(ctx)
+    assert "ecommerce__cartivo_customer__checked" in private, sorted(private)[:10]
+    assert "ecommerce__cartivo_customer" not in private, "a published relation is never private"
+
+
 def test_shipped_declarations_load() -> None:
-    """The committed target declarations parse, both deployment targets declare the
-    full budget family, and the canonical layer is a declared interface."""
+    """The committed target declarations parse, the deployment target declares the
+    full budget family, the reference target is declared too, and the canonical
+    layer is a declared interface (owner ruling R10: DuckDB reference, BigQuery
+    deployment, and no third adapter anywhere)."""
     ctx = EstateContext.resolve(estate_root=REPO_ROOT)
     declarations, view_layers = load_structure_declarations(ctx)
-    adapters = {decl.adapter for decl in declarations if decl.kind == "deployment"}
-    assert {"bigquery", "snowflake"} <= adapters, f"expected both deployment targets, got: {adapters}"
-    assert "models/canonical" in view_layers, f"expected models/canonical declared, got: {view_layers}"
+    deployment_adapters = {decl.adapter for decl in declarations if decl.kind == "deployment"}
+    reference_adapters = {decl.adapter for decl in declarations if decl.kind == "reference"}
+    assert deployment_adapters == {"bigquery"}, f"expected exactly the bigquery deployment target, got: {deployment_adapters}"
+    assert reference_adapters == {"duckdb"}, f"expected exactly the duckdb reference target, got: {reference_adapters}"
+    assert {decl.adapter for decl in declarations} == {"bigquery", "duckdb"}, (
+        f"expected no third target declaration to remain, got: {[decl.adapter for decl in declarations]}"
+    )
+    assert "models/products/canonical" in view_layers, f"expected models/products/canonical declared, got: {view_layers}"
 
 
-BRONZE_LANDING = {
+SOURCE_LANDING_FIXTURE = {
     "kind": "source",
     "source_name": "warehouse_feed",
     "identifier": "things_live",
@@ -391,12 +510,12 @@ BRONZE_LANDING = {
 }
 
 
-def test_landing_admits_the_bronze_contract_fields_on_a_source_landing() -> None:
+def test_landing_admits_the_landing_contract_fields_on_a_source_landing() -> None:
     """normalise_landing is the single structural entry point for the landing
-    discriminator. A source landing may carry the four Bronze Product Contract
+    discriminator. A source landing may carry the four Landing Product Contract
     fields; a bare source landing stays the plain dbt source reference it has
     always been; a seed landing admits none of them."""
-    landing = normalise_landing({"landing": dict(BRONZE_LANDING)}, "fixture:things")
+    landing = normalise_landing({"landing": dict(SOURCE_LANDING_FIXTURE)}, "fixture:things")
     assert landing["integration"] == {"kind": "managed"}, landing
     assert landing["physical_columns"][0]["name"] == "id", landing
 
@@ -408,26 +527,26 @@ def test_landing_admits_the_bronze_contract_fields_on_a_source_landing() -> None
 
     assert normalise_landing({}, "fixture:things") == {"kind": "seed"}, "the default stays seed"
 
-    for bronze_field in ("integration", "content_encodings", "codec", "physical_columns"):
+    for landing_field in ("integration", "content_encodings", "codec", "physical_columns"):
         try:
-            normalise_landing({"landing": {"kind": "seed", bronze_field: {}}}, "fixture:things")
+            normalise_landing({"landing": {"kind": "seed", landing_field: {}}}, "fixture:things")
         except ValueError as exc:
-            assert bronze_field in str(exc), str(exc)
+            assert landing_field in str(exc), str(exc)
         else:
-            raise AssertionError(f"a seed landing must reject {bronze_field!r}")
+            raise AssertionError(f"a seed landing must reject {landing_field!r}")
 
 
 def test_landing_still_rejects_a_misspelled_or_incomplete_source_landing() -> None:
     """Widening the admitted key set does not widen what passes: a misspelled
-    Bronze field and a source landing missing its coordinates both fail."""
-    misspelled = dict(BRONZE_LANDING)
+    Landing field and a source landing missing its coordinates both fail."""
+    misspelled = dict(SOURCE_LANDING_FIXTURE)
     misspelled["physical_colums"] = []
     try:
         normalise_landing({"landing": misspelled}, "fixture:things")
     except ValueError as exc:
         assert "physical_colums" in str(exc), str(exc)
     else:
-        raise AssertionError("a misspelled Bronze landing field must fail")
+        raise AssertionError("a misspelled Landing landing field must fail")
 
     try:
         normalise_landing({"landing": {"kind": "source", "integration": {"kind": "managed"}}}, "fixture:things")
@@ -437,12 +556,12 @@ def test_landing_still_rejects_a_misspelled_or_incomplete_source_landing() -> No
         raise AssertionError("a source landing without its coordinates must fail")
 
 
-def test_the_structural_gate_owns_no_bronze_semantics() -> None:
+def test_the_structural_gate_owns_no_landing_semantics() -> None:
     """The structural gate validates the shape of the discriminator alone.
-    Whether a codec, encoding or column set is a valid Bronze Product Contract is
+    Whether a codec, encoding or column set is a valid Landing Product Contract is
     decided by ergasterion.source_delivery, so a structurally well-formed landing
-    carrying nonsense Bronze content still passes here."""
-    nonsense = dict(BRONZE_LANDING)
+    carrying nonsense Landing content still passes here."""
+    nonsense = dict(SOURCE_LANDING_FIXTURE)
     nonsense["codec"] = {"kind": "not-a-codec"}
     nonsense["content_encodings"] = ["identity", "identity"]
     nonsense["physical_columns"] = []
@@ -456,13 +575,13 @@ def test_the_structural_gate_owns_no_bronze_semantics() -> None:
     except Exception as exc:
         assert "codec" in str(exc), str(exc)
     else:
-        raise AssertionError("the Bronze wire schema must reject the codec this gate passes")
+        raise AssertionError("the Landing wire schema must reject the codec this gate passes")
 
 
 TESTS = [
-    test_landing_admits_the_bronze_contract_fields_on_a_source_landing,
+    test_landing_admits_the_landing_contract_fields_on_a_source_landing,
     test_landing_still_rejects_a_misspelled_or_incomplete_source_landing,
-    test_the_structural_gate_owns_no_bronze_semantics,
+    test_the_structural_gate_owns_no_landing_semantics,
     test_compliant_fixture_passes,
     test_view_chain_past_ceiling_fails,
     test_view_outside_boundary_fails,
@@ -477,8 +596,13 @@ TESTS = [
     test_adapter_filename_mismatch_fails,
     test_deployment_target_missing_budget_fails,
     test_deployment_target_rejects_view_exceptions,
+    test_reference_kind_does_not_require_the_full_budget_family,
+    test_reference_kind_rejects_view_exceptions,
+    test_unknown_target_kind_fails_naming_the_registered_kinds,
     test_in_file_config_overrides_layer_view,
     test_shipped_estate_passes,
+    test_a_published_relation_rendered_as_a_view_outside_the_boundary_is_an_offence,
+    test_the_private_set_comes_from_the_manifests_and_not_from_a_path,
     test_shipped_declarations_load,
 ]
 

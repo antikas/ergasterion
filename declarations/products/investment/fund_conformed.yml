@@ -1,0 +1,197 @@
+# The consolidating product every lane of one entity meets in (architecture
+# section 8, two or more non-landing product sources with a union
+# composition and declared schema conformance across them). Every lane
+# publishes the same schema, so the union needs no per-source conformance,
+# and the coverage rule proves that every row every lane brought is still a
+# row here.
+#
+# It is also where the business key is computed, once: the identifier the
+# estate resolves the entity on, taken in the order the estate ranks them.
+# One product owns that expression and every product downstream reads it.
+#
+# Coverage is proved here, by a declared reconcile rule against every lane
+# this union combines, and by the known-answer assertions under
+# tests/investment/ beside it. Every lane of an entity states a column some
+# source system does not, and the coverage rule compares those null-safely,
+# so a lane that never states a column is covered rather than reported
+# missing on every row.
+#
+# A fund is identified by its own legal entity identifier where a system
+# states one and by the identifier the systems share where none does.
+# Where neither is stated the record is identified by itself, which is
+# the honest answer: the estate cannot say that record is the same fund
+# as any other. Those records reach the resolution unmerged, and the
+# pairs they make are scored rather than guessed.
+#
+# The manager a fund names is not a manager identity until the estate
+# resolves it. The name the fund states is read through the manager index,
+# keyed on the same normalised name the manager lane computes, and what
+# comes back is the business key the manager vault identifies that manager
+# by. Keying the association on the delivered name instead would hash to
+# something no manager vault knows.
+product:
+  name: fund_conformed
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_fund@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_name
+        - source_family_name
+        - source_vehicle_type
+        - source_lei
+        - source_external_id
+        - source_gp_id
+        - source_gp_name
+        - source_gp_lei
+        - source_asset_class
+        - source_strategy
+        - source_vintage_year
+        - source_committed_capital_usd
+        - source_currency
+        - source_domicile
+        - source_status
+        - source_reported_on
+        - fund_source_system
+        - fund_identity_key
+        - fund_normalised_name
+        - fund_normalised_gp_name
+        - fund_lei
+        - fund_external_id
+        - fund_gp_lei
+  - contract: investment.meridex_fund@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_name
+        - source_family_name
+        - source_vehicle_type
+        - source_lei
+        - source_external_id
+        - source_gp_id
+        - source_gp_name
+        - source_gp_lei
+        - source_asset_class
+        - source_strategy
+        - source_vintage_year
+        - source_committed_capital_usd
+        - source_currency
+        - source_domicile
+        - source_status
+        - source_reported_on
+        - fund_source_system
+        - fund_identity_key
+        - fund_normalised_name
+        - fund_normalised_gp_name
+        - fund_lei
+        - fund_external_id
+        - fund_gp_lei
+  - contract: investment.portiq_fund@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_name
+        - source_family_name
+        - source_vehicle_type
+        - source_lei
+        - source_external_id
+        - source_gp_id
+        - source_gp_name
+        - source_gp_lei
+        - source_asset_class
+        - source_strategy
+        - source_vintage_year
+        - source_committed_capital_usd
+        - source_currency
+        - source_domicile
+        - source_status
+        - source_reported_on
+        - fund_source_system
+        - fund_identity_key
+        - fund_normalised_name
+        - fund_normalised_gp_name
+        - fund_lei
+        - fund_external_id
+        - fund_gp_lei
+  - contract: investment.vantora_fund@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_name
+        - source_family_name
+        - source_vehicle_type
+        - source_lei
+        - source_external_id
+        - source_gp_id
+        - source_gp_name
+        - source_gp_lei
+        - source_asset_class
+        - source_strategy
+        - source_vintage_year
+        - source_committed_capital_usd
+        - source_currency
+        - source_domicile
+        - source_status
+        - source_reported_on
+        - fund_source_system
+        - fund_identity_key
+        - fund_normalised_name
+        - fund_normalised_gp_name
+        - fund_lei
+        - fund_external_id
+        - fund_gp_lei
+
+combine:
+  method: union
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: fund_identity_key, not_null: true}
+      - reconcile:
+          metric: row_count
+          contracts: [investment.chrono_fund@1, investment.meridex_fund@1, investment.portiq_fund@1, investment.vantora_fund@1]
+  - pattern: calculated_fields
+    fields:
+      - {name: fund_business_key, type: string, expression: "coalesce(fund_lei, fund_external_id, fund_identity_key)"}
+      - {name: fund_gp_lookup_key, type: string, expression: "upper(trim(fund_normalised_gp_name))"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.gp_name_index@1
+        "on": {fund_gp_lookup_key: gp_name_lookup_key}
+        fields: [gp_business_key]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every fund record all four source systems state, under one schema, with the identifier the estate resolves it on."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

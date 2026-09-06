@@ -1,0 +1,96 @@
+# A canonical interface over one curated product: one relation per
+# canonical entity, each a view at the declared interface boundary
+# (declarations/targets/interfaces.yml, architecture section 6).
+#
+# Every column it publishes is named as the reference model names it. The
+# reference block on each entity below records which published column
+# carries which reference-model attribute, and validate-canonical proves it
+# against the reference model checkout; this product is where the estate
+# publishes that vocabulary, so a consumer reads the agreed name rather than
+# one source system's spelling.
+#
+# The reference model identifies these entities by their external
+# identifiers, so the identifier the estate resolved the entity on is
+# published under that name.
+product:
+  name: portfolio_company_canonical
+  domain: investment
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: investment-domain
+
+sources:
+  - contract: investment.portfolio_company_vault@1
+    relation: golden_portfolio_company
+    expect:
+      fields:
+        - portfolio_company_hk
+        - company_business_key
+        - company_name
+        - company_sector
+        - company_sub_sector
+        - company_country
+        - company_status
+        - company_lei
+        - company_external_id
+        - load_datetime
+        - record_source
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: company_business_key, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: company_business_key, to: external_ids, type: string}
+      - {from: company_lei, to: lei, type: string}
+      - {from: company_name, to: company_name, type: string}
+      - {from: company_sector, to: sector, type: string}
+      - {from: company_sub_sector, to: sub_sector, type: string}
+      - {from: company_country, to: country, type: string}
+      - {from: company_status, to: status, type: string}
+      - {from: portfolio_company_hk, drop: true}
+      - {from: company_external_id, drop: true}
+      - {from: load_datetime, drop: true}
+      - {from: record_source, drop: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The canonical portfolio company interface, published under the reference model's own attribute names."
+    ownership: investment-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: canonical
+  shape_config:
+    entities:
+      - name: portfolio_company
+        key: [external_ids]
+        columns: [external_ids, lei, company_name, sector, sub_sector, country, status]
+        description: "The portfolio company as the reference model states one."
+        # Which entity of the reference model this one is the estate's
+        # reading of, and which of its attributes each column carries.
+        # PM-04 Portfolio Company.
+        reference:
+          entity: PM-04
+          attributes:
+            external_ids: external_ids
+            lei: lei
+            company_name: company_name
+            sector: sector
+            sub_sector: sub_sector
+            country: country
+            status: status
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

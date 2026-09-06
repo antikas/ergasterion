@@ -1,0 +1,108 @@
+# Every fund cash flow all four source systems state, under one schema
+# (architecture section 8, the consolidating generation in its union
+# form), with the fund the estate resolved read onto each event.
+#
+# A cash flow names its fund by that source system's own identifier, so
+# the read is on the system and the identifier together: two systems can
+# and do use the same identifier for different funds.
+#
+# The signed amount is the estate's convention in one place: money in is
+# positive and money out is negative, so a sum over any set of events is
+# a net figure.
+product:
+  name: fund_cash_flow_conformed
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_cash_flow@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_cash_flow_on
+        - source_cash_flow_type
+        - source_direction
+        - source_amount_usd
+        - source_currency
+        - cash_flow_source_system
+  - contract: investment.meridex_cash_flow@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_cash_flow_on
+        - source_cash_flow_type
+        - source_direction
+        - source_amount_usd
+        - source_currency
+        - cash_flow_source_system
+  - contract: investment.portiq_cash_flow@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_cash_flow_on
+        - source_cash_flow_type
+        - source_direction
+        - source_amount_usd
+        - source_currency
+        - cash_flow_source_system
+  - contract: investment.vantora_cash_flow@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_cash_flow_on
+        - source_cash_flow_type
+        - source_direction
+        - source_amount_usd
+        - source_currency
+        - cash_flow_source_system
+
+combine:
+  method: union
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_cash_flow_on, not_null: true}
+      - reconcile:
+          metric: row_count
+          contracts: [investment.chrono_cash_flow@1, investment.meridex_cash_flow@1, investment.portiq_cash_flow@1, investment.vantora_cash_flow@1]
+  - pattern: calculated_fields
+    fields:
+      - {name: cash_flow_signed_amount_usd, type: {name: decimal, precision: 18, scale: 2}, expression: "case when source_direction = 'inflow' then source_amount_usd else -source_amount_usd end"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.fund_conformed@1
+        "on": {cash_flow_source_system: fund_source_system, source_fund_id: source_fund_id}
+        fields: [fund_business_key, fund_external_id]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every fund cash flow event all four source systems state, signed, against the fund the estate resolved."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

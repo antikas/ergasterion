@@ -23,8 +23,8 @@ if __package__ in (None, ""):
     import sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     FingerprintScope,
     Migration,
     MigrationKind,
@@ -102,19 +102,19 @@ from ergasterion.ingestion.sqlite_store import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "bronze_schema_vectors.json"
-IDL_PATH = REPO_ROOT / "docs" / "specifications" / "bronze-portable-idl-v1.json"
+SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "landing_schema_vectors.json"
+IDL_PATH = REPO_ROOT / "docs" / "specifications" / "landing-portable-idl-v1.json"
 
 HMAC_GOLDEN_KEY = bytes.fromhex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
 NOW = "2026-01-01T00:00:00.000000Z"
 
 
-def _sample_contract() -> BronzeProductContract:
+def _sample_contract() -> LandingProductContract:
     document = json.loads(SCHEMA_VECTORS_PATH.read_text(encoding="utf-8"))
     for vector in document["positive"]:
-        if vector["record"] == "BronzeProductContract":
-            return BronzeProductContract.model_validate(vector["payload"])
-    raise AssertionError("no BronzeProductContract positive vector found")
+        if vector["record"] == "LandingProductContract":
+            return LandingProductContract.model_validate(vector["payload"])
+    raise AssertionError("no LandingProductContract positive vector found")
 
 
 def _managed_contract():
@@ -151,12 +151,12 @@ def _heartbeat_intent(identity, revision: str, state_revision: str) -> Projectio
     contract_digest = "b" * 64
     intent_base = {
         "schema": "ergasterion.projection-intent/v1", "logical_identity": identity.model_dump(mode="json"),
-        "contract_digest": contract_digest, "projection_target": "bronze", "projection_revision": revision,
+        "contract_digest": contract_digest, "projection_target": "landing", "projection_revision": revision,
         "originating_state_revision": state_revision, "kind": "heartbeat", "payload_digest": payload_digest,
     }
     return ProjectionIntent(
         schema="ergasterion.projection-intent/v1", logical_identity=identity, contract_digest=contract_digest,
-        projection_target="bronze", projection_revision=revision, originating_state_revision=state_revision,
+        projection_target="landing", projection_revision=revision, originating_state_revision=state_revision,
         kind=ProjectionIntentKind.HEARTBEAT, execution_plan_digest="c" * 64, runtime_manifest_digest="d" * 64,
         payload=payload, payload_digest=payload_digest, projection_intent_digest=canonical_digest(intent_base),
     )
@@ -404,7 +404,7 @@ def test_projection_confirmation_replay_refuses_digest_mismatch() -> None:
             state, _outbox_id, intent = _enqueue_heartbeat(store, identity)
             confirmation = ProjectionConfirmation(
                 schema="ergasterion.projection-confirmation/v1", logical_identity=identity,
-                contract_digest=intent.contract_digest, projection_target="bronze", kind=intent.kind,
+                contract_digest=intent.contract_digest, projection_target="landing", kind=intent.kind,
                 projection_intent_digest=intent.projection_intent_digest, projection_revision="1",
                 target_applied_at=NOW, committed_at=NOW, release_applied_at=None, timeliness=None,
                 processing=ProcessingOutcome.COMMITTED, visibility=None, ledger_ref=None, deletion_evidence=None,
@@ -513,7 +513,7 @@ def test_ahead_behind_corrupt_catchup_cursor_refuses_activation() -> None:
             from ergasterion.ingestion.records import ProjectionConfirmation, ProcessingOutcome
             confirmation = ProjectionConfirmation(
                 schema="ergasterion.projection-confirmation/v1", logical_identity=identity,
-                contract_digest=intent.contract_digest, projection_target="bronze", kind=intent.kind,
+                contract_digest=intent.contract_digest, projection_target="landing", kind=intent.kind,
                 projection_intent_digest=intent.projection_intent_digest, projection_revision="1",
                 target_applied_at=NOW, committed_at=NOW, release_applied_at=None, timeliness=None,
                 processing=ProcessingOutcome.COMMITTED, visibility=None, ledger_ref=None, deletion_evidence=None,
@@ -531,7 +531,7 @@ def test_ahead_behind_corrupt_catchup_cursor_refuses_activation() -> None:
                 deployment=build_deployment(contract, manifest, candidate_manifest_digest=manifest),
                 readiness=build_readiness(contract, manifest),
                 catchup_cursor=ProjectionCursor(
-                    logical_identity=identity, projection_target="bronze",
+                    logical_identity=identity, projection_target="landing",
                     projection_revision="0", projection_intent_digest=None,
                 ),
                 permit_pre_intent_fence=False,
@@ -545,7 +545,7 @@ def test_ahead_behind_corrupt_catchup_cursor_refuses_activation() -> None:
                     deployment=build_deployment(contract, manifest, candidate_manifest_digest=manifest),
                     readiness=build_readiness(contract, manifest),
                     catchup_cursor=ProjectionCursor(
-                        logical_identity=identity, projection_target="bronze",
+                        logical_identity=identity, projection_target="landing",
                         projection_revision=revision, projection_intent_digest=digest,
                     ),
                     permit_pre_intent_fence=False,
@@ -1012,7 +1012,7 @@ def test_snapshot_reconciliation_barrier_and_idempotent_evidence() -> None:
             assert evidence.delete_strategy.value == "explicit_tombstone"
             assert evidence.reconciliation_digest is None
 
-            from ergasterion.framework.bronze_contract import LifecycleEventType
+            from ergasterion.framework.landing_contract import LifecycleEventType
             from ergasterion.ingestion.records import AttemptLifecyclePayload, AttemptState
             attempt = Attempt(
                 run_id="a" * 64, attempt_id="b" * 64, logical_identity=identity, claim_digest="c" * 64,

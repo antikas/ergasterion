@@ -9,7 +9,11 @@ artefacts may materialise as views. This gate validates the whole models tree
 
   * materialisation boundary -- on a deployment target, a view sits under a
     declared interface path; on a lane target, a view outside those paths
-    needs an entry in the lane's own ``view_exceptions`` with a stated reason;
+    needs an entry in the lane's own ``view_exceptions`` with a stated reason.
+    A caller may name the models its route renders as translator-private
+    relations (``check_structure(non_interface_views=...)``): those are not
+    interfaces, so this one rule does not govern them, and every other budget
+    still does;
   * relation nesting -- ``view_depth`` counts the consecutive view levels a
     statement expands (a table caps the chain); every model stays within the
     target's declared ceiling;
@@ -26,13 +30,18 @@ the measured value against the declared limit. A missing or empty
 fail-closed, and ``ergasterion init`` scaffolds the directory for new estates.
 
 Runs standalone (``python ergasterion/structure_gate.py`` or ``ergasterion
-structure``) and as the post-emit gate inside ``ergasterion/emit.py``.
+structure``) and as the post-emit gate inside ``ergasterion/emit_products.py``.
+Standalone, it reads the product route's own private-relation set out of the
+runtime manifests the route wrote under ``manifests/products/``, so the estate
+never has to declare the route's whole tree as an interface boundary to keep the
+boundary rule honest over the relations the route does publish.
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +57,18 @@ from ergasterion.estate import EstateContext
 from ergasterion.dialect_lint import _is_generated
 
 INTERFACES_FILE = "interfaces.yml"
-TARGET_KINDS = ("deployment", "lane")
+# Where the product route records, per product, the relations it published and the
+# relations it rendered as translator-private. The standalone gate reads the private
+# set from there so it sees the same route context the in-route gate is handed.
+MANIFESTS_ROOT = "manifests/products"
+PRIVATE_RELATIONS_KEY = "auxiliary"
+# "reference" is the estate's reference adapter (architecture section 10: the
+# platform that executes the whole estate locally and is the engine's
+# executable truth, e.g. DuckDB); it carries the same structural boundaries a
+# "deployment" target does but never the required-budget minimum (below) --
+# a fresh estate's reference adapter is not required to declare every budget
+# key. "lane" stays the exception-carrying kind it always was.
+TARGET_KINDS = ("reference", "deployment", "lane")
 
 # Budget keys a deployment target must declare, each a positive integer.
 REQUIRED_BUDGETS = (
@@ -75,10 +95,10 @@ def normalise_landing(table: dict[str, Any], where: str) -> dict[str, Any]:
         raise ValueError(
             f"{where}.landing.kind: expected 'seed' or 'source', got {kind!r}"
         )
-    # The Bronze-contract fields (integration, content_encodings, codec,
+    # The Landing-contract fields (integration, content_encodings, codec,
     # physical_columns) are OPTIONAL here: this structural gate stays the single
     # entry point for the landing discriminator, but semantic validation of the
-    # full Bronze shape -- required once a table also carries a `delivery`
+    # full Landing shape -- required once a table also carries a `delivery`
     # block -- belongs to ergasterion.source_delivery (the "no template owns
     # semantic validation" split). A bare {kind: source, source_name,
     # identifier} landing with no delivery block stays a legacy dbt source()
@@ -218,9 +238,9 @@ def load_structure_declarations(
                 )
 
         exceptions_raw = data.get("view_exceptions", [])
-        if kind == "deployment" and exceptions_raw:
+        if kind in ("deployment", "reference") and exceptions_raw:
             raise ValueError(
-                f"{path}: view_exceptions belong to lane targets only; on a deployment "
+                f"{path}: view_exceptions belong to lane targets only; on a {kind} "
                 f"target a view lives under a declared interface path"
             )
         view_exceptions: dict[str, str] = {}
@@ -438,8 +458,57 @@ def _under_layer(rel_path: str, layers: list[str]) -> bool:
     return any(rel_path == layer or rel_path.startswith(layer + "/") for layer in layers)
 
 
-def check_structure(ctx: EstateContext | None = None) -> list[Offense]:
-    """Validate the estate against every declared target; return every offense."""
+def route_private_models(ctx: EstateContext) -> frozenset[str]:
+    """The models the product route rendered as translator-private relations, read
+    from the runtime manifests the route itself wrote.
+
+    Each manifest names its product's published and auxiliary relations. An
+    auxiliary relation is one the product's contract never publishes, so nothing
+    consumes it across an interface: architecture section 10 calls it
+    translator-private. The dbt model name for a relation ``<domain>.<rest>`` is
+    ``<domain>__<rest>``, which is how the translator named it; nothing here
+    matches a path or a name ending.
+
+    An estate with no manifests (one that has never run the route, or declares no
+    product) contributes an empty set, and the boundary rule then governs every
+    view it carries.
+    """
+
+    manifests_dir = ctx.root / MANIFESTS_ROOT
+    if not manifests_dir.is_dir():
+        return frozenset()
+    names: set[str] = set()
+    for path in sorted(manifests_dir.rglob("*.json")):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        relations = document.get("relations")
+        if not isinstance(relations, dict):
+            raise ValueError(f"{path}: product manifest carries no 'relations' block")
+        for relation in relations.get(PRIVATE_RELATIONS_KEY, ()):
+            if not isinstance(relation, str) or "." not in relation:
+                raise ValueError(
+                    f"{path}: private relation {relation!r} is not a qualified "
+                    "'<domain>.<relation>' name"
+                )
+            domain, rest = relation.split(".", 1)
+            names.add(f"{domain}__{rest}")
+    return frozenset(names)
+
+
+def check_structure(
+    ctx: EstateContext | None = None, *, non_interface_views: frozenset[str] = frozenset()
+) -> list[Offense]:
+    """Validate the estate against every declared target; return every offense.
+
+    ``non_interface_views`` names the models a route renders as
+    translator-private relations (architecture section 10): relations under a
+    product's own namespace that its contract never publishes, so nothing
+    consumes them across an interface. The interface-boundary rule governs
+    interfaces, so it does not govern these, and no estate has to declare a
+    boundary for a relation the engine owns. Every other budget still binds
+    them, the view-chain depth included: a private view is still a view the
+    adapter expands. The caller supplies the set from what its own route
+    registered as private, never from a path or a name ending.
+    """
     ctx = ctx or EstateContext.default()
     declarations, view_layers = load_structure_declarations(ctx)
     scan = scan_estate(ctx)
@@ -450,6 +519,8 @@ def check_structure(ctx: EstateContext | None = None) -> list[Offense]:
 
         for info in scan.models.values():
             if info.materialisation != "view":
+                continue
+            if info.name in non_interface_views:
                 continue
             if _under_layer(info.rel_path, view_layers):
                 continue
@@ -593,7 +664,7 @@ def main() -> int:
     ctx = EstateContext.resolve(estate_root=args.estate_root)
 
     try:
-        offenses = check_structure(ctx)
+        offenses = check_structure(ctx, non_interface_views=route_private_models(ctx))
     except ValueError as error:
         print(f"structure-gate FAIL: {error}")
         print("STRUCTURE_OFFENSES=1")

@@ -1,0 +1,79 @@
+# The served view of fund performance: one row per fund and calendar
+# year, with how many valuation dates the year carried and what the fund
+# reached by the last of them.
+#
+# The measures are stated at the grain the product declares, so a reader
+# adds nothing up twice: capital called and capital distributed are
+# running totals in the delivered data, so the figure for a year is the
+# highest the year reached, not the sum of its quarters.
+#
+# A valuation date the administrator states no net asset value for is
+# excluded by a named predicate, so the exclusion is counted and logged
+# rather than quietly summed as nothing.
+product:
+  name: fund_performance_summary
+  domain: investment
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: investment-domain
+
+sources:
+  - contract: investment.fund_performance@1
+    expect:
+      fields:
+        - fund_business_key
+        - fund_external_id
+        - source_name
+        - source_strategy
+        - source_valued_on
+        - source_nav_usd
+        - source_called_capital_usd
+        - source_distributed_capital_usd
+        - fund_invested_capital_usd
+        - fund_total_value_usd
+        - fund_department_code
+        - calendar_year
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: fund_business_key, not_null: true}
+  - pattern: data_filtering
+    predicates:
+      - name: valuation_dates_with_a_stated_value
+        expression: "source_nav_usd is not null"
+  - pattern: data_aggregation
+    grain: [fund_business_key, calendar_year]
+    groups: [fund_external_id, source_name, source_strategy]
+    aggregates:
+      - {name: fund_valuation_count, expression: "count(*)", type: integer}
+      - {name: fund_closing_nav_usd, expression: "max(source_nav_usd)", type: {name: decimal, precision: 18, scale: 2}}
+      - {name: fund_called_capital_usd, expression: "max(source_called_capital_usd)", type: {name: decimal, precision: 18, scale: 2}}
+      - {name: fund_distributed_capital_usd, expression: "max(source_distributed_capital_usd)", type: {name: decimal, precision: 18, scale: 2}}
+      - {name: fund_invested_capital_usd, expression: "max(fund_invested_capital_usd)", type: {name: decimal, precision: 18, scale: 2}}
+      - {name: fund_total_value_usd, expression: "max(fund_total_value_usd)", type: {name: decimal, precision: 18, scale: 2}}
+    late_arrival_policy: recompute_period
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per fund and calendar year, with the valuation dates it carried and the value it reached."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [fund_business_key, calendar_year]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

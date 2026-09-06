@@ -3,7 +3,7 @@
 Runs from the interpreter of a scratch venv with the ``ergasterion`` wheel
 installed non-editable (invoked by ``tests/python/test_ingestion_acceptance.py``,
 never directly). Drives the closed operator CLI surface plus one-shot direct
-DuckDB/SQLite setup for three Bronze products declared in ``contracts.json``:
+DuckDB/SQLite setup for three Landing products declared in ``contracts.json``:
 CDC JSON Lines with an explicit tombstone, append-only CSV with one
 recoverable quarantined row and an additive migration, and a signed complete
 snapshot. Raises ``AssertionError`` on the first violated expectation; prints
@@ -39,8 +39,8 @@ if _SOURCE_TREE_ROOT in _WHEEL_PKG.parents:
 
 from ergasterion.cli import main as cli_main  # noqa: E402
 from ergasterion.estate import EstateContext  # noqa: E402
-from ergasterion.framework.bronze_contract import BronzeProductContract  # noqa: E402
-from ergasterion.framework.models import Layer, compute_plan_digest  # noqa: E402
+from ergasterion.framework.landing_contract import LandingProductContract  # noqa: E402
+from ergasterion.framework.models import compute_plan_digest  # noqa: E402
 from ergasterion.framework.resolver import resolve  # noqa: E402
 from ergasterion.ingestion.codecs import (  # noqa: E402
     frame_sequence_digest,
@@ -52,7 +52,7 @@ from ergasterion.ingestion.evidence import (  # noqa: E402
     sign_envelope,
     verification_key_record,
 )
-from ergasterion.ingestion.duckdb_bronze import identity_key  # noqa: E402
+from ergasterion.ingestion.duckdb_landing import identity_key  # noqa: E402
 from ergasterion.ingestion.reference_runtime import set_clock, set_projection_faults  # noqa: E402
 from ergasterion.ingestion.runtime import Clock, canonical_digest  # noqa: E402
 from ergasterion.ingestion.settings import resolve_layout  # noqa: E402
@@ -91,13 +91,21 @@ def _check(label: str, code: int, err, want: int = 0) -> None:
     _log(label)
 
 
-def _declaration_yaml(contract: BronzeProductContract) -> dict:
+def _declaration_yaml(contract: LandingProductContract) -> dict:
     landing = _omit_nulls(contract.landing.model_dump(mode="json", by_alias=True))
     delivery = _omit_nulls(contract.delivery.model_dump(mode="json", by_alias=True))
+    # The table's domain is one of the product block's own declared facts.
     product = _omit_nulls(contract.product.model_dump(mode="json", by_alias=True))
-    product.pop("domain", None)
     projection = [_omit_nulls(i.model_dump(mode="json", by_alias=True)) for i in contract.projection]
-    return {"landing": landing, "delivery": delivery, "product": product, "projection": projection}
+    # "bronze" is the label this acceptance estate declares; the runtime route
+    # looks it up in the translator table rather than inferring it.
+    return {
+        "layer": "bronze",
+        "landing": landing,
+        "delivery": delivery,
+        "product": product,
+        "projection": projection,
+    }
 
 
 def duckdb_query(sql: str, params: tuple = ()) -> list[tuple]:
@@ -109,18 +117,18 @@ def duckdb_query(sql: str, params: tuple = ()) -> list[tuple]:
         con.close()
 
 
-def _identity_key_for(contract: BronzeProductContract) -> str:
+def _identity_key_for(contract: LandingProductContract) -> str:
     return identity_key(contract.logical_identity)
 
 
-def _accepted_count(contract: BronzeProductContract) -> int:
+def _accepted_count(contract: LandingProductContract) -> int:
     rows = duckdb_query(
         "SELECT COUNT(*) FROM accepted_rows WHERE identity_key = ?", (_identity_key_for(contract),),
     )
     return int(rows[0][0])
 
 
-def _dispositions_count(contract: BronzeProductContract, status: str) -> int:
+def _dispositions_count(contract: LandingProductContract, status: str) -> int:
     rows = duckdb_query(
         "SELECT COUNT(*) FROM dispositions WHERE identity_key = ? AND status = ?",
         (_identity_key_for(contract), status),
@@ -138,29 +146,41 @@ def _validation_for(shared: list[str], delivery_id: str) -> dict:
 
 # ------------------------------------------------------------------ fixtures
 contracts_doc = json.loads((FIXTURES_DIR / "contracts.json").read_text(encoding="utf-8"))
-cdc = BronzeProductContract.model_validate(contracts_doc["cdc"])
-append_v1 = BronzeProductContract.model_validate(contracts_doc["append_v1"])
-append_v1_1 = BronzeProductContract.model_validate(contracts_doc["append_v1_1_additive"])
-snapshot = BronzeProductContract.model_validate(contracts_doc["snapshot"])
+cdc = LandingProductContract.model_validate(contracts_doc["cdc"])
+append_v1 = LandingProductContract.model_validate(contracts_doc["append_v1"])
+append_v1_1 = LandingProductContract.model_validate(contracts_doc["append_v1_1_additive"])
+snapshot = LandingProductContract.model_validate(contracts_doc["snapshot"])
 
-(PROJECT_DIR / "domains").mkdir(parents=True, exist_ok=True)
-(PROJECT_DIR / "declarations").mkdir(exist_ok=True)
+(PROJECT_DIR / "declarations").mkdir(parents=True, exist_ok=True)
 (PROJECT_DIR / "runtime").mkdir(exist_ok=True)
 (PROJECT_DIR / "dbt_project.yml").write_text("name: bronze_acceptance\nprofile: bronze_acceptance\n", encoding="utf-8")
 (PROJECT_DIR / "estate.yml").write_text(
-    "estate:\n  namespace: " + cdc.logical_identity.estate_namespace + "\n", encoding="utf-8",
-)
-(PROJECT_DIR / "domains" / "acceptance.yml").write_text(
-    yaml.safe_dump({
-        "bronze": {
-            "domain": {"name": "acceptance", "display_name": "Acceptance"},
-            "products": [
-                {"source": cdc.logical_identity.source, "table": cdc.logical_identity.table},
-                {"source": append_v1.logical_identity.source, "table": append_v1.logical_identity.table},
-                {"source": snapshot.logical_identity.source, "table": snapshot.logical_identity.table},
-            ],
-        }
-    }, sort_keys=False),
+    yaml.safe_dump(
+        {
+            "estate": {
+                "namespace": cdc.logical_identity.estate_namespace,
+                "labels": {"bronze": {"profiles": ["landing"]}},
+                "adapters": {
+                    "duckdb": {"kind": "reference"},
+                    "bigquery": {"kind": "deployment"},
+                },
+                "final_target": "bigquery",
+                "translators": {
+                    "bronze": {
+                        "batch_ingestion": "local-ingestion",
+                        "data_validation": "local-ingestion",
+                        "data_publish": "local-ingestion",
+                        "checkpoint_retries": "local-ingestion",
+                        "data_contracts": "publication",
+                        "schema_publish": "publication",
+                        "metadata_capture": "publication",
+                        "lineage_capture": "publication",
+                    }
+                },
+            }
+        },
+        sort_keys=False,
+    ),
     encoding="utf-8",
 )
 (PROJECT_DIR / "declarations" / "acceptance.yml").write_text(
@@ -176,15 +196,15 @@ snapshot = BronzeProductContract.model_validate(contracts_doc["snapshot"])
 )
 
 typed = load_typed_declarations(EstateContext.resolve(estate_root=PROJECT_DIR))
-plan_digest = compute_plan_digest(resolve(Layer.BRONZE))
+plan_digest = compute_plan_digest(resolve("landing"))
 
 
-def _loaded(contract: BronzeProductContract) -> BronzeProductContract:
+def _loaded(contract: LandingProductContract) -> LandingProductContract:
     key = (contract.logical_identity.source, contract.logical_identity.table)
     return typed.tables[key].contract
 
 
-def _write_binding(rel: str, contract: BronzeProductContract, **overrides) -> str:
+def _write_binding(rel: str, contract: LandingProductContract, **overrides) -> str:
     digest = canonical_digest(_loaded(contract).model_dump(mode="json", by_alias=True))
     binding = build_local_binding(contract, execution_plan_digest=plan_digest, contract_digest=digest, **overrides)
     path = PROJECT_DIR / rel
@@ -211,7 +231,7 @@ set_clock(Clock(lambda: CLOCK["dt"]))
 set_projection_faults(0)
 
 
-def _activate(shared: list[str], contract: BronzeProductContract, digest: str) -> None:
+def _activate(shared: list[str], contract: LandingProductContract, digest: str) -> None:
     code, planned, err = _json_run(["plan", *shared]); _check("plan", code, err)
     assert planned["contract_digest"] == digest, planned
     code, _, err = _json_run(["contract", "register", *shared]); _check("contract register", code, err)
@@ -292,7 +312,7 @@ _log("CDC product: raw receipts, typed/disposition evidence, publication, retry/
 
 
 def _append_manifest(
-    delivery_id: str, csv_path: Path, contract: BronzeProductContract, contract_digest: str, batch_id: str,
+    delivery_id: str, csv_path: Path, contract: LandingProductContract, contract_digest: str, batch_id: str,
 ) -> tuple[Path, Path]:
     payload = csv_path.read_bytes()
     body = {
@@ -643,24 +663,24 @@ _log(
     f"(state_revision={before_state_revision})"
 )
 
-# --- whole-file loss (not just a projection relation) returns bronze_store_restore_required.
+# --- whole-file loss (not just a projection relation) returns landing_store_restore_required.
 # The backup created above is kept (not removed yet) so the runtime can be restored again below.
 duckdb_file = runtime_root / "ergasterion.duckdb"
 assert duckdb_file.is_file(), duckdb_file
 duckdb_file.unlink()
 code, after_loss, err = _json_run(["quarantine", *snap_shared, "--action", "list"])
-assert code != 0, "whole-file Bronze loss must not silently succeed"
+assert code != 0, "whole-file Landing loss must not silently succeed"
 assert any(
-    e["code"] == "bronze_store_restore_required" for e in after_loss.get("errors", [])
+    e["code"] == "landing_store_restore_required" for e in after_loss.get("errors", [])
 ), after_loss
-_log("whole-file Bronze loss surfaces bronze_store_restore_required rather than silent data loss")
+_log("whole-file Landing loss surfaces landing_store_restore_required rather than silent data loss")
 
 # Restore once more from the same verified backup so the runtime root is consistent again.
 shutil.rmtree(runtime_root)
 code, restored2, err = _json_run([
     "local-backup", *snap_shared, "--action", "restore", "--manifest", str(backup_dest / "backup-manifest.json"),
 ])
-_check("local-backup restore after whole-file Bronze loss", code, err)
+_check("local-backup restore after whole-file Landing loss", code, err)
 shutil.rmtree(backup_dest)
 
 # --- loss of applied-unconfirmed target evidence remains visibly commit_blocked, and a plain

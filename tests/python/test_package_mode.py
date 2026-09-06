@@ -69,35 +69,41 @@ def _same_path(a: str, b: str) -> bool:
 
 def _check_extras_by_name() -> str | None:
     """Read pyproject.toml directly and confirm the extras keys every install
-    and gate script names literally -- ``local-ingestion`` and its ``duckdb``
-    compatibility alias -- exist, and that ``all`` is exactly their union with
-    the ``snowflake``/``bigquery`` adapters. No script installs by extra name
-    today (every gate lists the pinned packages instead), so a typo or rename
-    of an extras key in pyproject.toml would otherwise pass every gate
-    unnoticed. Returns an error string, or ``None`` when the keys agree.
+    and gate script names literally -- ``local-ingestion``, ``bigquery`` and
+    ``all`` -- exist, that ``all`` is exactly the union of the other two, and
+    that no compatibility alias of another extra is carried. No script installs
+    by extra name today (every gate lists the pinned packages instead), so a
+    typo or rename of an extras key in pyproject.toml would otherwise pass
+    every gate unnoticed, and a re-added alias would pass it silently.
+    Returns an error string, or ``None`` when the keys agree.
     """
     pyproject_path = os.path.join(TREE_ROOT, "pyproject.toml")
     with open(pyproject_path, "rb") as fh:
         data = tomllib.load(fh)
     extras = data.get("project", {}).get("optional-dependencies", {})
 
-    for key in ("local-ingestion", "duckdb", "snowflake", "bigquery", "all"):
+    for key in ("local-ingestion", "bigquery", "all"):
         if key not in extras:
             return f"pyproject.toml [project.optional-dependencies] is missing the '{key}' extra"
 
     local_ingestion = set(extras["local-ingestion"])
-    duckdb_alias = set(extras["duckdb"])
-    if local_ingestion != duckdb_alias:
-        return (
-            "the 'duckdb' extra is not an identical alias of 'local-ingestion': "
-            f"local-ingestion={sorted(local_ingestion)!r}, duckdb={sorted(duckdb_alias)!r}"
-        )
+    # No alias of another extra. 0.6.0 is a declared breaking release and carries
+    # no compatibility spelling for an older install's extras key, so an extra
+    # whose pin set is identical to another extra's is a re-added alias.
+    for key, pins in extras.items():
+        if key in ("local-ingestion", "all"):
+            continue
+        if set(pins) == local_ingestion:
+            return (
+                f"the {key!r} extra carries the same pin set as 'local-ingestion': "
+                "0.6.0 carries no compatibility alias of an extras key"
+            )
 
-    expected_all = local_ingestion | set(extras["snowflake"]) | set(extras["bigquery"])
+    expected_all = local_ingestion | set(extras["bigquery"])
     actual_all = set(extras["all"])
     if actual_all != expected_all:
         return (
-            "the 'all' extra is not the union of local-ingestion, snowflake and bigquery: "
+            "the 'all' extra is not the union of local-ingestion and bigquery: "
             f"all={sorted(actual_all)!r}, expected={sorted(expected_all)!r}"
         )
     return None
@@ -160,8 +166,9 @@ def main() -> int:
         # package-mode imports + editable-install tree identity, from the neutral cwd
         probe = (
             "import os\n"
-            "import ergasterion, ergasterion.cli, ergasterion.emit, ergasterion.emit_contracts, "
-            "ergasterion.emit_odps, ergasterion.emit_graph, ergasterion.graph_model, "
+            "import ergasterion, ergasterion.cli, ergasterion.emit_products, "
+            "ergasterion.emit_contracts, ergasterion.emit_odps, ergasterion.emit_graph, "
+            "ergasterion.structure_gate, "
             "ergasterion.import_odcs, ergasterion.dialect_lint\n"
             "root = os.path.dirname(os.path.dirname(os.path.abspath(ergasterion.__file__)))\n"
             "print(root)\n"
@@ -210,9 +217,9 @@ def main() -> int:
         if p.returncode != 0 or "subcommands" not in (p.stdout + p.stderr):
             return _fail("`ergasterion --help` did not list its subcommands", p)
         console_help = p.stdout
-        p = _run([erg_cli, "emit", "--help"], cwd=neutral)
+        p = _run([erg_cli, "emit-products", "--help"], cwd=neutral)
         if p.returncode != 0:
-            return _fail("`ergasterion emit --help` failed", p)
+            return _fail("`ergasterion emit-products --help` failed", p)
 
         # Launcher-free invocation: `python -m ergasterion` must reach
         # the SAME CLI as the `ergasterion` console command -- it is a thin shim onto
@@ -267,27 +274,29 @@ def main() -> int:
 
         # an emit from a DIFFERENT cwd (proves cwd-independence + offline). The engine is
         # __file__-anchored, so --check reads/writes-nothing against the tree under test.
-        p = _run([erg_cli, "emit", "--check"], cwd=neutral)
+        p = _run([erg_cli, "emit-products", "--check"], cwd=neutral)
         if p.returncode != 0:
-            return _fail("`ergasterion emit --check` from a neutral cwd failed", p)
+            return _fail("`ergasterion emit-products --check` from a neutral cwd failed", p)
 
         # Explicit estate-root resolution: emit runs correctly from a
         # different cwd against an --estate-root-NAMED estate. From the neutral cwd (no estate
         # in it or above it), an explicit --estate-root must resolve TREE_ROOT and emit
         # byte-stably against it.
-        p = _run([erg_cli, "emit", "--check", "--estate-root", TREE_ROOT], cwd=neutral)
+        p = _run([erg_cli, "emit-products", "--check", "--estate-root", TREE_ROOT], cwd=neutral)
         if p.returncode != 0:
-            return _fail("`ergasterion emit --check --estate-root <tree>` from a neutral cwd failed", p)
+            return _fail(
+                "`ergasterion emit-products --check --estate-root <tree>` from a neutral cwd failed", p
+            )
 
         # Walk-up resolution from a nested cwd. Build a synthetic estate (dbt_project.yml +
-        # domains/ markers, dbt's own project-resolution precedent) with a deeply nested
+        # declarations/ markers, dbt's own project-resolution precedent) with a deeply nested
         # subdir, then resolve the estate root from that nested cwd. It must walk UP to the
         # synthetic root -- NOT fall through to the package anchor (TREE_ROOT). Asserting the
         # resolved root equals the synthetic estate (which != TREE_ROOT) is what makes this a
         # genuine walk-up proof rather than a restatement of the fallback.
         synthetic = os.path.join(tmp, "synthetic_estate")
         nested = os.path.join(synthetic, "a", "b", "c")
-        os.makedirs(os.path.join(synthetic, "domains"), exist_ok=True)
+        os.makedirs(os.path.join(synthetic, "declarations"), exist_ok=True)
         os.makedirs(nested, exist_ok=True)
         with open(os.path.join(synthetic, "dbt_project.yml"), "w", encoding="utf-8") as fh:
             fh.write("name: synthetic\n")
@@ -310,7 +319,8 @@ def main() -> int:
             )
 
     print("package-mode smoke OK: script-mode shim identity, editable install, entry point, "
-          "cwd-independent emit, --estate-root emit, and nested-cwd walk-up all green.")
+          "cwd-independent emit-products, --estate-root emit-products, and nested-cwd "
+          "walk-up all green.")
     return 0
 
 

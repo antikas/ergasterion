@@ -1,0 +1,97 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "The pipeline stage in force on each deal, with the name and funnel position the catalogue gives it.",
+  "freshness": "daily by 07:00 UTC",
+  "identity": {
+    "domain": "reference",
+    "major": 1,
+    "name": "deal_stage_current",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "reference.deal_stage@1"
+  ],
+  "quality": [
+    {
+      "description": "deal_external_identity must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "stage_effective_from must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "stage_entity_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_external_identity",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "stage_type_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "stage_value_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "stage_effective_from",
+          "required": true,
+          "type": "date"
+        },
+        {
+          "name": "stage_record_source",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "stage_load_datetime",
+          "required": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "stage_recorded_at",
+          "required": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "stage_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_value_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_sort_order",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "stage_rank",
+          "required": false,
+          "type": "integer"
+        }
+      ],
+      "name": "reference.deal_stage_current"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

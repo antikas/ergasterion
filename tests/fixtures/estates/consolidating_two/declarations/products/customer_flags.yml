@@ -1,0 +1,47 @@
+# The activity lane: one column beside the customer key, and one derived
+# from it. It is the second side of the merge, and the reason the merge is
+# a merge rather than a union: it carries a different fact about the same
+# customers, not more rows of the same fact.
+product:
+  name: customer_flags
+  domain: crm
+  version: "1.0"
+  layer: shaped
+  profile: derivation
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_flag_feed@1
+    expect:
+      fields: [customer_id, is_active]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - {name: is_dormant, type: boolean, expression: "not is_active"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Whether each customer is active, and the reverse of it."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

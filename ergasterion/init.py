@@ -29,7 +29,7 @@ _SCAFFOLD_ROOT = Path(__file__).resolve().parent / "scaffold"
 
 # Every empty directory the scaffold ships is seeded with a `.gitkeep` so a
 # consumer's own fresh git init has something to track before they add real content.
-_EMPTY_DIRS = ("domains", "declarations", "seeds", "tests")
+_EMPTY_DIRS = ("declarations", "seeds", "tests")
 
 _LICENSE_TEMPLATE = """\
 MIT License
@@ -67,9 +67,10 @@ source: a declared contract, an immutable record of what arrived, and a queryabl
 quality-checked result.
 
 This directory is an empty Ergasterion **estate**. The `ergasterion` command turns
-authored declarations into two things: a generated dbt pipeline (staging through
-entity-resolution and business-vault survivorship), and a local Bronze runtime that
-ingests, validates, and publishes source-delivered data into a queryable DuckDB layer.
+authored declarations into two things: a generated dbt project, one tree per declared
+product, with its tests, its published contracts and its lineage; and a local Landing
+runtime that ingests, validates, and publishes source-delivered data into a queryable
+DuckDB layer.
 
 ## The shortest working local journey
 
@@ -77,7 +78,7 @@ ingests, validates, and publishes source-delivered data into a queryable DuckDB 
    statement or an ODCS contract and ask for a draft:
 
    ```bash
-   ergasterion import-ddl your_table.sql --mode feed --source yoursource --landing source
+   ergasterion import-ddl your_table.sql --source yoursource --landing source
    ```
 
    This writes `declarations/yoursource.yml` with the columns, types, and nullability read
@@ -86,8 +87,11 @@ ingests, validates, and publishes source-delivered data into a queryable DuckDB 
    states plainly that it is not ready to receive data yet.
 
 2. Fill in the TODOs the draft leaves for you: who owns this data, how it is scheduled,
-   what counts as a passing row. Flip `delivery.kind` to `production` once every TODO is
-   answered. This is the one manual step; nothing here is guessed on your behalf.
+   what counts as a passing row, and which estate layer it sits in (`layer:`, one of
+   `estate.yml`'s own `labels:` keys -- the runtime route looks that key up in the
+   translator table rather than inferring it). Flip `delivery.kind` to `production` once
+   every TODO is answered. This is the one manual step; nothing here is guessed on your
+   behalf.
 
 3. Register a deployment and ingest a file. `runtime/local.yml` ships already computed
    for the walkthrough identity below (`--source reference --table orders`), so these
@@ -150,15 +154,20 @@ the same ports this estate's binding already names.
 - `dbt_project.yml` defines paths and structural materialisation defaults. Every dbt
   working path (`target-path`, `log-path`, `packages-install-path`) is fixed under
   `runtime/data/dbt/`.
-- `packages.yml` declares `dbt_utils` and `automate_dv`.
-- `profiles/profiles.yml` contains environment-driven DuckDB, Snowflake, and BigQuery
-  targets. It contains no credentials. The DuckDB target defaults to
+- `packages.yml` declares the dbt Hub packages generated models may call.
+- `profiles/profiles.yml` contains environment-driven DuckDB and BigQuery targets. It
+  contains no credentials. The DuckDB target defaults to
   `runtime/data/ergasterion.duckdb`.
-- `macros/` contains the adapter, normalisation, entity-resolution, and survivorship
-  helpers called by generated models.
-- `estate.yml` names this estate's namespace -- the qualifier every Bronze product's
-  globally unique identity is built from. Replace the placeholder before authoring a
-  production contract.
+- `macros/` contains the adapter-dispatch, publication, quarantine, generated-test,
+  curation and survivorship helpers the generated models call.
+- `estate.yml` names this estate's namespace -- the qualifier every Landing product's
+  globally unique identity is built from -- and its declared ownership (`support`
+  and `team`), which every published product contract carries. Replace the three
+  placeholders before authoring a production contract; the engine supplies no default.
+  It also declares this estate's adapters and its translator table: for each layer
+  label, which translator renders each pattern. The shipped `reference` label already
+  covers the landing composition the reference example below uses, so `plan`,
+  `contract`, `ingest`, `reconcile`, and `status` work against it without further setup.
 - `runtime/local.yml` is this estate's tracked local `RuntimeBinding`: the nine local
   ports, one parallel delivery attempt at a time, and the resource envelope that makes
   admission deterministic. `runtime/data/` (SQLite, DuckDB, raw objects and receipts,
@@ -166,45 +175,62 @@ the same ports this estate's binding already names.
   beside it stays tracked, so losing `runtime/data/` never erases the binding you would
   need to restore into it. Local backups belong outside this directory entirely; a backup
   written back inside it would be destroyed by whatever destroyed the original.
-- `domains/`, `declarations/`, `seeds/`, and `tests/` are empty authored-input areas: files
-  you write by hand. Everything under `models/`, `contracts/`, `graphs/`, and
+- `declarations/products/` holds one seeded product declaration. It is authored input,
+  not generated output: edit it, rename it, or delete it once you declare your own.
+  `ergasterion emit-products --estate-root .` turns every declaration there into a dbt
+  model, its schema documentation and its runtime manifest.
+- `seeds/` and `tests/` ship empty, and `declarations/` ships with only the
+  seeded product and the target budgets described above. All three are authored-input
+  areas: files you write by hand. Everything under `models/`, `contracts/`, `graphs/`, and
   `runtime/data/` is generated or runtime state: files a command writes for you and a
   later run of that same command safely overwrites.
 - `declarations/targets/` contains structural budgets, one per deployment
   target keyed by dbt adapter name, plus `interfaces.yml` naming the model paths that
-  may materialise as views. `ergasterion emit` validates every generated and
-  hand-authored model against these budgets.
+  may materialise as views. `ergasterion emit-products` validates every model it
+  writes against these budgets, and `ergasterion structure` validates the whole tree.
 - `LICENSE` is an MIT template. Replace the holder before publishing your estate.
 
-## Building your first domain (the vault pipeline)
+## Declaring a product
 
-A **domain** is one `domains/<name>.yml` file declaring the entities, hubs, links, and
-survivorship rules the engine turns into a dbt pipeline. A **source** is one
-`declarations/<source>.yml` file declaring one incoming feed (a table's columns, and how
-each column maps onto the entities the domain declares). This is a separate, unchanged
-path from the Bronze journey above: a `landing: {kind: seed}` table (the default, and
-every table an importer seeds without `--landing source`) still loads from a dbt seed CSV
-and flows straight through staging into the vault, exactly as before.
+A **product declaration** is one `declarations/products/<name>.yml` file. It names the
+label the product sits in, the source contracts it reads, the ordered patterns it
+composes, and the shape of what it publishes. `estate.yml` maps that label onto the
+profile the composition must satisfy and onto the translator that renders each pattern,
+so a declaration names no technology and no platform anywhere.
 
-Add a domain, at least one source declaration, and either a seed or external-source
-definition. Then run:
+The seeded declaration composes the reference `derivation` profile against a fixture-bound
+source, so it emits before anything upstream of it exists:
 
 ```bash
-ergasterion emit --estate-root .
-dbt deps --profiles-dir profiles
-dbt parse --profiles-dir profiles -t duckdb --no-partial-parse
+ergasterion emit-products --estate-root .
+ergasterion emit-products --estate-root . --check
 ```
 
-This regenerates the full pipeline: staging models, an Automate-DV raw-vault layer
-(hubs/links/satellites), business-vault survivorship (golden records), and
-entity-resolution models, under `models/`.
+The first command writes `models/products/` and `manifests/products/` and prints one
+summary line per product: its label, profile, shape, the adapters it was gated for, and
+how many artefacts it emitted. The second reports drift against what is on disk without
+writing. Changing a label's entry in `estate.yml`'s translator table changes which
+translator owns a pattern, with no change to any declaration.
+
+## Generating contracts, a product descriptor and a graph map
+
+Every one of these reads the product declarations, never a compiled dbt manifest:
+
+```bash
+ergasterion contracts --estate-root .       # one ODCS v3.1.0 contract per declared product
+ergasterion odps --estate-root .            # one ODPS (Bitol) v1.0.0 descriptor per product
+ergasterion product-graph --estate-root .   # the estate product graph
+```
+
+Each command regenerates its output by default. Pass `--check` to report on-disk drift
+without writing.
 
 ### Seed column types are authored, not generated
 
 dbt seeds need a `+column_types:` pin per column so a header-only or all-blank CSV column
 never gets type-inferred as something wrong (a common failure mode: an all-numeric-looking
 id column silently becomes an integer and loses its leading zeroes). This is a genuinely
-manual step: add a `seeds:` block to `dbt_project.yml` yourself, one entry per raw seed
+manual step: add a `seeds:` block to `dbt_project.yml` yourself, one entry per seed
 table, e.g.:
 
 ```yaml
@@ -219,44 +245,19 @@ seeds:
 
 There is no generator for this block. The engine does not guess column types from a CSV.
 
-### The one manual layer
-
-Everything from staging through business-vault survivorship is generated. The served
-tables under `models/canonical/` and `models/marts/` are hand-authored dbt SQL containing
-your business logic. Add each served table to the domain's `odcs.products` map so the
-contract and product descriptor commands can publish its interface.
-
-## Generating contracts, a product descriptor, and a graph map
-
-`dbt parse` writes its manifest to `runtime/data/dbt/target/manifest.json` (the fixed
-`target-path` set above). `contracts`, `odps`, and `graph` read the manifest from the
-conventional `target/manifest.json` location, so once `ergasterion emit` has run and
-`dbt parse` succeeds, copy the manifest there first:
-
-```bash
-mkdir -p target
-cp runtime/data/dbt/target/manifest.json target/manifest.json
-ergasterion contracts --estate-root .   # one ODCS v3.1.0 contract per served table
-ergasterion odps --estate-root .        # one ODPS (Bitol) v1.0.0 product descriptor per domain
-ergasterion graph --estate-root .       # one property-graph artefact suite per domain
-```
-
-Each command regenerates its output by default. Pass `--check` to report on-disk drift
-without writing.
-
 ## Running dbt without network access
 
 dbt reads installed packages from `packages-install-path` in `dbt_project.yml`, fixed here
-at `runtime/data/dbt/packages`. If that directory already contains `dbt_utils` and
-`automate_dv`, parse and build commands do not need a network fetch. There is no
+at `runtime/data/dbt/packages`. If that directory already contains the packages
+`packages.yml` declares, parse and build commands do not need a network fetch. There is no
 `dbt deps --packages-install-path` command-line option; `packages-install-path` is a
 `dbt_project.yml` project-config key, set once, not a flag passed per command.
 
 ## Where the exact rules live
 
-The generated `ergasterion/schemas/bronze-product-v1.schema.json` inside this package
+The generated `ergasterion/schemas/landing-product-v1.schema.json` inside this package
 (present in every install, source checkout or not) is the exact machine-checkable shape
-every Bronze declaration, contract, and runtime record follows. This project's own README
+every Landing declaration, contract, and runtime record follows. This project's own README
 links the fuller architecture write-up for the reasoning behind those rules.
 """
 
@@ -271,7 +272,7 @@ def scaffold(dest: Path, *, force: bool = False) -> list[Path]:
     # Validate all package data before creating the destination.
     for required in (
         "dbt_project.yml", "packages.yml", "profiles.yml", "macros", "targets",
-        "estate.yml", "runtime", ".gitignore",
+        "estate.yml", "runtime", "products", ".gitignore",
     ):
         if not (_SCAFFOLD_ROOT / required).exists():
             raise SystemExit(
@@ -335,6 +336,15 @@ def scaffold(dest: Path, *, force: bool = False) -> list[Path]:
     for target_file in sorted((_SCAFFOLD_ROOT / "targets").glob("*.yml")):
         shutil.copy2(target_file, targets_dest / target_file.name)
         written.append(targets_dest / target_file.name)
+
+    # The seeded product declaration. declarations/products/ is the tree the
+    # product route reads, so a fresh estate validates and emits through
+    # `ergasterion emit-products` before its owner authors anything.
+    products_dest = dest / "declarations" / "products"
+    products_dest.mkdir(parents=True, exist_ok=True)
+    for seed_file in sorted((_SCAFFOLD_ROOT / "products").glob("*.yml")):
+        shutil.copy2(seed_file, products_dest / seed_file.name)
+        written.append(products_dest / seed_file.name)
 
     license_path = dest / "LICENSE"
     license_path.write_text(_LICENSE_TEMPLATE, encoding="utf-8")

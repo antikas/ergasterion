@@ -1,0 +1,54 @@
+# The second source system's lane. Its feed calls the customer key
+# cust_ref, the address email_address, the signup date signup_date, and it
+# states a lifetime value as a whole number. None of that is renamed here:
+# the union product one generation on declares the conformance, so this
+# lane stays a faithful reading of the system it comes from.
+#
+# It states no loyalty tier at all. The union one generation on publishes
+# one schema, so the column is here and empty on every row this lane
+# delivers, which is what a lane that does not carry a fact looks like once
+# it has been conformed.
+product:
+  name: customer_b
+  domain: crm
+  version: "1.0"
+  layer: shaped
+  profile: derivation
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_feed_b@1
+    expect:
+      fields: [cust_ref, ltv, email_address, signup_date]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: cust_ref
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - {name: source_system, type: string, expression: "'feed_b'"}
+      - {name: loyalty_tier, type: string, expression: "null"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Customers as the second source system states them."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

@@ -1,0 +1,40 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "incremental",
+    "strategy": {
+      "bigquery": "merge",
+      "duckdb": "delete+insert"
+    },
+    "unique_key": [
+      "decision_id"
+    ]
+  },
+  "product": "investment.deal_decision_log",
+  "relations": {
+    "auxiliary": [
+      "investment.deal_decision_log__checked",
+      "investment.deal_decision_log__current",
+      "investment.deal_decision_log__quarantine",
+      "investment.deal_decision_log__sla"
+    ],
+    "published": [
+      "investment.deal_decision_log"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

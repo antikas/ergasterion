@@ -1,0 +1,62 @@
+# The seeded product declaration. It is authored input, not generated output:
+# edit it, rename it, or delete it once you declare products of your own.
+#
+# It composes the derivation profile, which the `derived` label in
+# estate.yml admits, and it renders through the translator that estate.yml
+# names for each of its patterns. `ergasterion emit-products --estate-root .`
+# turns it into a dbt model, its schema documentation and its runtime
+# manifest under models/products/ and manifests/products/.
+#
+# Its source is bound to a fixture relation (raw_reference_orders), so this
+# estate validates and emits before any product upstream of it exists. Once
+# a product in this estate publishes the contract you want to read, drop the
+# `kind`/`fixture` block and name that contract instead.
+product:
+  name: orders_summary
+  domain: reference
+  version: "1.0"
+  layer: derived
+  owner: replace-with-your-owning-team
+
+sources:
+  - contract: reference.orders@1
+    kind: fixture
+    fixture:
+      relation: raw_reference_orders
+      fields:
+        - {name: order_id, type: string}
+        - {name: loaded_at, type: timestamp}
+    expect:
+      fields: [order_id, loaded_at]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: quarantine
+    error_threshold: 0.01
+    rules:
+      - field: order_id
+        completeness: 1.0
+  - pattern: calculated_fields
+    fields:
+      - {name: loaded_on, type: date, expression: "CAST(loaded_at AS DATE)"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Scaffold walkthrough example -- replace with your own product before production use."
+    ownership: replace-with-your-owning-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

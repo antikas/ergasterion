@@ -1,4 +1,4 @@
-"""The deterministic Bronze ingestion service: the state machine that drives one
+"""The deterministic Landing ingestion service: the state machine that drives one
 logical delivery stream from a submitted managed/external delivery input
 through landing, validation, quarantine and the two-phase publication commit,
 entirely over the nine ``ergasterion.ingestion.ports`` protocols.
@@ -22,7 +22,7 @@ target projection is attempted, so a post-intent target failure can never
 lose or duplicate progress -- it leaves an invisible ``commit_blocked`` outbox
 entry that ``run_due`` resumes exactly once the target is reachable again),
 and ordered lifecycle envelopes (one ``LifecycleEvent`` per attempt-state
-transition and per Bronze evidence kind, projected through
+transition and per Landing evidence kind, projected through
 ``LifecycleSinkPort``).
 
 What this module deliberately does not do: parse a payload, evaluate a
@@ -62,8 +62,8 @@ from ergasterion.ingestion.records import (
     AttemptQuery,
     AttemptState,
     BlockPhase,
-    BronzeEvidence,
-    BronzeProductContract,
+    LandingEvidence,
+    LandingProductContract,
     CandidateReadQuery,
     ContractLifecycleRequest,
     ContractLifecycleTransitionResult,
@@ -83,7 +83,7 @@ from ergasterion.ingestion.records import (
     ManagedPayloadInput,
     MaterializationCompletion,
     MaterializationSession,
-    MaterializedBronzeEvidence,
+    MaterializedLandingEvidence,
     OpaqueRef,
     OutboxCompletion,
     OutboxEntryKind,
@@ -118,7 +118,7 @@ from ergasterion.ingestion.records import (
     ValidationResult,
     VisibilityIdentity,
 )
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     LifecycleEventType,
     PublicationPolicy,
     ReadinessResult,
@@ -139,7 +139,7 @@ LEASE_ITEM_LIMIT = 50
 
 class PortError(Exception):
     """Raised by a port implementation (real or fake) to signal one of
-    ``ergasterion.framework.bronze_contract.ERROR_CODES``. The runtime never
+    ``ergasterion.framework.landing_contract.ERROR_CODES``. The runtime never
     raises a bare ``Exception`` for a domain failure -- every stop condition
     it detects itself (mode mismatch, replay conflict, gap violation, ...)
     raises this with the matching closed error code, exactly like a port
@@ -244,7 +244,7 @@ class Admission:
 def check_port_topology(
     binding: RuntimeBinding, capabilities: Mapping[str, AdapterCapabilities]
 ) -> tuple[str, ...]:
-    """Assert the deployment's port topology is the Bronze topology: all nine
+    """Assert the deployment's port topology is the Landing topology: all nine
     slots bound in ``PORT_FIELD_ORDER``, each with an ``AdapterCapabilities``
     record naming that same ``port_kind``, declaring exactly the operations
     ``PORT_OPERATION_ORDER`` lists for the slot -- no missing operation and no
@@ -402,7 +402,7 @@ def admit_resources(
 
 def admit(
     binding: RuntimeBinding, deployment: RuntimeDeployment, capabilities: Mapping[str, AdapterCapabilities],
-    implementation_versions: Mapping[str, str], readiness: InterfaceReadiness, contract: BronzeProductContract,
+    implementation_versions: Mapping[str, str], readiness: InterfaceReadiness, contract: LandingProductContract,
     execution_plan_digest: Digest, runtime_manifest_digest: Digest, observed_at: str,
 ) -> Admission:
     """The single admission gate every execution passes before it starts: port
@@ -430,7 +430,7 @@ def admit(
 # --------------------------------------------------------------------------- scheduled occurrences
 
 def scheduled_occurrences(
-    contract: BronzeProductContract, since: str | None, now: str, max_occurrences: int,
+    contract: LandingProductContract, since: str | None, now: str, max_occurrences: int,
 ) -> tuple[str, ...]:
     """Every mandatory scheduled occurrence the contract's schedule places
     strictly after ``since`` and at or before ``now``, ascending, capped at
@@ -461,7 +461,7 @@ def scheduled_occurrences(
 
 
 def timeliness_state(
-    contract: BronzeProductContract, boundary_at: str, last_committed_at: str | None, now: str,
+    contract: LandingProductContract, boundary_at: str, last_committed_at: str | None, now: str,
 ) -> TimelinessState:
     """The timeliness of one scheduled occurrence: satisfied by a commit at or
     after the boundary, otherwise late once the warning minutes have elapsed
@@ -533,7 +533,7 @@ class Clock:
 
 
 class IngestionRuntime:
-    """Drives one Bronze logical identity's delivery lifecycle over an
+    """Drives one Landing logical identity's delivery lifecycle over an
     injected ``PortSet`` and ``Clock``. Stateless itself: every method reads
     its starting ``StreamState``/``Attempt`` from the caller (typically freshly
     queried from ``state_store``) and returns the next one; nothing is cached
@@ -609,7 +609,7 @@ class IngestionRuntime:
         )
 
     def submit_managed(
-        self, stream_state: StreamState, contract: BronzeProductContract, execution_plan_digest: Digest,
+        self, stream_state: StreamState, contract: LandingProductContract, execution_plan_digest: Digest,
         runtime_manifest_digest: Digest, run_id: Digest, input: ManagedPayloadInput,
     ) -> tuple[Attempt, StreamState]:
         """Accept a managed payload submission: validate the delivery mode
@@ -681,7 +681,7 @@ class IngestionRuntime:
         )
         return attempt, committed
 
-    def _validate_mode(self, contract: BronzeProductContract, input: ManagedPayloadInput) -> None:
+    def _validate_mode(self, contract: LandingProductContract, input: ManagedPayloadInput) -> None:
         """Delivery-mode validation, all of it, before any port beyond the
         connector is touched: a managed payload requires a managed integration,
         the progress claim's kind must be the kind the contract declares, and a
@@ -744,9 +744,9 @@ class IngestionRuntime:
     # ----------------------------------------------------------------- landing + validation
 
     def land_and_validate(
-        self, attempt: Attempt, stream_state: StreamState, contract: BronzeProductContract, raw_receipt: RawReceipt,
+        self, attempt: Attempt, stream_state: StreamState, contract: LandingProductContract, raw_receipt: RawReceipt,
         visibility: VisibilityIdentity, evaluation_id: Digest, ruleset_digest: Digest,
-    ) -> tuple[Attempt, StreamState, MaterializedBronzeEvidence, ValidationResult]:
+    ) -> tuple[Attempt, StreamState, MaterializedLandingEvidence, ValidationResult]:
         """Drive one attempt from ``RECEIVED`` through ``PREPARING`` and
         ``MATERIALIZING`` to a completed ``ValidationResult``, entirely through
         ``RawStorePort`` and ``LandingAdapterPort``. Returns the attempt still in
@@ -778,9 +778,9 @@ class IngestionRuntime:
         return self._transition(attempt, stream_state, state=AttemptState.FAILED, reason_code=reason_code)
 
     def _land_and_validate(
-        self, progress: "_LandingProgress", contract: BronzeProductContract, raw_receipt: RawReceipt,
+        self, progress: "_LandingProgress", contract: LandingProductContract, raw_receipt: RawReceipt,
         visibility: VisibilityIdentity, evaluation_id: Digest, ruleset_digest: Digest,
-    ) -> tuple[Attempt, StreamState, MaterializedBronzeEvidence, ValidationResult]:
+    ) -> tuple[Attempt, StreamState, MaterializedLandingEvidence, ValidationResult]:
         attempt = progress.attempt
         handle = self.ports.raw_store.open_raw(raw_receipt.raw_receipt_digest)
         preparation = self.ports.landing_adapter.begin_prepare(attempt.attempt_id, raw_receipt, handle, contract, visibility)
@@ -791,7 +791,7 @@ class IngestionRuntime:
             if page.eof:
                 break
             offset = page.next_offset or offset
-        evidence: BronzeEvidence = self.ports.landing_adapter.finish_prepare(preparation)
+        evidence: LandingEvidence = self.ports.landing_adapter.finish_prepare(preparation)
 
         attempt = progress.advance(*self._transition(attempt, progress.stream_state, state=AttemptState.MATERIALIZING))
 
@@ -856,7 +856,7 @@ class IngestionRuntime:
             validation_result_digest=canonical_digest({"evaluation_id": evaluation_id, "accepted": accepted, "rejected": rejected}),
         )
         completion = MaterializationCompletion(session=session, validation=validation, candidate_keyset=None, output_visibility=None)
-        materialized: MaterializedBronzeEvidence = self.ports.landing_adapter.finish_materialization(completion)
+        materialized: MaterializedLandingEvidence = self.ports.landing_adapter.finish_materialization(completion)
 
         attempt = progress.advance(*self._transition(attempt, progress.stream_state, state=AttemptState.VALIDATING))
         for disposition in dispositions:
@@ -885,7 +885,7 @@ class IngestionRuntime:
     # ----------------------------------------------------------------- publication (two-phase)
 
     def publish(
-        self, attempt: Attempt, stream_state: StreamState, contract: BronzeProductContract, materialized: MaterializedBronzeEvidence,
+        self, attempt: Attempt, stream_state: StreamState, contract: LandingProductContract, materialized: MaterializedLandingEvidence,
         validation: ValidationResult, visibility: VisibilityIdentity, raw_receipt: RawReceipt,
         readiness: InterfaceReadiness,
     ) -> IngestionResult:
@@ -924,7 +924,7 @@ class IngestionRuntime:
             readiness_digest=readiness.readiness_digest, delivery_claim_digest=attempt.claim_digest,
             transport_payload_digest=raw_receipt.payload.content_id.split(":", 1)[-1],
             raw_receipt_ref=materialized.prepared.candidate_ref, raw_receipt_digest=raw_receipt.raw_receipt_digest,
-            bronze_partition_ref=materialized.accepted_ref, accepted_content_digest=materialized.accepted_content_digest,
+            landing_partition_ref=materialized.accepted_ref, accepted_content_digest=materialized.accepted_content_digest,
             ruleset_digest=validation.ruleset_digest, validation_result_digest=validation.validation_result_digest,
             accepted_count=validation.accepted_count, progress_claim={"kind": "opaque_batch"},
             deletion_evidence=None, scheduled_boundary_at=attempt.scheduled_boundary_at,
@@ -971,14 +971,14 @@ class IngestionRuntime:
         revision = str(int(stream_state.required_projection_revision) + 1)
         base = {
             "schema": "ergasterion.projection-intent/v1", "logical_identity": _dump(stream_state.logical_identity),
-            "contract_digest": contract_digest, "projection_target": "bronze", "projection_revision": revision,
+            "contract_digest": contract_digest, "projection_target": "landing", "projection_revision": revision,
             "originating_state_revision": stream_state.state_revision, "kind": kind.value,
             "payload_digest": payload_digest,
         }
         intent_digest = canonical_digest(base)
         return ProjectionIntent(
             schema="ergasterion.projection-intent/v1", logical_identity=stream_state.logical_identity,
-            contract_digest=contract_digest, projection_target="bronze", projection_revision=revision,
+            contract_digest=contract_digest, projection_target="landing", projection_revision=revision,
             originating_state_revision=stream_state.state_revision, kind=kind,
             execution_plan_digest=execution_plan_digest, runtime_manifest_digest=runtime_manifest_digest,
             payload=payload, payload_digest=payload_digest, projection_intent_digest=intent_digest,
@@ -1142,7 +1142,7 @@ class IngestionRuntime:
         return max(boundaries) if boundaries else None
 
     def run_scheduled(
-        self, contract: BronzeProductContract, stream_state: StreamState, now: str, since: str | None,
+        self, contract: LandingProductContract, stream_state: StreamState, now: str, since: str | None,
         max_occurrences: int,
     ) -> tuple[StreamState, tuple[str, ...]]:
         """Evaluate every mandatory scheduled occurrence due at ``now``, in
@@ -1176,7 +1176,7 @@ class IngestionRuntime:
             status = self.ports.state_store.status_query(contract.logical_identity)
             if int(status.incomplete_outbox_count) > 0:
                 break
-            cursor = self.ports.projection_publisher.read_cursor(contract.logical_identity, "bronze")
+            cursor = self.ports.projection_publisher.read_cursor(contract.logical_identity, "landing")
             if int(status.state.required_projection_revision) > int(cursor.projection_revision):
                 break
             lateness = contract.delivery.schedule_lateness
@@ -1217,7 +1217,7 @@ class IngestionRuntime:
     # ----------------------------------------------------------------- quarantine release
 
     def release_quarantine(
-        self, attempt: Attempt, stream_state: StreamState, contract: BronzeProductContract,
+        self, attempt: Attempt, stream_state: StreamState, contract: LandingProductContract,
         evaluation: RemediationEvaluation, selected_locators: tuple, accepted_content_digest: Digest,
         prior_release_ruleset_digest: Digest | None, raw_ref: OpaqueRef | None = None,
     ) -> RemediationDecision:
@@ -1263,7 +1263,7 @@ class IngestionRuntime:
         )
 
     def resume_release(
-        self, attempt: Attempt, stream_state: StreamState, contract: BronzeProductContract,
+        self, attempt: Attempt, stream_state: StreamState, contract: LandingProductContract,
         evaluation: RemediationEvaluation, accepted_content_digest: Digest, selected_locator_count: int,
         raw_ref: OpaqueRef | None = None,
     ) -> RemediationDecision:
@@ -1305,7 +1305,7 @@ class IngestionRuntime:
         )
 
     def _checkpoint_release(
-        self, attempt: Attempt, stream_state: StreamState, contract: BronzeProductContract,
+        self, attempt: Attempt, stream_state: StreamState, contract: LandingProductContract,
         evaluation: RemediationEvaluation, recorded: RemediationDecision, release_id: Digest,
         accepted_content_digest: Digest, selected_locator_count: int, raw_ref: OpaqueRef | None = None,
     ) -> RemediationDecision:
@@ -1327,7 +1327,7 @@ class IngestionRuntime:
             readiness_digest=canonical_digest({"readiness": "release"}), delivery_claim_digest=attempt.claim_digest,
             transport_payload_digest=canonical_digest({"release": release_id}),
             raw_receipt_ref="release-ref", raw_receipt_digest=evaluation.raw_receipt_digest,
-            bronze_partition_ref="release-partition", accepted_content_digest=accepted_content_digest,
+            landing_partition_ref="release-partition", accepted_content_digest=accepted_content_digest,
             ruleset_digest=evaluation.target_ruleset_digest, validation_result_digest=recorded.validation_result_digest,
             accepted_count=str(selected_locator_count), progress_claim={"kind": "opaque_batch"}, deletion_evidence=None,
             prior_committed_at=stream_state.last_committed_at, lineage_digest=canonical_digest({"release": release_id}),

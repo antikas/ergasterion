@@ -1,0 +1,60 @@
+# The product under the label the engine has never seen. Its source is bound
+# to a fixture relation for local proof (architecture section 12), so this
+# estate needs nothing upstream of it. The label admits exactly one profile,
+# so the declaration omits `profile` and the estate resolves it.
+product:
+  name: item_facts
+  domain: catalogue
+  version: "1.0"
+  layer: harmonised
+  owner: catalogue-domain
+
+sources:
+  - contract: catalogue.item_landing@1
+    kind: fixture
+    fixture:
+      relation: item_landing
+      fields:
+        - {name: item_id, type: string}
+        - {name: item_name, type: string}
+        - {name: region_code, type: string}
+        - {name: unit_price, type: {name: decimal, precision: 12, scale: 2}}
+    expect:
+      fields: [item_id, item_name, region_code, unit_price]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: quarantine
+    error_threshold: 0.25
+    rules:
+      - field: item_id
+        completeness: 1.0
+  - pattern: calculated_fields
+    fields:
+      - {name: price_band, type: string, expression: "CASE WHEN unit_price > 100 THEN 'high' ELSE 'low' END"}
+  - pattern: data_filtering
+    predicates:
+      - name: priced
+        expression: "unit_price > 0"
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Priced catalogue items, banded by unit price."
+    ownership: catalogue-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

@@ -1,0 +1,6 @@
+tid,q,st,mins
+T-01,support,new,15
+T-02,support,active,120
+T-03,billing,active,600
+T-04,billing,closed,30
+T-05,support,resolved,900

@@ -1,0 +1,72 @@
+# The order summary: one row per order, with how many lines it carried and
+# what they took, aggregated from the order line fact of the served star.
+#
+# It reads one named relation of a producer that publishes several
+# (architecture section 7): the fact, as the star's own shape names it.
+# Nothing else the star publishes is visible here, so a dimension's
+# attributes are not columns of this product.
+#
+# Its known answer is what makes it worth serving beside the fact: the
+# revenue of an order's lines is the total the source system stated for
+# that order, and a summary that did not add up would say so here rather
+# than in a report.
+#
+# A line arriving late for an order already summarised rewrites that
+# order rather than landing beside it, which is only true of a product
+# that publishes incrementally keyed by its own grain, so the policy and
+# the publication are declared together.
+product:
+  name: order_summary
+  domain: ecommerce
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.order_star@1
+    relation: fact_order_line
+    expect:
+      fields:
+        - order_id
+        - line_number
+        - line_quantity
+        - line_revenue
+        - line_order_date
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: order_id, not_null: true}
+  - pattern: data_aggregation
+    grain: [order_id]
+    aggregates:
+      - {name: order_line_count, expression: "count(*)", type: integer}
+      - {name: order_units, expression: "sum(line_quantity)", type: integer}
+      - name: order_revenue
+        expression: "sum(line_revenue)"
+        type: {name: decimal, precision: 12, scale: 2}
+      - {name: order_first_line_date, expression: "min(line_order_date)", type: date}
+    late_arrival_policy: recompute_period
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per order, with how many lines it carried, how many units they ordered and what they took."
+    ownership: ecommerce-domain
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [order_id]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 10:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

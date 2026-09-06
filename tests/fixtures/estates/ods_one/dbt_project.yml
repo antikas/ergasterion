@@ -1,0 +1,22 @@
+name: ods_one
+version: "1.0.0"
+config-version: 2
+
+profile: ods_one
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The fixture relation the estate's fixture-bound source reads. Its column
+# types are declared here rather than inferred, so the executed build proves
+# the generated casts against the types the declaration states.
+seeds:
+  ods_one:
+    customer_events:
+      +column_types:
+        pts: integer
+        chg_ts: timestamp

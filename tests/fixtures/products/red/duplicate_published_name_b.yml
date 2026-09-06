@@ -1,0 +1,46 @@
+# RED CASE: duplicate_published_name (file B of a pair). Individually valid;
+# paired with duplicate_published_name_a.yml, which declares the same
+# published name (domain.name = "ecommerce.dup_customer"). Version differs
+# from file A -- the collision is on domain+name, not on version.
+product:
+  name: dup_customer
+  domain: ecommerce
+  version: "2.0"
+  layer: bronze
+  owner: ecommerce-domain
+
+# A landing product has no upstream contract to consume: its external system
+# is referenced by batch_ingestion's own configuration (scope/cadence/extract
+# mode only -- a connection reference is a runtime binding, outside every
+# product declaration, owner ruling R1), never by a top-level source.
+sources: []
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Landing copy of the CRM customer extract, unchanged."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

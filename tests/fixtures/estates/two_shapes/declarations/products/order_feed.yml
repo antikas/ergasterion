@@ -1,0 +1,96 @@
+# The estate's landing declaration: the delivered order feed, one row per
+# order line with the customer and channel attributes as they stood when
+# the line changed. Its source is bound to a fixture relation for local
+# proof (architecture section 12): no product in this estate publishes
+# sales.customer_orders, so the binding carries the fields that relation
+# delivers.
+#
+# Two products of different shapes read this one contract and neither
+# changes it: crm.customer curates it under the declared shape, and
+# sales.order_star models it as a star under the dimensional shape.
+#
+# The seeded population is what makes the known answers known:
+#   * C-001 orders twice in the standard segment on 2026-01-05 and once in
+#     the premium segment on 2026-03-10, so its type 2 dimension carries
+#     two versions with adjacent effective ranges;
+#   * C-002 is premium throughout, so its dimension carries one open
+#     version;
+#   * CH-WEB is delivered as "Web" and later as "Web store", so its type 1
+#     dimension carries the later name only.
+product:
+  name: order_feed
+  domain: sales
+  version: "1.0"
+  layer: delivered
+  profile: serving
+  owner: sales-domain
+
+sources:
+  - contract: sales.customer_orders@1
+    kind: fixture
+    fixture:
+      relation: customer_orders
+      fields:
+        - {name: rec_id, type: string}
+        - {name: src_sys, type: string}
+        - {name: order_ref, type: string}
+        - {name: line_no, type: integer}
+        - {name: order_dt, type: date}
+        - {name: cust_ref, type: string}
+        - {name: cust_nm, type: string}
+        - {name: cust_seg, type: string}
+        - {name: chan_code, type: string}
+        - {name: chan_nm, type: string}
+        - {name: qty, type: integer}
+        - {name: net_amt, type: {name: decimal, precision: 12, scale: 2}}
+        - {name: tax_amt, type: {name: decimal, precision: 12, scale: 2}}
+        - {name: changed_dt, type: date}
+    expect:
+      fields: [rec_id, order_ref, cust_ref, changed_dt]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: rec_id
+        not_null: true
+      - field: cust_ref
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: rec_id, to: record_id, type: string}
+      - {from: src_sys, to: source_system, type: string}
+      - {from: order_ref, to: order_id, type: string}
+      - {from: line_no, to: line_number, type: integer}
+      - {from: order_dt, to: order_date, type: date}
+      - {from: cust_ref, to: customer_id, type: string}
+      - {from: cust_nm, to: customer_name, type: string}
+      - {from: cust_seg, to: customer_segment, type: string}
+      - {from: chan_code, to: channel_code, type: string}
+      - {from: chan_nm, to: channel_name, type: string}
+      - {from: qty, to: quantity, type: integer}
+      - {from: net_amt, to: net_amount, type: {name: decimal, precision: 12, scale: 2}}
+      - {from: tax_amt, to: tax_amount, type: {name: decimal, precision: 12, scale: 2}}
+      - {from: changed_dt, to: changed_at, type: date}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per delivered order line, with the customer and channel attributes of the moment it changed."
+    ownership: sales-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

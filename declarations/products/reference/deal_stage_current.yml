@@ -1,0 +1,60 @@
+# The pipeline stage in force on each deal: the latest version the
+# delivered stage history carries for it.
+#
+# The history appends a row per stage a deal reaches, so the stage in force
+# is the version with the latest effective date, and where two versions
+# share a date the one recorded later. The versions that are not in force
+# are excluded by a named predicate and counted.
+product:
+  name: deal_stage_current
+  domain: reference
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: reference-domain
+
+sources:
+  - contract: reference.deal_stage@1
+    expect:
+      fields:
+        - deal_external_identity
+        - stage_value_code
+        - stage_effective_from
+        - stage_recorded_at
+        - classification_value_name
+        - classification_sort_order
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: deal_external_identity, not_null: true}
+      - {field: stage_effective_from, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: stage_rank, type: integer, expression: "row_number() over (partition by deal_external_identity order by stage_effective_from desc, stage_recorded_at desc)"}
+  - pattern: data_filtering
+    predicates:
+      - name: stage_in_force_only
+        expression: "stage_rank = 1"
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The pipeline stage in force on each deal, with the name and funnel position the catalogue gives it."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

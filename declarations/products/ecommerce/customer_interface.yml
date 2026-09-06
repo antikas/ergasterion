@@ -1,0 +1,68 @@
+# The canonical customer interface: one relation per canonical entity over
+# the curated customer, each a view at the declared interface boundary
+# (declarations/targets/interfaces.yml, architecture section 6).
+#
+# Its upstream is a curated product, which the canonical shape requires: an
+# interface publishes the agreed form of an entity something has already
+# resolved. Two entities, because the estate agrees two different things
+# about a customer and different consumers need different ones: who the
+# customer is, and how to reach them.
+product:
+  name: customer_interface
+  domain: ecommerce
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.customer@1
+    expect:
+      fields:
+        - customer_business_key
+        - customer_external_id
+        - customer_name
+        - customer_email
+        - customer_email_domain
+        - customer_phone
+        - customer_address_line
+        - customer_city
+        - customer_postal_code
+        - customer_country
+        - customer_buyer_segment
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: customer_business_key, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The canonical customer interface: one relation per entity over the curated customer."
+    ownership: ecommerce-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: canonical
+  shape_config:
+    entities:
+      - name: customer
+        key: [customer_business_key]
+        columns: [customer_business_key, customer_external_id, customer_name, customer_buyer_segment]
+        description: "The customer as the estate agrees it."
+      - name: customer_contact
+        key: [customer_business_key]
+        columns: [customer_business_key, customer_email, customer_email_domain, customer_phone, customer_address_line, customer_city, customer_postal_code, customer_country]
+        description: "How the estate agrees a customer is reached."
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

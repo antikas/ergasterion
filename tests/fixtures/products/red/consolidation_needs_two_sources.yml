@@ -1,0 +1,49 @@
+# RED CASE: consolidation_needs_two_sources. Based on valid/consolidation.yml,
+# with only one product source instead of the required two or more
+# (architecture section 5: "Batch Transfer from two or more product
+# contracts"). Must fail closed naming the product, the occurrence and the
+# rule "consolidation_needs_two_sources".
+product:
+  name: customer_360
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.customer@1
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: data_curation
+    entity: customer
+    resolution:
+      strategy: deterministic
+      keys: [customer_id]
+    survivorship:
+      email: most_recent
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Consolidated customer view across CRM and storefront."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

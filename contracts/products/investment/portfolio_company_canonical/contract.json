@@ -1,0 +1,68 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The canonical portfolio company interface, published under the reference model's own attribute names.",
+  "freshness": "daily by 09:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "portfolio_company_canonical",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.portfolio_company_vault@1"
+  ],
+  "quality": [
+    {
+      "description": "company_business_key must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "external_ids",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "company_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "sector",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "sub_sector",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.portfolio_company_canonical__portfolio_company"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

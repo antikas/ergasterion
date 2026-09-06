@@ -1,0 +1,136 @@
+# docs/architecture/engine-architecture-engine.d2
+#
+# A readable overview of the layer-neutral engine. Rendered with:
+#   d2 --layout elk docs/architecture/engine-architecture-engine.d2 docs/architecture/engine-architecture-engine.svg
+# The committed SVG is generated from this source with the command above.
+
+canvas: {
+  label: ""
+  style.fill: "#0d1117"
+  style.stroke: "#0d1117"
+  direction: down
+
+  inputs: "Governed inputs" {
+    class: group
+    direction: right
+    declaration: "Product declaration\nsources | steps | target" {
+      class: contract
+    }
+    contracts: "Published contracts\nfrom upstream products" {
+      class: contract
+    }
+    estate: "Estate configuration\nprofiles | shapes | rules | routing" {
+      class: dim
+    }
+  }
+
+  engine: "Layer-neutral engine" {
+    class: engine
+    direction: right
+    validate: "1. Validate\nschema | rules\ncontract compatibility" {
+      class: stage
+    }
+    plan: "2. Plan\ndependencies | schemas\ndeterministic digest" {
+      class: stage
+    }
+    route: "3. Route\nestate label ->\ntranslator + adapter" {
+      class: stage
+    }
+    emit: "4. Emit\nbyte-stable artefacts\npublished contract" {
+      class: stage
+    }
+    prove: "5. Prove\nparse | execute\ndeterminism | drift" {
+      class: stage
+    }
+    validate -> plan -> route -> emit -> prove
+  }
+
+  plugins: "Replaceable plug-ins" {
+    class: group
+    direction: right
+    translators: "Translators\nSQL models | landing runtime\ncontracts, metadata, lineage" {
+      class: plugin
+    }
+    adapters: "Adapters\nDuckDB reference | BigQuery deployment\nadditional platforms use packages" {
+      class: plugin
+    }
+  }
+
+  outputs: "Governed outputs" {
+    class: group
+    direction: right
+    artefacts: "Implementation artefacts\nmodels | tests | manifests" {
+      class: accept
+    }
+    contract: "Published contract\ninput to the next product" {
+      class: accept
+    }
+    graph: "Estate graph\nproduct + field lineage" {
+      class: accept
+    }
+    evidence: "Target evidence\nwhat each adapter proved" {
+      class: accept
+    }
+  }
+
+  inputs.declaration -> engine.validate
+  inputs.contracts -> engine.validate
+  inputs.estate -> engine.route {
+    style.stroke-dash: 4
+    style.stroke: "#6e7681"
+  }
+  plugins.translators -> engine.route {
+    style.stroke-dash: 4
+    style.stroke: "#d29922"
+  }
+  plugins.adapters -> engine.prove {
+    style.stroke-dash: 4
+    style.stroke: "#d29922"
+  }
+  engine.emit -> outputs.artefacts
+  engine.emit -> outputs.contract
+  engine.emit -> outputs.graph
+  engine.prove -> outputs.evidence
+}
+
+classes: {
+  group: {
+    style.fill: "#0d1117"
+    style.stroke: "#30363d"
+    style.font-color: "#8b949e"
+    style.stroke-dash: 2
+  }
+  engine: {
+    style.fill: "#0f1a2b"
+    style.stroke: "#388bfd"
+    style.font-color: "#79c0ff"
+    style.stroke-width: 2
+  }
+  stage: {
+    style.fill: "#161b22"
+    style.stroke: "#388bfd"
+    style.font-color: "#c9d1d9"
+  }
+  plugin: {
+    style.fill: "#1f1a0b"
+    style.stroke: "#d29922"
+    style.font-color: "#e3b341"
+  }
+  dim: {
+    style.fill: "#161b22"
+    style.stroke: "#30363d"
+    style.font-color: "#8b949e"
+  }
+  contract: {
+    style.fill: "#111820"
+    style.stroke: "#21262d"
+    style.font-color: "#8b949e"
+    style.border-radius: 6
+  }
+  accept: {
+    style.fill: "#122117"
+    style.stroke: "#3fb950"
+    style.font-color: "#7ee787"
+    style.stroke-width: 2
+  }
+}

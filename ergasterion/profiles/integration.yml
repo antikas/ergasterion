@@ -1,0 +1,47 @@
+# Reference profile: integration (architecture section 5, "Conform and curate
+# entities from landed products"). mandatory/optional/forbidden are
+# architecture section 5's table for this profile, carried verbatim.
+#
+# ordering is architecture section 3.1's composition order, filtered to the
+# patterns this profile classifies as mandatory or optional: transfer, then
+# validation, then the business-logic phase in the order section 3.1's
+# worked example declares it (schema_transform, calculated_fields,
+# data_enrichment, data_filtering, data_aggregation, data_curation), then the
+# publication phase, with checkpoint_retries last because it is the
+# enclosing wrapper, not a sequential step.
+schema: ergasterion.profile/v1
+name: integration
+description: Conform and curate entities from landed products
+mandatory:
+  - batch_transfer
+  - data_validation
+  - schema_transform
+  - data_curation
+  - data_contracts
+  - lineage_capture
+  - metadata_capture
+  - schema_publish
+  - data_publish
+  - checkpoint_retries
+optional:
+  - calculated_fields
+  - data_enrichment
+  - data_filtering
+  - data_aggregation
+forbidden:
+  - batch_ingestion
+ordering:
+  - batch_transfer
+  - data_validation
+  - schema_transform
+  - calculated_fields
+  - data_enrichment
+  - data_filtering
+  - data_aggregation
+  - data_curation
+  - data_contracts
+  - lineage_capture
+  - metadata_capture
+  - schema_publish
+  - data_publish
+  - checkpoint_retries

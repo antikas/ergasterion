@@ -1,0 +1,766 @@
+{
+  "auxiliary_relations": [],
+  "checkpoint_relations": [
+    "investment.deal_decision_current",
+    "ecommerce.customer",
+    "ecommerce.product",
+    "investment.gp_conformed",
+    "investment.portfolio_company_conformed",
+    "ecommerce.order",
+    "ecommerce.order_line",
+    "investment.gp_vault__hub_gp",
+    "investment.gp_vault__sat_gp_detail",
+    "investment.gp_vault__golden_gp",
+    "investment.gp_vault__pit_gp",
+    "investment.portfolio_company_vault__hub_portfolio_company",
+    "investment.portfolio_company_vault__sat_portfolio_company_detail",
+    "investment.portfolio_company_vault__sat_portfolio_company_observed",
+    "investment.portfolio_company_vault__golden_portfolio_company",
+    "investment.portfolio_company_vault__pit_portfolio_company",
+    "ecommerce.order_customer",
+    "ecommerce.order_line_product",
+    "investment.fund_conformed",
+    "ecommerce.order_line_detail",
+    "investment.fund_cash_flow_conformed",
+    "investment.fund_vault__hub_fund",
+    "investment.fund_vault__hub_gp",
+    "investment.fund_vault__link_fund_gp",
+    "investment.fund_vault__sat_fund_detail",
+    "investment.fund_vault__sat_fund_observed",
+    "investment.fund_vault__golden_fund",
+    "investment.fund_vault__pit_fund",
+    "investment.holding_valuation_conformed",
+    "investment.legal_vehicle_conformed",
+    "investment.legal_vehicle_vault__hub_legal_vehicle",
+    "investment.legal_vehicle_vault__hub_fund",
+    "investment.legal_vehicle_vault__link_legal_vehicle_fund",
+    "investment.legal_vehicle_vault__sat_legal_vehicle_detail",
+    "investment.legal_vehicle_vault__golden_legal_vehicle",
+    "investment.legal_vehicle_vault__pit_legal_vehicle",
+    "investment.deal_conformed",
+    "investment.fund_performance",
+    "investment.deal_vault__hub_deal",
+    "investment.deal_vault__hub_portfolio_company",
+    "investment.deal_vault__hub_fund",
+    "investment.deal_vault__link_deal_portfolio_company",
+    "investment.deal_vault__link_deal_fund",
+    "investment.deal_vault__sat_deal_detail",
+    "investment.deal_vault__sat_deal_pipeline",
+    "investment.deal_vault__golden_deal",
+    "investment.deal_vault__pit_deal"
+  ],
+  "counts": {
+    "declared_fields": 717,
+    "edges": 133,
+    "field_lineage": 764,
+    "products": 124,
+    "validations": 306
+  },
+  "csv": {
+    "edge_headers": [
+      "edge_id",
+      "src",
+      "dst",
+      "kind",
+      "contract",
+      "relation"
+    ],
+    "field_lineage_headers": [
+      "edge_id",
+      "product",
+      "target_field",
+      "source_kind",
+      "source_product",
+      "source",
+      "occurrence",
+      "transform"
+    ],
+    "node_headers": [
+      "id",
+      "name",
+      "domain",
+      "layer",
+      "profile",
+      "shape",
+      "generation",
+      "relations",
+      "materialisation",
+      "checkpoint"
+    ],
+    "validation_headers": [
+      "id",
+      "product",
+      "occurrence",
+      "stage",
+      "kind",
+      "subject",
+      "references"
+    ]
+  },
+  "generations": {
+    "consolidating": [
+      "ecommerce.customer",
+      "ecommerce.product",
+      "investment.gp_conformed",
+      "investment.portfolio_company_conformed",
+      "ecommerce.order",
+      "ecommerce.order_line",
+      "ecommerce.order_customer",
+      "ecommerce.order_line_product",
+      "investment.fund_conformed",
+      "ecommerce.order_line_detail",
+      "investment.fund_cash_flow_conformed",
+      "investment.holding_valuation_conformed",
+      "investment.legal_vehicle_conformed"
+    ],
+    "first": [
+      "ecommerce.cartivo_customer",
+      "ecommerce.cartivo_product",
+      "ecommerce.mercaro_customer",
+      "ecommerce.mercaro_product",
+      "ecommerce.relatio_customer",
+      "investment.chrono_cash_flow",
+      "investment.chrono_fund",
+      "investment.chrono_gp",
+      "investment.chrono_portfolio_company",
+      "investment.chrono_valuation",
+      "investment.deal_decision_current",
+      "investment.meridex_cash_flow",
+      "investment.meridex_fund",
+      "investment.meridex_fund_nav",
+      "investment.meridex_gp",
+      "investment.meridex_legal_vehicle",
+      "investment.meridex_portfolio_company",
+      "investment.origo_deal",
+      "investment.portiq_cash_flow",
+      "investment.portiq_fund",
+      "investment.portiq_gp",
+      "investment.portiq_portfolio_company",
+      "investment.vantora_cash_flow",
+      "investment.vantora_fund",
+      "investment.vantora_gp",
+      "investment.vantora_gp_succession",
+      "investment.vantora_legal_vehicle",
+      "investment.vantora_portfolio_company",
+      "investment.vantora_valuation",
+      "investment.vantora_vehicle_cash_flow",
+      "reference.benchmark_index",
+      "reference.customer_identity",
+      "reference.customer_segment",
+      "reference.deal_identity",
+      "reference.fund_identity",
+      "reference.investment_calendar",
+      "reference.investment_classification",
+      "ecommerce.cartivo_order",
+      "ecommerce.cartivo_order_line",
+      "ecommerce.mercaro_order",
+      "ecommerce.mercaro_order_line",
+      "reference.deal_stage",
+      "reference.fund_department"
+    ],
+    "landing": [
+      "ecommerce.cartivo_customer_extract",
+      "ecommerce.cartivo_order_extract",
+      "ecommerce.cartivo_order_line_extract",
+      "ecommerce.cartivo_product_extract",
+      "ecommerce.mercaro_customer_extract",
+      "ecommerce.mercaro_order_extract",
+      "ecommerce.mercaro_order_line_extract",
+      "ecommerce.mercaro_product_extract",
+      "ecommerce.relatio_customer_extract",
+      "investment.chrono_cash_flow_extract",
+      "investment.chrono_fund_extract",
+      "investment.chrono_portfolio_company_extract",
+      "investment.chrono_valuation_extract",
+      "investment.deal_decision_log",
+      "investment.meridex_cash_flow_extract",
+      "investment.meridex_fund_extract",
+      "investment.meridex_fund_nav_extract",
+      "investment.meridex_legal_vehicle_extract",
+      "investment.meridex_portfolio_company_extract",
+      "investment.origo_deal_extract",
+      "investment.portiq_cash_flow_extract",
+      "investment.portiq_fund_extract",
+      "investment.portiq_portfolio_company_extract",
+      "investment.vantora_cash_flow_extract",
+      "investment.vantora_fund_extract",
+      "investment.vantora_gp_extract",
+      "investment.vantora_legal_vehicle_extract",
+      "investment.vantora_portfolio_company_extract",
+      "investment.vantora_succession_event_extract",
+      "investment.vantora_valuation_extract",
+      "investment.vantora_vehicle_cash_flow_extract",
+      "reference.benchmark_index_returns",
+      "reference.customer_overlap_manifest",
+      "reference.customer_segment_history",
+      "reference.deal_overlap_manifest",
+      "reference.deal_stage_history",
+      "reference.fund_overlap_manifest",
+      "reference.investment_calendar_dates",
+      "reference.investment_classification_history",
+      "reference.investment_classification_type",
+      "reference.investment_classification_value"
+    ],
+    "later": [
+      "ecommerce.customer_interface",
+      "ecommerce.product_interface",
+      "investment.gp_name_index",
+      "investment.gp_succession",
+      "investment.gp_vault",
+      "investment.portfolio_company_vault",
+      "reference.deal_stage_current",
+      "investment.company_external_index",
+      "investment.gp_canonical",
+      "investment.portfolio_company_canonical",
+      "investment.fund_investment_basis",
+      "investment.fund_vault",
+      "ecommerce.order_star",
+      "investment.fund_canonical",
+      "investment.fund_external_index",
+      "investment.fund_nav_resolved",
+      "investment.legal_vehicle_cash_flow",
+      "investment.legal_vehicle_vault",
+      "ecommerce.order_summary",
+      "investment.deal_conformed",
+      "investment.fund_performance",
+      "investment.legal_vehicle_canonical",
+      "investment.deal_vault",
+      "investment.fund_performance_summary",
+      "investment.deal_canonical",
+      "investment.deal_decision_queue",
+      "investment.deal_review_worklist"
+    ]
+  },
+  "order": [
+    "ecommerce.cartivo_customer_extract",
+    "ecommerce.cartivo_order_extract",
+    "ecommerce.cartivo_order_line_extract",
+    "ecommerce.cartivo_product_extract",
+    "ecommerce.mercaro_customer_extract",
+    "ecommerce.mercaro_order_extract",
+    "ecommerce.mercaro_order_line_extract",
+    "ecommerce.mercaro_product_extract",
+    "ecommerce.relatio_customer_extract",
+    "investment.chrono_cash_flow_extract",
+    "investment.chrono_fund_extract",
+    "investment.chrono_portfolio_company_extract",
+    "investment.chrono_valuation_extract",
+    "investment.deal_decision_log",
+    "investment.meridex_cash_flow_extract",
+    "investment.meridex_fund_extract",
+    "investment.meridex_fund_nav_extract",
+    "investment.meridex_legal_vehicle_extract",
+    "investment.meridex_portfolio_company_extract",
+    "investment.origo_deal_extract",
+    "investment.portiq_cash_flow_extract",
+    "investment.portiq_fund_extract",
+    "investment.portiq_portfolio_company_extract",
+    "investment.vantora_cash_flow_extract",
+    "investment.vantora_fund_extract",
+    "investment.vantora_gp_extract",
+    "investment.vantora_legal_vehicle_extract",
+    "investment.vantora_portfolio_company_extract",
+    "investment.vantora_succession_event_extract",
+    "investment.vantora_valuation_extract",
+    "investment.vantora_vehicle_cash_flow_extract",
+    "reference.benchmark_index_returns",
+    "reference.customer_overlap_manifest",
+    "reference.customer_segment_history",
+    "reference.deal_overlap_manifest",
+    "reference.deal_stage_history",
+    "reference.fund_overlap_manifest",
+    "reference.investment_calendar_dates",
+    "reference.investment_classification_history",
+    "reference.investment_classification_type",
+    "reference.investment_classification_value",
+    "ecommerce.cartivo_customer",
+    "ecommerce.cartivo_product",
+    "ecommerce.mercaro_customer",
+    "ecommerce.mercaro_product",
+    "ecommerce.relatio_customer",
+    "investment.chrono_cash_flow",
+    "investment.chrono_fund",
+    "investment.chrono_gp",
+    "investment.chrono_portfolio_company",
+    "investment.chrono_valuation",
+    "investment.deal_decision_current",
+    "investment.meridex_cash_flow",
+    "investment.meridex_fund",
+    "investment.meridex_fund_nav",
+    "investment.meridex_gp",
+    "investment.meridex_legal_vehicle",
+    "investment.meridex_portfolio_company",
+    "investment.origo_deal",
+    "investment.portiq_cash_flow",
+    "investment.portiq_fund",
+    "investment.portiq_gp",
+    "investment.portiq_portfolio_company",
+    "investment.vantora_cash_flow",
+    "investment.vantora_fund",
+    "investment.vantora_gp",
+    "investment.vantora_gp_succession",
+    "investment.vantora_legal_vehicle",
+    "investment.vantora_portfolio_company",
+    "investment.vantora_valuation",
+    "investment.vantora_vehicle_cash_flow",
+    "reference.benchmark_index",
+    "reference.customer_identity",
+    "reference.customer_segment",
+    "reference.deal_identity",
+    "reference.fund_identity",
+    "reference.investment_calendar",
+    "reference.investment_classification",
+    "ecommerce.cartivo_order",
+    "ecommerce.cartivo_order_line",
+    "ecommerce.customer",
+    "ecommerce.mercaro_order",
+    "ecommerce.mercaro_order_line",
+    "ecommerce.product",
+    "investment.gp_conformed",
+    "investment.portfolio_company_conformed",
+    "reference.deal_stage",
+    "reference.fund_department",
+    "ecommerce.customer_interface",
+    "ecommerce.order",
+    "ecommerce.order_line",
+    "ecommerce.product_interface",
+    "investment.gp_name_index",
+    "investment.gp_succession",
+    "investment.gp_vault",
+    "investment.portfolio_company_vault",
+    "reference.deal_stage_current",
+    "ecommerce.order_customer",
+    "ecommerce.order_line_product",
+    "investment.company_external_index",
+    "investment.fund_conformed",
+    "investment.gp_canonical",
+    "investment.portfolio_company_canonical",
+    "ecommerce.order_line_detail",
+    "investment.fund_cash_flow_conformed",
+    "investment.fund_investment_basis",
+    "investment.fund_vault",
+    "investment.holding_valuation_conformed",
+    "investment.legal_vehicle_conformed",
+    "ecommerce.order_star",
+    "investment.fund_canonical",
+    "investment.fund_external_index",
+    "investment.fund_nav_resolved",
+    "investment.legal_vehicle_cash_flow",
+    "investment.legal_vehicle_vault",
+    "ecommerce.order_summary",
+    "investment.deal_conformed",
+    "investment.fund_performance",
+    "investment.legal_vehicle_canonical",
+    "investment.deal_vault",
+    "investment.fund_performance_summary",
+    "investment.deal_canonical",
+    "investment.deal_decision_queue",
+    "investment.deal_review_worklist"
+  ],
+  "relations": {
+    "ecommerce.cartivo_customer": [
+      "ecommerce.cartivo_customer"
+    ],
+    "ecommerce.cartivo_customer_extract": [
+      "ecommerce.cartivo_customer_extract"
+    ],
+    "ecommerce.cartivo_order": [
+      "ecommerce.cartivo_order"
+    ],
+    "ecommerce.cartivo_order_extract": [
+      "ecommerce.cartivo_order_extract"
+    ],
+    "ecommerce.cartivo_order_line": [
+      "ecommerce.cartivo_order_line"
+    ],
+    "ecommerce.cartivo_order_line_extract": [
+      "ecommerce.cartivo_order_line_extract"
+    ],
+    "ecommerce.cartivo_product": [
+      "ecommerce.cartivo_product"
+    ],
+    "ecommerce.cartivo_product_extract": [
+      "ecommerce.cartivo_product_extract"
+    ],
+    "ecommerce.customer": [
+      "ecommerce.customer"
+    ],
+    "ecommerce.customer_interface": [
+      "ecommerce.customer_interface__customer",
+      "ecommerce.customer_interface__customer_contact"
+    ],
+    "ecommerce.mercaro_customer": [
+      "ecommerce.mercaro_customer"
+    ],
+    "ecommerce.mercaro_customer_extract": [
+      "ecommerce.mercaro_customer_extract"
+    ],
+    "ecommerce.mercaro_order": [
+      "ecommerce.mercaro_order"
+    ],
+    "ecommerce.mercaro_order_extract": [
+      "ecommerce.mercaro_order_extract"
+    ],
+    "ecommerce.mercaro_order_line": [
+      "ecommerce.mercaro_order_line"
+    ],
+    "ecommerce.mercaro_order_line_extract": [
+      "ecommerce.mercaro_order_line_extract"
+    ],
+    "ecommerce.mercaro_product": [
+      "ecommerce.mercaro_product"
+    ],
+    "ecommerce.mercaro_product_extract": [
+      "ecommerce.mercaro_product_extract"
+    ],
+    "ecommerce.order": [
+      "ecommerce.order"
+    ],
+    "ecommerce.order_customer": [
+      "ecommerce.order_customer"
+    ],
+    "ecommerce.order_line": [
+      "ecommerce.order_line"
+    ],
+    "ecommerce.order_line_detail": [
+      "ecommerce.order_line_detail"
+    ],
+    "ecommerce.order_line_product": [
+      "ecommerce.order_line_product"
+    ],
+    "ecommerce.order_star": [
+      "ecommerce.order_star__dim_customer",
+      "ecommerce.order_star__dim_customer_segment",
+      "ecommerce.order_star__dim_product",
+      "ecommerce.order_star__fact_order_line"
+    ],
+    "ecommerce.order_summary": [
+      "ecommerce.order_summary"
+    ],
+    "ecommerce.product": [
+      "ecommerce.product"
+    ],
+    "ecommerce.product_interface": [
+      "ecommerce.product_interface__product"
+    ],
+    "ecommerce.relatio_customer": [
+      "ecommerce.relatio_customer"
+    ],
+    "ecommerce.relatio_customer_extract": [
+      "ecommerce.relatio_customer_extract"
+    ],
+    "investment.chrono_cash_flow": [
+      "investment.chrono_cash_flow"
+    ],
+    "investment.chrono_cash_flow_extract": [
+      "investment.chrono_cash_flow_extract"
+    ],
+    "investment.chrono_fund": [
+      "investment.chrono_fund"
+    ],
+    "investment.chrono_fund_extract": [
+      "investment.chrono_fund_extract"
+    ],
+    "investment.chrono_gp": [
+      "investment.chrono_gp"
+    ],
+    "investment.chrono_portfolio_company": [
+      "investment.chrono_portfolio_company"
+    ],
+    "investment.chrono_portfolio_company_extract": [
+      "investment.chrono_portfolio_company_extract"
+    ],
+    "investment.chrono_valuation": [
+      "investment.chrono_valuation"
+    ],
+    "investment.chrono_valuation_extract": [
+      "investment.chrono_valuation_extract"
+    ],
+    "investment.company_external_index": [
+      "investment.company_external_index"
+    ],
+    "investment.deal_canonical": [
+      "investment.deal_canonical__deal"
+    ],
+    "investment.deal_conformed": [
+      "investment.deal_conformed"
+    ],
+    "investment.deal_decision_current": [
+      "investment.deal_decision_current"
+    ],
+    "investment.deal_decision_log": [
+      "investment.deal_decision_log"
+    ],
+    "investment.deal_decision_queue": [
+      "investment.deal_decision_queue"
+    ],
+    "investment.deal_review_worklist": [
+      "investment.deal_review_worklist"
+    ],
+    "investment.deal_vault": [
+      "investment.deal_vault__hub_deal",
+      "investment.deal_vault__hub_portfolio_company",
+      "investment.deal_vault__hub_fund",
+      "investment.deal_vault__link_deal_portfolio_company",
+      "investment.deal_vault__link_deal_fund",
+      "investment.deal_vault__sat_deal_detail",
+      "investment.deal_vault__sat_deal_pipeline",
+      "investment.deal_vault__golden_deal",
+      "investment.deal_vault__pit_deal"
+    ],
+    "investment.fund_canonical": [
+      "investment.fund_canonical__fund",
+      "investment.fund_canonical__fund_identity"
+    ],
+    "investment.fund_cash_flow_conformed": [
+      "investment.fund_cash_flow_conformed"
+    ],
+    "investment.fund_conformed": [
+      "investment.fund_conformed"
+    ],
+    "investment.fund_external_index": [
+      "investment.fund_external_index"
+    ],
+    "investment.fund_investment_basis": [
+      "investment.fund_investment_basis"
+    ],
+    "investment.fund_nav_resolved": [
+      "investment.fund_nav_resolved"
+    ],
+    "investment.fund_performance": [
+      "investment.fund_performance"
+    ],
+    "investment.fund_performance_summary": [
+      "investment.fund_performance_summary"
+    ],
+    "investment.fund_vault": [
+      "investment.fund_vault__hub_fund",
+      "investment.fund_vault__hub_gp",
+      "investment.fund_vault__link_fund_gp",
+      "investment.fund_vault__sat_fund_detail",
+      "investment.fund_vault__sat_fund_observed",
+      "investment.fund_vault__golden_fund",
+      "investment.fund_vault__pit_fund"
+    ],
+    "investment.gp_canonical": [
+      "investment.gp_canonical__gp"
+    ],
+    "investment.gp_conformed": [
+      "investment.gp_conformed"
+    ],
+    "investment.gp_name_index": [
+      "investment.gp_name_index"
+    ],
+    "investment.gp_succession": [
+      "investment.gp_succession"
+    ],
+    "investment.gp_vault": [
+      "investment.gp_vault__hub_gp",
+      "investment.gp_vault__sat_gp_detail",
+      "investment.gp_vault__golden_gp",
+      "investment.gp_vault__pit_gp"
+    ],
+    "investment.holding_valuation_conformed": [
+      "investment.holding_valuation_conformed"
+    ],
+    "investment.legal_vehicle_canonical": [
+      "investment.legal_vehicle_canonical__legal_vehicle"
+    ],
+    "investment.legal_vehicle_cash_flow": [
+      "investment.legal_vehicle_cash_flow"
+    ],
+    "investment.legal_vehicle_conformed": [
+      "investment.legal_vehicle_conformed"
+    ],
+    "investment.legal_vehicle_vault": [
+      "investment.legal_vehicle_vault__hub_legal_vehicle",
+      "investment.legal_vehicle_vault__hub_fund",
+      "investment.legal_vehicle_vault__link_legal_vehicle_fund",
+      "investment.legal_vehicle_vault__sat_legal_vehicle_detail",
+      "investment.legal_vehicle_vault__golden_legal_vehicle",
+      "investment.legal_vehicle_vault__pit_legal_vehicle"
+    ],
+    "investment.meridex_cash_flow": [
+      "investment.meridex_cash_flow"
+    ],
+    "investment.meridex_cash_flow_extract": [
+      "investment.meridex_cash_flow_extract"
+    ],
+    "investment.meridex_fund": [
+      "investment.meridex_fund"
+    ],
+    "investment.meridex_fund_extract": [
+      "investment.meridex_fund_extract"
+    ],
+    "investment.meridex_fund_nav": [
+      "investment.meridex_fund_nav"
+    ],
+    "investment.meridex_fund_nav_extract": [
+      "investment.meridex_fund_nav_extract"
+    ],
+    "investment.meridex_gp": [
+      "investment.meridex_gp"
+    ],
+    "investment.meridex_legal_vehicle": [
+      "investment.meridex_legal_vehicle"
+    ],
+    "investment.meridex_legal_vehicle_extract": [
+      "investment.meridex_legal_vehicle_extract"
+    ],
+    "investment.meridex_portfolio_company": [
+      "investment.meridex_portfolio_company"
+    ],
+    "investment.meridex_portfolio_company_extract": [
+      "investment.meridex_portfolio_company_extract"
+    ],
+    "investment.origo_deal": [
+      "investment.origo_deal"
+    ],
+    "investment.origo_deal_extract": [
+      "investment.origo_deal_extract"
+    ],
+    "investment.portfolio_company_canonical": [
+      "investment.portfolio_company_canonical__portfolio_company"
+    ],
+    "investment.portfolio_company_conformed": [
+      "investment.portfolio_company_conformed"
+    ],
+    "investment.portfolio_company_vault": [
+      "investment.portfolio_company_vault__hub_portfolio_company",
+      "investment.portfolio_company_vault__sat_portfolio_company_detail",
+      "investment.portfolio_company_vault__sat_portfolio_company_observed",
+      "investment.portfolio_company_vault__golden_portfolio_company",
+      "investment.portfolio_company_vault__pit_portfolio_company"
+    ],
+    "investment.portiq_cash_flow": [
+      "investment.portiq_cash_flow"
+    ],
+    "investment.portiq_cash_flow_extract": [
+      "investment.portiq_cash_flow_extract"
+    ],
+    "investment.portiq_fund": [
+      "investment.portiq_fund"
+    ],
+    "investment.portiq_fund_extract": [
+      "investment.portiq_fund_extract"
+    ],
+    "investment.portiq_gp": [
+      "investment.portiq_gp"
+    ],
+    "investment.portiq_portfolio_company": [
+      "investment.portiq_portfolio_company"
+    ],
+    "investment.portiq_portfolio_company_extract": [
+      "investment.portiq_portfolio_company_extract"
+    ],
+    "investment.vantora_cash_flow": [
+      "investment.vantora_cash_flow"
+    ],
+    "investment.vantora_cash_flow_extract": [
+      "investment.vantora_cash_flow_extract"
+    ],
+    "investment.vantora_fund": [
+      "investment.vantora_fund"
+    ],
+    "investment.vantora_fund_extract": [
+      "investment.vantora_fund_extract"
+    ],
+    "investment.vantora_gp": [
+      "investment.vantora_gp"
+    ],
+    "investment.vantora_gp_extract": [
+      "investment.vantora_gp_extract"
+    ],
+    "investment.vantora_gp_succession": [
+      "investment.vantora_gp_succession"
+    ],
+    "investment.vantora_legal_vehicle": [
+      "investment.vantora_legal_vehicle"
+    ],
+    "investment.vantora_legal_vehicle_extract": [
+      "investment.vantora_legal_vehicle_extract"
+    ],
+    "investment.vantora_portfolio_company": [
+      "investment.vantora_portfolio_company"
+    ],
+    "investment.vantora_portfolio_company_extract": [
+      "investment.vantora_portfolio_company_extract"
+    ],
+    "investment.vantora_succession_event_extract": [
+      "investment.vantora_succession_event_extract"
+    ],
+    "investment.vantora_valuation": [
+      "investment.vantora_valuation"
+    ],
+    "investment.vantora_valuation_extract": [
+      "investment.vantora_valuation_extract"
+    ],
+    "investment.vantora_vehicle_cash_flow": [
+      "investment.vantora_vehicle_cash_flow"
+    ],
+    "investment.vantora_vehicle_cash_flow_extract": [
+      "investment.vantora_vehicle_cash_flow_extract"
+    ],
+    "reference.benchmark_index": [
+      "reference.benchmark_index"
+    ],
+    "reference.benchmark_index_returns": [
+      "reference.benchmark_index_returns"
+    ],
+    "reference.customer_identity": [
+      "reference.customer_identity"
+    ],
+    "reference.customer_overlap_manifest": [
+      "reference.customer_overlap_manifest"
+    ],
+    "reference.customer_segment": [
+      "reference.customer_segment"
+    ],
+    "reference.customer_segment_history": [
+      "reference.customer_segment_history"
+    ],
+    "reference.deal_identity": [
+      "reference.deal_identity"
+    ],
+    "reference.deal_overlap_manifest": [
+      "reference.deal_overlap_manifest"
+    ],
+    "reference.deal_stage": [
+      "reference.deal_stage"
+    ],
+    "reference.deal_stage_current": [
+      "reference.deal_stage_current"
+    ],
+    "reference.deal_stage_history": [
+      "reference.deal_stage_history"
+    ],
+    "reference.fund_department": [
+      "reference.fund_department"
+    ],
+    "reference.fund_identity": [
+      "reference.fund_identity"
+    ],
+    "reference.fund_overlap_manifest": [
+      "reference.fund_overlap_manifest"
+    ],
+    "reference.investment_calendar": [
+      "reference.investment_calendar"
+    ],
+    "reference.investment_calendar_dates": [
+      "reference.investment_calendar_dates"
+    ],
+    "reference.investment_classification": [
+      "reference.investment_classification"
+    ],
+    "reference.investment_classification_history": [
+      "reference.investment_classification_history"
+    ],
+    "reference.investment_classification_type": [
+      "reference.investment_classification_type"
+    ],
+    "reference.investment_classification_value": [
+      "reference.investment_classification_value"
+    ]
+  },
+  "schema": "ergasterion.product-graph/v1"
+}

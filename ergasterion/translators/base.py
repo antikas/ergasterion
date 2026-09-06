@@ -14,15 +14,18 @@ reorders its own dependency-respecting execution. ``plan_digest()`` and
 seam (``ergasterion/framework/translator_conformance.py``) a way to fail
 closed on a stale build or an incompatible handoff schema.
 
-``validate()``, ``deploy()``, ``detect_drift()`` and ``conventions()`` are
-optional capabilities with default implementations.
+``auxiliary_relations()``, ``validate()``, ``deploy()``, ``detect_drift()``
+and ``conventions()`` are optional capabilities with default
+implementations.
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from ergasterion.framework.graph import AuxiliaryRelation
 from ergasterion.framework.models import (
+    Capability,
     ConventionsDocument,
     DriftReport,
     Edge,
@@ -33,6 +36,8 @@ from ergasterion.framework.models import (
 
 # Re-exported for translator implementations that want one import site.
 __all__ = [
+    "AuxiliaryRelation",
+    "Capability",
     "ConventionsDocument",
     "DriftReport",
     "TranslationResult",
@@ -69,6 +74,21 @@ class Translator(ABC):
         owns). Default: none."""
         return frozenset()
 
+    def capabilities(self) -> frozenset[Capability]:
+        """The two-axis capability set this translator registers with the
+        router (architecture section 3.4): every (pattern-or-shape,
+        translator, adapter) triple this translator can render. The estate's
+        translator table (``ergasterion.framework.routing``) names, per
+        layer label, the translator for each pattern and shape; the router
+        then requires that named translator to carry this capability for
+        every adapter the estate declares, failing closed on a gap. Every
+        entry's ``translator`` field must equal this translator's own
+        ``target_name`` -- the router rejects a translator that declares a
+        foreign one. Default: no capabilities (an occurrence-ownership-only
+        translator that predates the two-axis model, or one not yet wired
+        into any estate's translator table)."""
+        return frozenset()
+
     @abstractmethod
     def execution_order(self) -> tuple[str, ...]:
         """The exact order this translator processes its owned occurrences
@@ -76,6 +96,16 @@ class Translator(ABC):
         every plan edge and the wrapper's enclosure; the router rejects a
         translator that reorders either."""
         ...
+
+    def auxiliary_relations(self) -> tuple[AuxiliaryRelation, ...]:
+        """The private relations this translator renders under a product's
+        namespace for a named rule or a staged computation (architecture
+        section 10). They are excluded from every product contract and
+        registered in the estate graph as auxiliary lineage; the graph
+        collects them through ``ergasterion.framework.graph.
+        collect_auxiliary_relations``. Default: none, for a translator
+        whose rendering needs no private relation."""
+        return ()
 
     def plan_digest(self) -> str | None:
         """The plan digest this translator was built and validated against.

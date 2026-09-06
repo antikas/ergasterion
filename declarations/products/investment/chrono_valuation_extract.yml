@@ -1,0 +1,70 @@
+# Landing product: The CHRONO provider holding valuation feed as it was delivered, one row per delivered mark.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: chrono_valuation_extract
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_valuation_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_chrono_valuations
+      fields:
+        - {name: mark_uid, type: string}
+        - {name: vehicle_code, type: string}
+        - {name: asset_uid, type: string}
+        - {name: mark_date, type: string}
+        - {name: usd_fair_value, type: string}
+        - {name: mark_method, type: string}
+        - {name: fair_value_bucket, type: string}
+        - {name: extraction_confidence, type: string}
+    expect:
+      fields: [mark_uid, vehicle_code, asset_uid]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: mark_uid, not_null: true}
+      - {field: mark_uid, unique: true}
+      - {field: vehicle_code, not_null: true}
+      - {field: mark_date, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The CHRONO provider holding valuation feed as it was delivered, one row per delivered mark."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

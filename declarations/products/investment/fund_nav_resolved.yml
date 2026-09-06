@@ -1,0 +1,62 @@
+# The delivered net asset value of each fund at each valuation date,
+# against the fund the estate resolved and the configuration it declares
+# for that fund.
+#
+# The administrator states the value under its own fund identifier, so
+# the read is on the system and that identifier together.
+product:
+  name: fund_nav_resolved
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.meridex_fund_nav@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_valued_on
+        - source_nav_usd
+        - source_called_capital_usd
+        - source_distributed_capital_usd
+        - nav_source_system
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_valued_on, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: fund_nav_source_key, type: string, expression: "concat(nav_source_system, ':', source_fund_id)"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.fund_investment_basis@1
+        "on": {nav_source_system: fund_source_system, source_fund_id: source_fund_id}
+        fields: [fund_business_key, fund_external_id, source_name, source_strategy, source_currency, fund_recallable_distributions_usd, fund_fee_offset_usd, fund_hurdle_rate, fund_hurdle_basis]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Each delivered fund valuation date, against the fund the estate resolved and the basis and hurdle it declares."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

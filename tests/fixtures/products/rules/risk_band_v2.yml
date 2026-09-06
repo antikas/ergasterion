@@ -1,0 +1,24 @@
+# The estate-declared named rule architecture section 3.1's own worked
+# example references: a customer's calculated_fields "risk_band" field
+# names "rule: risk_band_v2" rather than an inline expression. This is a
+# business rule specific to the worked ecommerce domain, not a generic
+# engine dispatch utility, so it belongs in an ESTATE catalogue, never the
+# engine reference catalogue (ergasterion/rules/reference/*.yml).
+#
+# Used by the CLI end-to-end test in tests/python/test_product_declaration.py
+# copied into a synthetic estate's rules/
+# directory so `ergasterion validate`'s layer 2 resolves the reference the
+# derivation.yml fixture already carries, instead of weakening the
+# completeness gate to accommodate an unresolvable name.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: risk_band_v2
+    version: 2
+    description: Bands a customer's risk score.
+    inputs:
+      - {name: risk_score, type: integer}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: risk_band_v2}
+      - {translator: dbt, adapter: bigquery, macro: risk_band_v2}

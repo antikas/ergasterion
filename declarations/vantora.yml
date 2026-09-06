@@ -4,101 +4,11 @@ source:
   system: VANTORA direct GP feed
   priority: 10
 
-# DESCRIPTIVE-ONLY: documents intended attribute lineage to the OpenIM canonical
-# model for onboarding review. ergasterion/emit.py's validate_canonical_mappings checks
-# every business_keys/attributes value for spelling and schema drift against the
-# OpenIM canonical model (model_file below) on every emit. It does NOT generate or
-# drive the canonical layer -- models/canonical/*.sql is hand-authored, not
-# templated from this block.
-canonical_mappings:
-  fund:
-    model_file: model/entities/specialisations/private-markets/PM-01-fund-and-vehicle.md
-    business_keys:
-      source_fund_id: external_ids
-      source_record_id: external_ids
-      lei: lei
-      shared_external_id: external_ids
-      fund_name: known_aliases
-    attributes:
-      fund_name: fund_name
-      vehicle_type: vehicle_type
-      gp_id: gp_id
-      asset_class: asset_class
-      strategy: strategy
-      vintage_year: vintage_year
-      committed_capital_usd: committed_capital_usd
-      currency: currency
-      domicile: domicile
-      fund_status: fund_status
-      as_of_date: last_reviewed_at
-  gp:
-    model_file: model/entities/specialisations/private-markets/PM-02-gp-management-company.md
-    business_keys:
-      source_gp_id: external_ids
-      lei: lei
-      shared_external_id: external_ids
-      gp_name: known_aliases
-    attributes:
-      gp_name: gp_name
-      domicile: domicile
-      relationship_start_date: relationship_start_date
-  portfolio_company:
-    model_file: model/entities/specialisations/private-markets/PM-04-portfolio-company.md
-    business_keys:
-      source_company_id: external_ids
-      lei: lei
-      shared_external_id: external_ids
-      company_name: known_aliases
-    attributes:
-      company_name: company_name
-      sector: sector
-      sub_sector: sub_sector
-      country: country
-      status: status
-      first_seen_at: first_seen_at
-  cash_flow:
-    model_file: model/entities/core/E-06-cash-flow-event.md
-    business_keys:
-      cash_flow_id: cash_flow_id
-      source_fund_id: instrument_id
-    attributes:
-      cash_flow_date: cash_flow_date
-      cash_flow_type: cash_flow_type
-      direction: direction
-      amount_usd: amount
-      currency: currency
-      source_system: source
-  valuation:
-    model_file: model/entities/core/E-07-valuation.md
-    business_keys:
-      valuation_id: valuation_id
-      source_fund_id: instrument_id
-    attributes:
-      valuation_date: valuation_date
-      value_usd: value_usd
-      method: method
-      valuation_level: valuation_level
-      confidence_score: confidence_score
-  legal_vehicle:
-    model_file: model/entities/specialisations/private-markets/PM-05-legal-vehicle.md
-    business_keys:
-      vehicle_natural_id: vehicle_id
-      source_fund_id: investment_id
-    attributes:
-      vehicle_name: vehicle_name
-      vehicle_type: vehicle_type
-      jurisdiction: jurisdiction
-      incorporation_date: incorporation_date
-      lei: lei
-  gp_succession:
-    model_file: model/entities/specialisations/private-markets/PM-11-manager-succession-event.md
-    business_keys:
-      succession_event_id: succession_id
-      predecessor_source_gp_id: predecessor_gp_id
-      successor_source_gp_id: successor_gp_id
-    attributes:
-      event_type: event_type
-      effective_date: effective_date
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   funds:

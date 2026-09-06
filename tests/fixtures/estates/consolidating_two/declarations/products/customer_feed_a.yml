@@ -1,0 +1,57 @@
+# Landing product: the first feed of the customer entity enters the
+# estate here (owner ruling R5, seed-backed data enters through a landing
+# product). Its label gives every occurrence, and its shape, to the
+# ingestion runtime translator, so the dbt route emits nothing for it.
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers. Nothing derives a landing product's
+# columns from its own steps.
+product:
+  name: customer_feed_a
+  domain: crm
+  version: "1.0"
+  layer: landed
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_feed_a_extract@1
+    kind: fixture
+    fixture:
+      relation: crm__customer_feed_a
+      fields:
+        - {name: customer_id, type: string}
+        - {name: email, type: string}
+        - {name: signed_up_on, type: date}
+        - {name: lifetime_value, type: {name: decimal, precision: 12, scale: 2}}
+        - {name: loyalty_tier, type: string}
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Landing copy of the first source system's customer extract, unchanged."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

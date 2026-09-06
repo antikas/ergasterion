@@ -1,0 +1,73 @@
+# A self-contained estate whose product graph is the worked example of
+# architecture section 8: six products across the five reference profiles,
+# joined only by published contracts.
+#
+# Its layer labels are "landed", "shaped" and "served": names the engine has
+# never seen. Nothing in the engine knows what they mean, and nothing needs
+# to: a label is a key into the tables below (architecture check 4, "a
+# product added under a layer label the engine has never seen emits without
+# an engine change"). The graph this estate resolves to is therefore proof
+# that node and edge classification comes from product declarations alone.
+#
+# The estate carries no domains directory, no manifest and no generated
+# model tree. The product-graph route needs none of them.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    landed:
+      profiles: [landing]
+    shaped:
+      profiles: [integration, derivation, consolidation]
+    served:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    landed:
+      batch_ingestion: local-ingestion
+      data_validation: local-ingestion
+      data_publish: local-ingestion
+      checkpoint_retries: local-ingestion
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    shaped:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_curation: dbt
+      calculated_fields: dbt
+      data_enrichment: dbt
+      data_filtering: dbt
+      data_aggregation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    served:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_filtering: dbt
+      data_aggregation: dbt
+      data_curation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

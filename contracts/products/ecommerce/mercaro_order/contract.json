@@ -1,0 +1,96 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "Orders as the marketplace states them, on the schema the two order feeds share, carrying the key of the customer that placed them.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "mercaro_order",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.mercaro_order_extract@1"
+  ],
+  "quality": [
+    {
+      "description": "mercaro_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "mercaro_order_id must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "order_status",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "currency",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "channel",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_order_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_customer_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_date",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "order_total",
+          "required": false,
+          "type": {
+            "name": "decimal",
+            "precision": 12,
+            "scale": 2
+          }
+        },
+        {
+          "name": "source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_value_band",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_business_key",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.mercaro_order"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

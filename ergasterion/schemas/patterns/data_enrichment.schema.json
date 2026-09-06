@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/data_enrichment.schema.json",
+  "title": "data_enrichment step configuration (architecture section 4)",
+  "description": "Lookups against reference product contracts, join keys, no-match policy, and the optional temporal binding that makes the lookup an as-of read of the reference product. 'temporal' names the event-time field on the enriched relation ('as_of') and the effectivity field on the reference relation ('effective'); a lookup that declares it matches, per row, the latest reference row effective at or before that row's event time. 'relation' names which of the referenced product's published relations the lookup reads (architecture section 7), as that product's own shape names it and without its product prefix; a referenced product publishing exactly one relation needs no key, and a lookup naming none of several fails closed.",
+  "type": "object",
+  "required": ["pattern", "lookups"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "data_enrichment" },
+    "lookups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["contract", "on", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "contract": { "type": "string", "minLength": 1 },
+          "relation": { "type": "string", "minLength": 1 },
+          "on": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": { "type": "string", "minLength": 1 }
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "no_match": {},
+          "temporal": {
+            "type": "object",
+            "required": ["as_of", "effective"],
+            "additionalProperties": false,
+            "properties": {
+              "as_of": { "type": "string", "minLength": 1 },
+              "effective": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

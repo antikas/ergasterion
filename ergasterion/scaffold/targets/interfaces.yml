@@ -5,5 +5,14 @@
 # (the models block in dbt_project.yml). A lane target may add its own
 # view exceptions in its <adapter>.yml, each with the lane tooling that
 # depends on the view stated as the reason.
+#
+# The product route's translator-private relations are not interfaces and are
+# not declared here. The gate reads them from the runtime manifests the route
+# wrote under manifests/products/ (ergasterion/structure_gate.py's
+# route_private_models), so a published relation rendered as a view outside the
+# boundary below is still an offence.
 view_layers:
-  - models/canonical
+  # The canonical shape's own boundary: a product declaring that shape
+  # renders one view per canonical entity here, and emission fails closed
+  # when this path is not declared (ergasterion/emit_products.py).
+  - models/products/canonical

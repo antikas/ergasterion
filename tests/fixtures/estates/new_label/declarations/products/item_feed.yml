@@ -1,0 +1,46 @@
+# The product under the estate's own profile. Its label admits two profiles,
+# so the declaration names the one it composes. `handover` forbids
+# schema_publish, so this product registers no schema version and the
+# outbound translator table names no owner for one.
+product:
+  name: item_feed
+  domain: catalogue
+  version: "1.0"
+  layer: outbound
+  profile: handover
+  owner: catalogue-domain
+
+sources:
+  - contract: catalogue.item_facts@1
+    expect:
+      fields: [item_id, item_name, region_code, unit_price, price_band]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: warn
+    rules:
+      - field: item_id
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - {name: feed_key, type: string, expression: "lower(item_id)"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The catalogue item feed a named consumer reads."
+    ownership: catalogue-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: composition
+  max_retries: 1
+  backoff: none

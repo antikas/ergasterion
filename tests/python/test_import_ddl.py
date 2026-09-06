@@ -8,7 +8,7 @@ declarations/ or domains/. The test run cannot add fixture files to the reposito
 authored source definitions.
 
 Exercises:
-  1. feed DDL seeds a declarations/<source>.yml skeleton that ergasterion/emit.py's
+  1. feed DDL seeds a declarations/<source>.yml skeleton that the typed
      load_declarations() accepts as-is (vault_entities: [] is a legitimate, already-valid
      state -- the TODOs are for a human to act on, not blockers to load).
   2. model DDL seeds a domains/<name>.yml skeleton whose entity_configs/hub_configs/
@@ -37,13 +37,12 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion import emit
 from ergasterion import import_ddl as idd
 from ergasterion import import_odcs as io_mod
 from ergasterion.estate import EstateContext
 from ergasterion.source_delivery import load_typed_declarations
 
-REPO_ROOT = emit.REPO_ROOT
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # --- fixtures (ergasterion/ test assets -- never under declarations/ or domains/) -----------
 
@@ -57,41 +56,6 @@ CREATE TABLE customers (
     is_active BOOLEAN
 );
 """
-
-MODEL_DDL = """
-CREATE TABLE customer (
-    customer_id INTEGER PRIMARY KEY,
-    email VARCHAR(255) NOT NULL,
-    full_name VARCHAR(200)
-);
-
-CREATE TABLE orders (
-    order_id INTEGER PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
-    order_date DATE NOT NULL,
-    order_status VARCHAR(20),
-    FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
-);
-
-CREATE TABLE product (
-    product_id INTEGER PRIMARY KEY,
-    product_name VARCHAR(200) NOT NULL
-);
-
--- order_line is a pure junction (PK == the union of its two FK columns) that ALSO
--- carries its own payload (quantity, unit_price) -- the satellite-on-link pattern
--- (domains/ecommerce.yml's order_line/order_line_product, verbatim shape).
-CREATE TABLE order_line (
-    order_id INTEGER NOT NULL,
-    product_id INTEGER NOT NULL,
-    quantity INTEGER NOT NULL,
-    unit_price NUMERIC(10,2) NOT NULL,
-    PRIMARY KEY (order_id, product_id),
-    FOREIGN KEY (order_id) REFERENCES orders(order_id),
-    FOREIGN KEY (product_id) REFERENCES product(product_id)
-);
-"""
-
 
 def _write(tmp_path: Path, name: str, text: str) -> Path:
     path = tmp_path / name
@@ -128,9 +92,9 @@ def test_no_columns_rejected() -> None:
 # --- (a) feed DDL -> declarations/<source>.yml -------------------------------------------
 
 def test_feed_ddl_seeds_skeleton_validator_accepts() -> None:
-    """Acceptance 1: feed DDL seeds a skeleton that ergasterion/emit.py's load_declarations()
-    accepts (vault_entities: [] loads clean; the TODOs are for a human, not a load-time
-    blocker)."""
+    """Acceptance 1: feed DDL seeds a declaration the typed loader reads without a
+    complaint (a seed-backed table carries no Landing contract, and the TODOs are for a
+    human rather than a load-time blocker)."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         ddl_path = _write(tmp_path, "feed.sql", FEED_DDL)
@@ -140,12 +104,12 @@ def test_feed_ddl_seeds_skeleton_validator_accepts() -> None:
         decls_dir = tmp_path / "declarations"
         decls_dir.mkdir()
         _write(decls_dir, f"{source_name}.yml", text)
-        # Context construction, not global monkeypatching: declarations/ points at the
-        # temp dir; domains/ still resolves against the committed estate root.
-        ctx = emit.EstateContext.resolve(estate_root=emit.REPO_ROOT, declarations_dir=decls_dir)
-        declarations = emit.load_declarations(ctx=ctx)
-        assert len(declarations) == 1, "expected exactly the one seeded declaration to load"
-        assert declarations[0]["source"]["name"] == source_name
+        seeded = yaml.safe_load(text)
+        assert seeded["source"]["name"] == source_name
+
+        ctx = EstateContext.resolve(estate_root=tmp_path, declarations_dir=decls_dir)
+        typed = load_typed_declarations(ctx)
+        assert typed.tables == {}, "a seed-backed declaration carries no Landing contract"
 
 
 def test_feed_ddl_projection_and_tests_match_column_constraints() -> None:
@@ -242,155 +206,10 @@ def test_feed_provenance_header_matches_import_odcs_convention() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         ddl_path = _write(Path(tmp), "feed.sql", FEED_DDL)
         _, text = idd.seed_declaration_from_ddl(ddl_path, source_name="testfeed")
-        assert "Seeded by ergasterion/import_ddl.py --mode feed from DDL:" in text
+        assert "Seeded by ergasterion/import_ddl.py from DDL:" in text
         assert "This is a STARTING POINT, not regenerated output" in text
         assert "is left" in text and "never guessed" in text
-        assert "Run ergasterion/emit.py once those" in text and "TODOs are filled in." in text
-
-
-# --- (b) model DDL -> domains/<name>.yml --------------------------------------------------
-
-def test_model_ddl_seed_loads_through_emit_load_domains() -> None:
-    """Acceptance 2: model DDL seeds a skeleton that ergasterion/emit.py's load_domains()
-    accepts as-is (entity/hub/link content is complete and mechanical; bv_configs/
-    res_configs/relations/odcs are TODO comments only, never blocking the load)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        ddl_path = _write(tmp_path, "model.sql", MODEL_DDL)
-        domain_name, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        assert domain_name == "testmodel"
-
-        domains_dir = tmp_path / "domains"
-        domains_dir.mkdir()
-        _write(domains_dir, f"{domain_name}.yml", text)
-        domain = emit.load_domains(domains_dir)
-
-        assert set(domain["entity_configs"]) == {"customer", "orders", "product", "order_line"}
-        assert set(domain["hub_configs"]) == {"customer", "orders", "product"}, (
-            "order_line is a link-with-payload (satellite-on-link) -- it must NOT get its "
-            "own hub_configs entry, it is carried through link_configs instead"
-        )
-        assert set(domain["link_configs"]) == {"orders_customer", "order_line"}
-
-        # hashdiff derivation ran through the real loader: hashdiff columns == payload.
-        orders = domain["entity_configs"]["orders"]
-        assert orders["hashed_columns"]["orders_hashdiff"]["columns"] == orders["payload"]
-        order_line = domain["entity_configs"]["order_line"]
-        assert order_line["hashed_columns"]["order_line_hashdiff"]["columns"] == order_line["payload"]
-        assert order_line["payload"] == ["order_id", "product_id", "quantity", "unit_price"]
-
-
-def test_model_ddl_entity_hub_derived_from_pk_structure() -> None:
-    """A table with a PRIMARY KEY and no FOREIGN KEY becomes a plain hub-worthy entity
-    with no links -- 'customer' and 'product' in the fixture."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", MODEL_DDL)
-        _, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        seeded = yaml.safe_load(text)
-
-        for name in ("customer", "product"):
-            entity = seeded["entity_configs"][name]
-            assert entity["links"] == [], f"{name} declares no FK -- expected no links"
-            assert entity["src_pk"] == f"{name}_hk"
-            assert entity["hashed_columns"][f"{name}_hk"] == f"golden_{name}_key"
-            hub = seeded["hub_configs"][name]
-            assert hub["src_pk"] == f"{name}_hk"
-
-
-def test_model_ddl_link_derived_from_foreign_key() -> None:
-    """A table with its own PRIMARY KEY plus a FOREIGN KEY (orders -> customer) gets a
-    link to the referenced entity, named <table>_<ref_table>, with a composite lhk
-    hashed_columns entry -- domains/ecommerce.yml's order/order_customer shape."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", MODEL_DDL)
-        _, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        seeded = yaml.safe_load(text)
-
-        orders = seeded["entity_configs"]["orders"]
-        assert orders["links"] == ["orders_customer"]
-        assert orders["hashed_columns"]["customer_hk"] == "golden_customer_key"
-        assert orders["hashed_columns"]["orders_customer_lhk"] == ["golden_orders_key", "golden_customer_key"]
-
-        link = seeded["link_configs"]["orders_customer"]
-        assert link["src_pk"] == "orders_customer_lhk"
-        assert link["src_fk"] == ["orders_hk", "customer_hk"]
-
-
-def test_model_ddl_pure_junction_with_payload_becomes_link_and_entity() -> None:
-    """order_line: PK == the union of its two FK columns (a pure junction) but it also
-    carries its own payload (quantity, unit_price) beyond the keys -- it must therefore
-    register as BOTH a link_configs entry (the relationship) AND an entity_configs entry
-    (the satellite-on-link payload), the domains/ecommerce.yml order_line pattern."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", MODEL_DDL)
-        _, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        seeded = yaml.safe_load(text)
-
-        assert "order_line" in seeded["link_configs"]
-        assert "order_line" not in seeded["hub_configs"], "a link-entity must not also get a hub_configs entry"
-        link = seeded["link_configs"]["order_line"]
-        assert link["src_fk"] == ["orders_hk", "product_hk"]
-
-        entity = seeded["entity_configs"]["order_line"]
-        assert entity["links"] == ["order_line"]
-        assert entity["payload"] == ["order_id", "product_id", "quantity", "unit_price"]
-
-
-def test_model_ddl_pure_junction_without_payload_is_link_only() -> None:
-    """A pure junction table with NO extra columns beyond its keys gets only a
-    link_configs entry -- no satellite is needed, so no entity_configs entry either."""
-    ddl = """
-CREATE TABLE alpha (
-    alpha_id INTEGER PRIMARY KEY
-);
-CREATE TABLE beta (
-    beta_id INTEGER PRIMARY KEY
-);
-CREATE TABLE alpha_beta (
-    alpha_id INTEGER NOT NULL,
-    beta_id INTEGER NOT NULL,
-    PRIMARY KEY (alpha_id, beta_id),
-    FOREIGN KEY (alpha_id) REFERENCES alpha(alpha_id),
-    FOREIGN KEY (beta_id) REFERENCES beta(beta_id)
-);
-"""
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", ddl)
-        _, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        seeded = yaml.safe_load(text)
-        assert "alpha_beta" in seeded["link_configs"]
-        assert "alpha_beta" not in seeded["entity_configs"]
-
-
-def test_model_ddl_never_guesses_survivorship_er_relations() -> None:
-    """Acceptance: survivorship (bv_configs) / entity-resolution (res_configs) /
-    relations / odcs are NEVER guessed -- left as explicit TODO comments, absent as real
-    YAML keys."""
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", MODEL_DDL)
-        _, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        seeded = yaml.safe_load(text)
-        for section in ("bv_configs", "res_configs", "relations", "odcs"):
-            assert section not in seeded, f"{section} must be left TODO, never guessed onto the seed"
-            assert f"TODO {section}" in text, f"expected an explicit TODO comment block for {section}"
-
-
-def test_model_ddl_seeding_is_deterministic() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", MODEL_DDL)
-        _, first = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        _, second = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        assert first == second, "seed_domain_from_ddl produced non-identical output for the same input"
-
-
-def test_model_provenance_header_matches_import_odcs_convention() -> None:
-    with tempfile.TemporaryDirectory() as tmp:
-        ddl_path = _write(Path(tmp), "model.sql", MODEL_DDL)
-        _, text = idd.seed_domain_from_ddl(ddl_path, domain_name="testmodel")
-        assert "Seeded by ergasterion/import_ddl.py --mode model from DDL:" in text
-        assert "This is a STARTING POINT, not regenerated output" in text
-        assert "is left" in text and "never guessed" in text
-        assert "Run ergasterion/emit.py once those" in text and "TODOs are filled in." in text
+        assert "never guessed" in text and "TODOs are filled in." in text
 
 
 # --- (c) feed DDL --landing source -> a Bronze landing/delivery draft --------------------
@@ -499,9 +318,9 @@ def test_landing_source_table_key_and_identifier_are_lowercase_identifiers() -> 
 
 
 def test_landing_source_loads_as_a_draft_through_source_delivery() -> None:
-    """The seeded landing/delivery block round-trips through both consumers: the legacy
-    emit.py loader (structural gate only) and ergasterion.source_delivery's typed loader
-    (resolves to an explicit draft placeholder, never a guessed production contract)."""
+    """The seeded landing/delivery block round-trips through
+    ergasterion.source_delivery's typed loader, which resolves it to an explicit draft
+    placeholder rather than a guessed production contract."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         ddl_path = _write(tmp_path, "orders.sql", SOURCE_MODE_DDL)
@@ -511,11 +330,6 @@ def test_landing_source_loads_as_a_draft_through_source_delivery() -> None:
         decls_dir.mkdir()
         _write(decls_dir, f"{source_name}.yml", text)
 
-        emit_ctx = emit.EstateContext.resolve(estate_root=emit.REPO_ROOT, declarations_dir=decls_dir)
-        declarations = emit.load_declarations(ctx=emit_ctx)
-        assert declarations[0]["tables"]["orders"]["landing"]["kind"] == "source"
-
-        (tmp_path / "domains").mkdir()
         typed_ctx = EstateContext.resolve(estate_root=tmp_path, declarations_dir=decls_dir)
         typed = load_typed_declarations(typed_ctx)
         table = typed.tables[(source_name, "orders")]
@@ -532,25 +346,6 @@ def test_landing_source_is_deterministic() -> None:
         assert first == second, "source-mode seeding produced non-identical output for the same input"
 
 
-def test_landing_source_rejected_for_model_mode() -> None:
-    """--landing source applies to --mode feed only -- a domain carries no landing."""
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_path = Path(tmp)
-        ddl_path = _write(tmp_path, "model.sql", MODEL_DDL)
-        argv = [
-            "import-ddl", str(ddl_path), "--mode", "model", "--domain", "testmodel",
-            "--landing", "source", "--estate-root", str(tmp_path),
-        ]
-        original_argv = sys.argv
-        sys.argv = argv
-        try:
-            code = idd.main()
-        finally:
-            sys.argv = original_argv
-        assert code == 1, "expected --landing source under --mode model to fail"
-        assert not (tmp_path / "domains" / "testmodel.yml").exists()
-
-
 TESTS = [
     test_no_create_table_rejected,
     test_no_columns_rejected,
@@ -560,21 +355,12 @@ TESTS = [
     test_json_family_columns_seed_dispatched_json_cast,
     test_planted_warehouse_native_cast_fails_seed_gate,
     test_feed_provenance_header_matches_import_odcs_convention,
-    test_model_ddl_seed_loads_through_emit_load_domains,
-    test_model_ddl_entity_hub_derived_from_pk_structure,
-    test_model_ddl_link_derived_from_foreign_key,
-    test_model_ddl_pure_junction_with_payload_becomes_link_and_entity,
-    test_model_ddl_pure_junction_without_payload_is_link_only,
-    test_model_ddl_never_guesses_survivorship_er_relations,
-    test_model_ddl_seeding_is_deterministic,
-    test_model_provenance_header_matches_import_odcs_convention,
     test_landing_seed_is_still_the_default,
     test_landing_source_carries_physical_schema_and_draft_status,
     test_landing_source_maps_every_bronze_physical_shape,
     test_landing_source_table_key_and_identifier_are_lowercase_identifiers,
     test_landing_source_loads_as_a_draft_through_source_delivery,
     test_landing_source_is_deterministic,
-    test_landing_source_rejected_for_model_mode,
 ]
 
 

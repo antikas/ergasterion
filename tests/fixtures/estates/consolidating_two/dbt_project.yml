@@ -1,0 +1,33 @@
+name: consolidating_two
+version: "1.0.0"
+config-version: 2
+
+profile: consolidating_two
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The relations this estate's three landing products publish. Their
+# translator is the ingestion runtime, not dbt, so nothing in the generated
+# model tree creates them; here a seed of the same name stands in for the
+# landed relation, and the products that consume the landing contracts read
+# it under exactly the name the landing product publishes. Column types are
+# declared rather than inferred, so the executed build proves the generated
+# casts against the types the declarations state.
+seeds:
+  consolidating_two:
+    crm__customer_feed_a:
+      +column_types:
+        signed_up_on: date
+        lifetime_value: "decimal(12,2)"
+    crm__customer_feed_b:
+      +column_types:
+        signup_date: date
+        ltv: integer
+    crm__customer_flag_feed:
+      +column_types:
+        is_active: boolean

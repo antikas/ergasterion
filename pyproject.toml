@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ergasterion-factory"
-version = "0.5.0"
+version = "0.6.0"
 description = "Deterministic, source-declaration-driven dbt data-product factory engine."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,14 +18,16 @@ classifiers = [
     "Topic :: Database",
     "Topic :: Software Development :: Code Generators",
 ]
-# All seven sit in the artefact-producing or contract-truth path (Jinja renders
+# All eight sit in the artefact-producing or contract-truth path (Jinja renders
 # every model, PyYAML serialises every contract and descriptor, jsonschema
 # validates them, pydantic models the contract IR, rfc8785 canonicalises JSON for
 # byte-stable hashing, tzdata pins IANA timezone data for deterministic
-# timestamps, cryptography signs and verifies provenance), so the byte-stable
-# gates depend on their behaviour. pyyaml/jinja2/jsonschema float within a floor
-# and a ceiling; pydantic, rfc8785, tzdata, and cryptography are exact-pinned --
-# every checkout and every wheel resolves the identical build.
+# timestamps, cryptography signs and verifies provenance, sqlglot parses every
+# inline SQL expression for the engine's own validation -- architecture section
+# 3.2, owner ruling R3), so the byte-stable gates depend on their behaviour.
+# pyyaml/jinja2/jsonschema float within a floor and a ceiling; pydantic,
+# rfc8785, tzdata, cryptography, and sqlglot are exact-pinned -- every checkout
+# and every wheel resolves the identical build.
 dependencies = [
     "pyyaml>=6.0,<7",
     "jinja2>=3.1,<4",
@@ -34,6 +36,7 @@ dependencies = [
     "rfc8785==0.1.4",
     "tzdata==2026.2",
     "cryptography==49.0.0",
+    "sqlglot==30.18.0",
 ]
 
 [project.optional-dependencies]
@@ -45,27 +48,18 @@ local-ingestion = [
     "dbt-core==1.11.12",
     "dbt-duckdb==1.11.0",
 ]
-# duckdb is the legacy compatibility alias: an identical pin set to
-# local-ingestion, kept for existing installs and docs that still name it.
-duckdb = [
-    "duckdb==1.5.5",
-    "dbt-core==1.11.12",
-    "dbt-duckdb==1.11.0",
-]
-snowflake = [
-    "dbt-core==1.11.12",
-    "dbt-snowflake==1.11.6",
-]
 bigquery = [
     "dbt-core==1.11.12",
     "dbt-bigquery==1.11.3",
 ]
-# all is the union of local-ingestion plus both warehouse adapters.
+# all is the union of local-ingestion plus the declared deployment adapter.
+# There is no alias of either name. 0.6.0 is a declared breaking release, so an
+# extra kept only for an older install's spelling would be exactly the kind of
+# compatibility shim this line does not carry.
 all = [
     "duckdb==1.5.5",
     "dbt-core==1.11.12",
     "dbt-duckdb==1.11.0",
-    "dbt-snowflake==1.11.6",
     "dbt-bigquery==1.11.3",
 ]
 
@@ -93,13 +87,26 @@ exclude = ["*__pycache__*"]
 # in the wheel so a non-editable install scaffolds from its own package.
 # schemas/*.json and conformance/*.json are generated, schema-validated contract
 # data shipped the same way.
+# profiles/*.yml, schemas/patterns/*.json, rules/reference/*.yml, adapters/*/*.yml,
+# templates/product/*.j2, shapes/*/*.j2 and shapes/*/*.yml (D28) are added once, here,
+# for every engine data directory the Ergasterion engine campaign queue needs; a later
+# item in that queue inherits them and adds nothing to this table unless it introduces
+# a directory not listed here (docs/items/CONSTRAINTS.md).
 ergasterion = [
     "templates/*",
+    "templates/product/*.j2",
     "schemas/*.json",
+    "schemas/patterns/*.json",
     "conformance/*.json",
+    "profiles/*.yml",
+    "rules/reference/*.yml",
+    "adapters/*/*.yml",
+    "shapes/*/*.j2",
+    "shapes/*/*.yml",
     "scaffold/*.yml",
     "scaffold/.gitignore",
     "scaffold/runtime/*.yml",
     "scaffold/targets/*.yml",
+    "scaffold/products/*.yml",
     "scaffold/macros/*.sql",
 ]

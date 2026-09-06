@@ -1,0 +1,66 @@
+# The classification catalogue the estate publishes: one row per
+# permitted value of a classification type, under the key a history row
+# cites it by, with the type's own name read from the delivered type
+# catalogue.
+product:
+  name: investment_classification
+  domain: reference
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: reference-domain
+
+sources:
+  - contract: reference.investment_classification_value@1
+    expect:
+      fields:
+        - classification_type_code
+        - classification_value_code
+        - classification_value_name
+        - sort_order
+        - is_unknown
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: classification_type_code, not_null: true}
+      - {field: classification_value_code, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: classification_type_code, to: classification_type_code, type: string}
+      - {from: classification_value_code, to: classification_value_code, type: string}
+      - {from: classification_value_name, to: classification_value_name, type: string}
+      - {from: sort_order, to: classification_sort_order, type: integer}
+      - {from: is_unknown, to: classification_unknown_text, type: string}
+  - pattern: calculated_fields
+    fields:
+      - {name: classification_key, type: string, expression: "concat(classification_type_code, ':', classification_value_code)"}
+      - {name: classification_is_unknown, type: boolean, expression: "classification_unknown_text = 'true'"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: reference.investment_classification_type@1
+        "on": {classification_type_code: classification_type_code}
+        fields: [classification_type_name]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every permitted classification value, keyed by its type and code, with the type it belongs to."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

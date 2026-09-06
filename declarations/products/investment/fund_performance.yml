@@ -1,0 +1,97 @@
+# What each fund is worth at each valuation date, and whether it clears
+# the hurdle the estate declares for it.
+#
+# Invested capital is the capital called less the part the estate
+# declares does not count as invested. Total value is the net asset value
+# plus what has been distributed. The multiple is the second over the
+# first, and it is left unstated rather than computed where invested
+# capital is not positive, because a multiple over nothing is not a
+# figure anybody should read.
+#
+# Three reads sit on top: the calendar the estate publishes, the public
+# market index as it stood on the valuation date, and the department the
+# fund sat in on that date. The last two are as-of reads, so a fund whose
+# department changed in July is reported under the department of the
+# date being valued, not the department of today.
+product:
+  name: fund_performance
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.fund_nav_resolved@1
+    expect:
+      fields:
+        - source_record_id
+        - source_fund_id
+        - source_valued_on
+        - source_nav_usd
+        - source_called_capital_usd
+        - source_distributed_capital_usd
+        - fund_business_key
+        - fund_external_id
+        - source_name
+        - source_strategy
+        - source_currency
+        - fund_recallable_distributions_usd
+        - fund_fee_offset_usd
+        - fund_hurdle_rate
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: fund_business_key, not_null: true}
+      - {field: source_valued_on, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: fund_invested_capital_usd, type: {name: decimal, precision: 18, scale: 2}, expression: "source_called_capital_usd - fund_recallable_distributions_usd - fund_fee_offset_usd"}
+      - {name: fund_total_value_usd, type: {name: decimal, precision: 18, scale: 2}, expression: "source_nav_usd + source_distributed_capital_usd"}
+      - {name: fund_total_value_multiple, type: {name: decimal, precision: 12, scale: 6}, expression: "case when (source_called_capital_usd - fund_recallable_distributions_usd - fund_fee_offset_usd) > 0 then (source_nav_usd + source_distributed_capital_usd) / (source_called_capital_usd - fund_recallable_distributions_usd - fund_fee_offset_usd) end"}
+      - {name: fund_clears_hurdle, type: boolean, expression: "case when fund_hurdle_rate is null then null when (source_called_capital_usd - fund_recallable_distributions_usd - fund_fee_offset_usd) <= 0 then null else ((source_nav_usd + source_distributed_capital_usd) / (source_called_capital_usd - fund_recallable_distributions_usd - fund_fee_offset_usd)) >= fund_hurdle_rate end"}
+      - {name: fund_benchmark_id, type: string, expression: "'MSCI_ACWI'"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: reference.investment_calendar@1
+        "on": {source_valued_on: calendar_date}
+        fields: [calendar_year, calendar_quarter, calendar_quarter_label, calendar_is_quarter_end]
+        no_match: null
+      - contract: reference.benchmark_index@1
+        "on": {fund_benchmark_id: benchmark_id}
+        fields: [benchmark_index_value, benchmark_label]
+        no_match: null
+        temporal:
+          as_of: source_valued_on
+          effective: benchmark_on
+      - contract: reference.fund_department@1
+        "on": {fund_external_id: fund_external_identity}
+        fields: [fund_department_code]
+        no_match: null
+        temporal:
+          as_of: source_valued_on
+          effective: department_effective_from
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "What each fund is worth at each valuation date, with its invested capital, its multiple, the hurdle it clears and the department it sat in."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

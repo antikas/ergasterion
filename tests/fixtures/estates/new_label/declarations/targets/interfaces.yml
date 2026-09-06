@@ -1,0 +1,7 @@
+# This estate's declared interface boundaries: the model paths whose artefacts
+# may materialise as views. It declares none. Every relation its products
+# publish materialises, and the relations the translator renders privately
+# under a product's namespace are engine-owned rather than interfaces, so the
+# boundary rule does not govern them. The view-chain depth budget beside this
+# file still does.
+view_layers: []

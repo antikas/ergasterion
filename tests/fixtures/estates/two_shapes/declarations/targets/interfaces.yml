@@ -1,0 +1,7 @@
+# Declared interface boundaries: the model paths whose artefacts may
+# materialise as views. Every other path is computation and materialises as
+# a table. The canonical shape renders its relations at
+# models/products/canonical, so this estate declares that path; emission
+# fails closed for a canonical product when it does not.
+view_layers:
+  - models/products/canonical

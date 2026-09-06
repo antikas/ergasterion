@@ -1,0 +1,121 @@
+# The curated customer entity: the full integration composition, with a
+# probabilistic resolution over two ranked deterministic keys and a
+# survivorship rule for every column the composition carries.
+#
+# Its source is bound to a fixture relation for local proof (architecture
+# section 12): no product in this estate publishes crm.customer_records, so
+# the binding carries the fields that relation delivers.
+#
+# The seeded population is what makes the known answers known:
+#   * r-01, r-02 and r-11 are one entity. r-01 and r-02 share a customer
+#     reference; r-11 shares only an email address with r-02, so it joins
+#     the same cluster transitively, over two hops, which is what the
+#     declared merge_iterations must cover;
+#   * r-03 and r-04 are a near-duplicate pair: different references,
+#     different emails, one postcode. No declared key merges them, so both
+#     stay pending and the pair is scored into the review band;
+#   * r-09 and r-10 are a near-identical pair whose score reaches the top of
+#     the band, and r-07 pairs with r-03 and r-04 well below its bottom;
+#   * r-08 carries no name at all, so a pair involving it cannot be scored;
+#   * r-06 carries no customer reference, so pre-stage validation quarantines
+#     it and the run continues under the declared error threshold.
+product:
+  name: customer
+  domain: crm
+  version: "1.0"
+  layer: conformed
+  profile: integration
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_records@1
+    kind: fixture
+    fixture:
+      relation: customer_records
+      fields:
+        - {name: rec_id, type: string}
+        - {name: src_sys, type: string}
+        - {name: cust_ref, type: string}
+        - {name: nm, type: string}
+        - {name: pcode, type: string}
+        - {name: eml, type: string}
+        - {name: eff_dt, type: date}
+    expect:
+      fields: [rec_id, src_sys, cust_ref, nm, pcode, eml, eff_dt]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: quarantine
+    error_threshold: 0.25
+    rules:
+      - field: cust_ref
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: rec_id, to: record_id, type: string}
+      - {from: src_sys, to: source_system, type: string}
+      - {from: cust_ref, to: customer_ref, type: string}
+      - {from: nm, to: full_name, type: string}
+      - {from: pcode, to: postcode, type: string}
+      - {from: eml, to: email, type: string}
+      - {from: eff_dt, to: effective_from, type: date}
+  - pattern: data_curation
+    entity: customer
+    resolution:
+      strategy: probabilistic
+      keys: [customer_ref, email]
+      record_key: record_id
+      merge_iterations: 3
+      scoring:
+        rule: customer_match_score_v1
+        rule_version: 1
+        compare: [full_name, postcode]
+        block_on: [postcode]
+        review_band:
+          lower: 0.60
+          upper: 0.90
+    survivorship:
+      record_id: most_recent
+      source_system: most_recent
+      customer_ref: first_non_null
+      full_name: most_recent
+      postcode: first_non_null
+      email: first_non_null
+      effective_from: most_recent
+    precedence:
+      source_column: source_system
+      recency_column: effective_from
+      source_priority: [crm, billing]
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - field: customer_ref
+        unique: true
+      - field: source_system
+        allowed_values: [crm, billing]
+      - field: email
+        regex: "^[^@]+@[^@]+$"
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per resolved customer, with the surviving value of every attribute."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

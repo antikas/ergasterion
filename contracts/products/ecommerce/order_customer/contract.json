@@ -1,0 +1,202 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Each order beside the customer that placed it, and each customer that has placed none.",
+  "freshness": "daily by 08:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "order_customer",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.order@1",
+    "ecommerce.customer@1"
+  ],
+  "quality": [
+    {
+      "description": "customer_business_key must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "row_count reconciles to ['ecommerce.order@1', 'ecommerce.customer@1']",
+      "dimension": "consistency"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "customer_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "order_status",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_date",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "order_total",
+          "required": false,
+          "type": {
+            "name": "decimal",
+            "precision": 12,
+            "scale": 2
+          }
+        },
+        {
+          "name": "order_value_band",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_source_customer_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_currency",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_channel",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_customer_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_status",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_email_domain",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_source_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_loyalty_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_email",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_normalised_email",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_phone",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_address_line",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_city",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_postal_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_country",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_marketing_consent",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_preferred_channel",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_buyer_segment",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_as_of_date",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "customer_identity_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "customer_external_id",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.order_customer"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

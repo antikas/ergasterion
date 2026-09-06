@@ -1,0 +1,44 @@
+# Reference profile: landing (architecture section 5, "Bring external data in
+# unchanged"). mandatory/optional/forbidden are architecture section 5's
+# table for this profile, carried verbatim. Data Contracts is mandatory here
+# too: in this engine every product publishes a contract, so the landing
+# contract is the landing product contract (architecture section 5).
+#
+# ordering is architecture section 3.1's composition order, filtered to the
+# patterns this profile classifies as mandatory or optional: ingest/transfer
+# first, then validation, then the one filtering step this profile admits,
+# then the publication phase (contracts, lineage, metadata, schema publish,
+# data publish), with checkpoint_retries last because it is the enclosing
+# wrapper (ExecutionPlan.wrapper_id), not a sequential step.
+schema: ergasterion.profile/v1
+name: landing
+description: Bring external data in unchanged
+mandatory:
+  - batch_ingestion
+  - data_validation
+  - data_contracts
+  - lineage_capture
+  - metadata_capture
+  - schema_publish
+  - data_publish
+  - checkpoint_retries
+optional:
+  - batch_transfer
+  - data_filtering
+forbidden:
+  - schema_transform
+  - calculated_fields
+  - data_enrichment
+  - data_aggregation
+  - data_curation
+ordering:
+  - batch_ingestion
+  - batch_transfer
+  - data_validation
+  - data_filtering
+  - data_contracts
+  - lineage_capture
+  - metadata_capture
+  - schema_publish
+  - data_publish
+  - checkpoint_retries

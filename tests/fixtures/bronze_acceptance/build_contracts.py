@@ -5,7 +5,7 @@ contracts need to change:
 
     python tests/fixtures/bronze_acceptance/build_contracts.py
 
-Each payload is validated against ``BronzeProductContract`` before it is
+Each payload is validated against ``LandingProductContract`` before it is
 written, so the checked-in ``contracts.json`` is always a model-valid
 snapshot -- the acceptance test only reads it, never regenerates it.
 """
@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ergasterion.framework.bronze_contract import BronzeProductContract
+from ergasterion.framework.landing_contract import LandingProductContract
 
 HERE = Path(__file__).resolve().parent
 NAMESPACE = "com.example.ergasterion.acceptance"
@@ -23,7 +23,7 @@ HMAC_KEY_ID = "synthetic-local-hmac"  # ergasterion.ingestion.settings.SYNTHETIC
 SNAPSHOT_KEY_ID = "acceptance-snapshot-key-1"
 
 CDC = {
-    "schema": "ergasterion.bronze-product/v1",
+    "schema": "ergasterion.landing-product/v1",
     "logical_identity": {"estate_namespace": NAMESPACE, "source": "acceptance", "table": "accounts_cdc"},
     "product": {
         "product_version": "1.0.0",
@@ -92,7 +92,7 @@ CDC = {
 }
 
 APPEND_V1 = {
-    "schema": "ergasterion.bronze-product/v1",
+    "schema": "ergasterion.landing-product/v1",
     "logical_identity": {"estate_namespace": NAMESPACE, "source": "acceptance", "table": "postings_append"},
     "product": {
         "product_version": "1.0.0",
@@ -183,7 +183,7 @@ APPEND_V1_1["projection"] = APPEND_V1_1["projection"] + [
 ]
 
 SNAPSHOT = {
-    "schema": "ergasterion.bronze-product/v1",
+    "schema": "ergasterion.landing-product/v1",
     "logical_identity": {"estate_namespace": NAMESPACE, "source": "acceptance", "table": "customers_snapshot"},
     "product": {
         "product_version": "1.0.0",
@@ -261,7 +261,7 @@ def main() -> None:
         "snapshot": SNAPSHOT,
     }
     for name, payload in document.items():
-        BronzeProductContract.model_validate(payload)
+        LandingProductContract.model_validate(payload)
         print(f"{name}: valid")
     out = HERE / "contracts.json"
     out.write_text(json.dumps(document, indent=1, sort_keys=False) + "\n", encoding="utf-8")
