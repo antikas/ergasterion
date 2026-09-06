@@ -1,0 +1,61 @@
+# The estate's delivered feed: one row per delivered account record, bound to
+# a fixture relation for local proof (architecture section 12), with the
+# fields that relation delivers.
+product:
+  name: account_events
+  domain: bank
+  version: "1.0"
+  layer: delivered
+  profile: serving
+  owner: fixture-team
+
+sources:
+  - contract: bank.account_feed@1
+    kind: fixture
+    fixture:
+      relation: account_events
+      fields:
+        - {name: aid, type: string}
+        - {name: acct, type: string}
+        - {name: holder, type: string}
+        - {name: bal, type: integer}
+        - {name: st, type: string}
+    expect:
+      fields: [aid, acct]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: aid
+        not_null: true
+      - field: aid
+        unique: true
+  - pattern: schema_transform
+    mapping:
+      - {from: aid, to: event_id, type: string}
+      - {from: acct, to: account_ref, type: string}
+      - {from: holder, to: holder_name, type: string}
+      - {from: bal, to: balance, type: integer}
+      - {from: st, to: account_status, type: string}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per delivered account record, no column changed."
+    ownership: fixture-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

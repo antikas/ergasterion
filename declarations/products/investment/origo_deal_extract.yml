@@ -1,0 +1,73 @@
+# Landing product: The ORIGO pipeline system deal feed as it was delivered, one row per delivered deal record.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: origo_deal_extract
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.origo_deal_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_origo_deals
+      fields:
+        - {name: deal_id, type: string}
+        - {name: external_deal_id, type: string}
+        - {name: deal_name, type: string}
+        - {name: target_entity_id, type: string}
+        - {name: strategy, type: string}
+        - {name: originating_team, type: string}
+        - {name: source_channel, type: string}
+        - {name: sourced_date, type: string}
+        - {name: structure, type: string}
+        - {name: converted_record_type, type: string}
+        - {name: converted_record_id, type: string}
+    expect:
+      fields: [deal_id, external_deal_id, deal_name]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: deal_id, not_null: true}
+      - {field: deal_id, unique: true}
+      - {field: deal_name, not_null: true}
+      - {field: sourced_date, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The ORIGO pipeline system deal feed as it was delivered, one row per delivered deal record."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

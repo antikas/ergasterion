@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared named-placeholder renderer for the live and offline demo lanes.
+# Shared named-placeholder renderer for the demonstration lane's result queries.
 #
 # Usage (after sourcing this file):
 #   dpf_render_query TEMPLATE NAME VALUE [NAME VALUE ...]
@@ -30,7 +30,7 @@ dpf_render_query() {
         shift 2
 
         case "${name}" in
-            CATALOG|CALC_SCHEMA|MARTS_SCHEMA|RESOLUTION_SCHEMA|RAW_SCHEMA|CANONICAL_SCHEMA) ;;
+            CATALOG|SCHEMA) ;;
             *)
                 echo "QUERY RENDER ERROR: unknown placeholder name: ${name}" >&2
                 return 2

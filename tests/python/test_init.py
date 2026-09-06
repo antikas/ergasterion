@@ -29,15 +29,14 @@ from ergasterion._repo_root import REPO_ROOT
 TESTS_DIR = Path(__file__).resolve().parent
 if str(TESTS_DIR) not in sys.path:
     sys.path.insert(0, str(TESTS_DIR))
-import test_emit
 
 TREE_ROOT = str(REPO_ROOT)
 
 
 # ---------------------------------------------------------------------------
 # Domain-token residue vocabulary for the generic consumer scaffold:
-# the eight source-system brand tokens plus entity nouns from the two worked domains
-# (domains/investment.yml, domains/ecommerce.yml). Compound/specific forms only for the
+# the eight source-system brand tokens plus the entity nouns the worked estate declares
+# under declarations/products/. Compound/specific forms only for the
 # entity-noun half -- bare "product"/"order" are excluded: both collide with the engine's
 # OWN generic vocabulary ("data product", "product descriptor", SQL "order by"), which
 # would make the gate noise-positive on the engine's legitimate self-description rather
@@ -82,6 +81,35 @@ def _residue_hits(root: Path, *, exclude: set[Path] = frozenset()) -> dict[str, 
 # 1. Structural checks on ergasterion.init.scaffold()
 # ---------------------------------------------------------------------------
 
+def _run_cli(argv: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    """Invoke the checkout's CLI in a fresh subprocess.
+
+    Placing this source tree first keeps the test independent of any Ergasterion package
+    already installed in the selected interpreter.
+    """
+    probe = (
+        "import sys\n"
+        f"sys.path.insert(0, {TREE_ROOT!r})\n"
+        "from ergasterion.cli import main\n"
+        f"raise SystemExit(main({argv!r}))\n"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", probe], cwd=str(cwd), capture_output=True, text=True,
+    )
+
+
+def _fail(msg: str, proc: subprocess.CompletedProcess | None = None) -> None:
+    lines = [f"consumer scaffold smoke FAIL: {msg}"]
+    if proc is not None:
+        lines.append(f"  command : {proc.args}")
+        lines.append(f"  exitcode: {proc.returncode}")
+        if proc.stdout:
+            lines.append("  --- stdout ---\n" + proc.stdout)
+        if proc.stderr:
+            lines.append("  --- stderr ---\n" + proc.stderr)
+    raise AssertionError("\n".join(lines))
+
+
 def test_scaffold_structure_and_macro_fidelity() -> None:
     with tempfile.TemporaryDirectory(prefix="ergasterion-init-structure-") as tmp:
         dest = Path(tmp) / "estate"
@@ -100,11 +128,9 @@ def test_scaffold_structure_and_macro_fidelity() -> None:
         )
         assert scaffolded["profile"] == engine["profile"]
         assert scaffolded["model-paths"] == engine["model-paths"]
-        assert "deal_approvals" not in scaffolded["models"]["ergasterion"], (
-            "the estate-only deal_approvals model-path leaf must be stripped"
+        assert scaffolded["models"] == engine["models"], (
+            "the engine-generic models block must survive the strip unchanged"
         )
-        for layer in ("staging", "entity_resolution", "raw_vault"):
-            assert layer in scaffolded["models"]["ergasterion"], f"engine-generic layer {layer!r} must survive the strip"
 
         # macros/: byte-identical copy of the explicit engine-generic allow-set.
         import ergasterion.sync_scaffold as sync_scaffold
@@ -157,14 +183,32 @@ def test_scaffold_structure_and_macro_fidelity() -> None:
             assert len(binding[digest_field]) == 64, f"{digest_field} must be a real computed sha256 digest"
 
         # Empty dirs, each seeded with .gitkeep. declarations/ also carries the
-        # copied targets/ budget declarations (asserted below); everything else
-        # ships empty.
-        for name in ("domains", "declarations", "seeds", "tests"):
+        # copied targets/ budget declarations and the seeded products/ tree
+        # (both asserted below); everything else ships empty.
+        for name in ("declarations", "seeds", "tests"):
             d = dest / name
             assert d.is_dir() and (d / ".gitkeep").exists(), f"{name}/ must exist with .gitkeep"
-            allowed = {".gitkeep"} | ({"targets"} if name == "declarations" else set())
+            allowed = {".gitkeep"} | ({"targets", "products"} if name == "declarations" else set())
             extras = [p for p in d.iterdir() if p.name not in allowed]
             assert not extras, f"{name}/ must ship with no other content, got: {extras}"
+
+        # The seeded product declaration: byte-identical to the packaged
+        # scaffold copy, which sync_scaffold renders from
+        # ergasterion/templates/product_seed.yml.j2 and its constants.
+        seeded = sorted((dest / "declarations" / "products").glob("*.yml"))
+        packaged = sorted((init_mod._SCAFFOLD_ROOT / "products").glob("*.yml"))
+        assert [p.name for p in seeded] == [p.name for p in packaged] and seeded, (
+            "the seeded product declaration set must match the packaged scaffold's"
+        )
+        for src, copy in zip(packaged, seeded):
+            assert src.read_bytes() == copy.read_bytes(), (
+                f"{copy.name}: seeded product declaration must be byte-identical to the packaged one"
+            )
+        seed_document = yaml.safe_load(seeded[0].read_text(encoding="utf-8"))
+        estate_labels = estate_yml["estate"]["labels"]
+        assert seed_document["product"]["layer"] in estate_labels, (
+            "the seeded product's label must be one estate.yml declares"
+        )
 
         # Structural budget declarations: byte-identical copies of the engine
         # estate's own committed set (the structure gate is fail-closed, so the
@@ -191,14 +235,60 @@ def test_scaffold_structure_and_macro_fidelity() -> None:
             "dbt_project.yml PROJECT CONFIG key, not a dbt CLI flag (`dbt deps --help` "
             "lists no such option on the installed dbt version)"
         )
-        assert "runtime/data/dbt/target/manifest.json" in getting_started and (
-            "cp runtime/data/dbt/target/manifest.json target/manifest.json" in getting_started
-        ), (
-            "the doc must name the manifest copy step the contracts/odps/graph commands need: "
-            "dbt parse writes the manifest under the relocated target-path, but "
-            "ergasterion.estate.EstateContext still reads it from the conventional "
-            "<root>/target/manifest.json location"
+        for command in ("ergasterion emit-products", "ergasterion contracts",
+                        "ergasterion odps", "ergasterion product-graph"):
+            assert command in getting_started, (
+                f"the doc must name {command!r}, one of the commands a scaffolded estate runs"
+            )
+        assert "target/manifest.json" not in getting_started, (
+            "no command reads a compiled dbt manifest any more, so the doc must not send a "
+            "reader to copy one: contracts, descriptors and the product graph are all built "
+            "from the product declarations"
         )
+
+
+def test_scaffolded_estate_emits_through_the_product_route_out_of_the_box() -> None:
+    """A fresh estate is a working product estate, not only a working dbt
+    project: the seeded declaration validates, emits through the real
+    ``ergasterion emit-products`` command, prints its summary line, and the
+    same command in check mode reports no drift against what it wrote."""
+
+    with tempfile.TemporaryDirectory(prefix="ergasterion-init-products-") as tmp:
+        dest = Path(tmp) / "estate"
+        init_mod.scaffold(dest)
+
+        proc = _run_cli(["emit-products", "--estate-root", str(dest)], cwd=dest)
+        if proc.returncode != 0:
+            _fail("`ergasterion emit-products` failed against a freshly scaffolded estate", proc)
+        seeded = sorted((dest / "declarations" / "products").glob("*.yml"))
+        document = yaml.safe_load(seeded[0].read_text(encoding="utf-8"))["product"]
+        published = f"{document['domain']}.{document['name']}"
+        assert f"emitted {published}: label={document['layer']} profile=" in proc.stdout, proc.stdout
+        assert (dest / "models" / "products").is_dir(), "the route wrote no models tree"
+        contract_dir = dest / "contracts" / "products" / document["domain"] / document["name"]
+        assert (contract_dir / "contract.json").is_file(), "the route wrote no product contract"
+        assert list(contract_dir.glob("*.odcs.yml")), "the route wrote no relation contract"
+        assert (contract_dir / f"{document['name']}.odps.yml").is_file(), (
+            "the route wrote no product descriptor"
+        )
+        assert (dest / "graphs" / "products" / "product-graph.json").is_file(), (
+            "the route wrote no product graph"
+        )
+        # The estate's own structural budgets, run by the route once per
+        # declared adapter over the tree it just wrote.
+        assert "structural budgets: 0 offense(s) over 2 declared adapter(s)" in proc.stdout, proc.stdout
+
+        proc = _run_cli(["emit-products", "--estate-root", str(dest), "--check"], cwd=dest)
+        if proc.returncode != 0:
+            _fail("`ergasterion emit-products --check` reported drift on what it had just written", proc)
+        assert "0 problem(s)" in proc.stdout, proc.stdout
+        assert "structural budgets: 0 offense(s) over 2 declared adapter(s)" in proc.stdout, proc.stdout
+        for message in (
+            "ODCS contract gate OK",
+            "ODPS (Bitol) descriptor gate OK",
+            "product-graph gate OK",
+        ):
+            assert message in proc.stdout, f"{message!r} missing from output:\n{proc.stdout}"
 
 
 def test_scaffold_package_data_is_current() -> None:
@@ -216,15 +306,16 @@ def test_scaffold_package_data_is_current() -> None:
 
 
 def test_scaffold_model_keys_are_engine_generic_layers() -> None:
-    """The scaffold dbt_project.yml's model-path keys are exactly the structural
-    layers the emitters write into. A key the emitter never writes would hand a
-    consumer materialisation/schema config for a layer they never declared."""
+    """The scaffold dbt_project.yml carries the physical-design default and no
+    per-layer key. The product route writes an explicit config into every model it
+    renders, so a per-layer key here would hand a consumer materialisation config for
+    a path they never declared and the route would override it anyway."""
     scaffolded = yaml.safe_load(
         (REPO_ROOT / "ergasterion" / "scaffold" / "dbt_project.yml").read_text(encoding="utf-8")
     )
-    keys = set(scaffolded["models"]["ergasterion"].keys()) - {"+materialized"}
-    assert keys == {"staging", "entity_resolution", "raw_vault"}, (
-        f"scaffold model-path keys must be the emitter's engine-generic layers, got: {sorted(keys)}"
+    block = scaffolded["models"]["ergasterion"]
+    assert block == {"+materialized": "table"}, (
+        f"the scaffold models block must be the physical-design default alone, got: {block}"
     )
 
 
@@ -278,290 +369,14 @@ def test_scaffold_output_is_domain_token_clean() -> None:
         assert not hits, f"domain-token residue in scaffold output: {hits}"
 
 
-# ---------------------------------------------------------------------------
-# 2. Full CLI acceptance run against a scaffolded estate and toy domain.
-# ---------------------------------------------------------------------------
-
-# The SAME fixture-class domain tests/python/test_emit.py's own domain-agnosticism proof uses
-# (two entities alpha/beta, one link) -- reused, not re-invented (one fixture, one owner).
-# Extended here with the two boundary blocks emit.py itself never reads: `odcs` (the
-# contract/descriptor adapter's product map -- emit_contracts serves only canonical/marts,
-# so the toy needs ONE hand-authored served model claimed here) and `relations` (the graph
-# adapter's typed-verb vocabulary -- every declared link needs a relation binding, so
-# alpha_beta needs one).
-def _toy_domain() -> dict:
-    domain = dict(test_emit.FIXTURE_DOMAIN)
-    domain["odcs"] = {
-        "domain": "toyfixture",
-        "contract_version": "1.0.0",
-        "status": "active",
-        "server": {
-            "server": "ergasterion_snowflake",
-            "type": "snowflake",
-            "environment": "production",
-            "account": "ergasterion",
-            "database": "ERGASTERION",
-            "schema": "MARTS",
-        },
-        "products": {
-            "canonical_alpha": {"entity": "alpha"},
-        },
-    }
-    domain["relations"] = {
-        "verbs": {
-            "ASSOCIATED_WITH": {
-                "alias": "associated-with", "direction": "directed", "kind": "association",
-                "cardinality": "many_to_one", "inverse": "HAS_ASSOCIATION",
-            },
-            "HAS_ASSOCIATION": {
-                "alias": "has-association", "direction": "directed", "kind": "association",
-                "cardinality": "one_to_many", "inverse": "ASSOCIATED_WITH",
-            },
-        },
-        "bindings": [
-            {
-                "verb": "ASSOCIATED_WITH", "source": "alpha", "target": "beta",
-                "link": "alpha_beta", "source_key": "alpha_hk", "target_key": "beta_hk",
-            },
-        ],
-    }
-    return domain
-
-
-_CANONICAL_ALPHA_SQL = """{{ config(materialized='view', schema='canonical') }}
-
-select
-    golden_alpha_key as alpha_id,
-    alpha_name,
-    alpha_code
-from {{ ref('bv_alpha_golden_record') }}
-"""
-
-_CANONICAL_SCHEMA_YML = """version: 2
-
-models:
-  - name: canonical_alpha
-    description: >
-      Toy fixture canonical view over the business-vault golden alpha record --
-      Consumer scaffold acceptance model (tests/python/test_init.py).
-    columns:
-      - name: alpha_id
-        tests:
-          - not_null
-          - unique
-"""
-
-
-def _run_cli(argv: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    """Invoke the checkout's CLI in a fresh subprocess.
-
-    Placing this source tree first keeps the test independent of any Ergasterion package
-    already installed in the selected interpreter.
-    """
-    probe = (
-        "import sys\n"
-        f"sys.path.insert(0, {TREE_ROOT!r})\n"
-        "from ergasterion.cli import main\n"
-        f"raise SystemExit(main({argv!r}))\n"
-    )
-    return subprocess.run(
-        [sys.executable, "-c", probe], cwd=str(cwd), capture_output=True, text=True,
-    )
-
-
-def _fail(msg: str, proc: subprocess.CompletedProcess | None = None) -> None:
-    lines = [f"consumer scaffold smoke FAIL: {msg}"]
-    if proc is not None:
-        lines.append(f"  command : {proc.args}")
-        lines.append(f"  exitcode: {proc.returncode}")
-        if proc.stdout:
-            lines.append("  --- stdout ---\n" + proc.stdout)
-        if proc.stderr:
-            lines.append("  --- stderr ---\n" + proc.stderr)
-    raise AssertionError("\n".join(lines))
-
-
-def _dbt_exe() -> str:
-    """A dbt executable for the offline validation chain: the DBT environment
-    variable when the caller provides one (the validator scripts export the main
-    tree's), else the nearest ancestor venv, else PATH. A linked source checkout carries
-    no .venv of its own, so the walk-up there would pass the project venv and
-    land on whatever PATH serves -- the env var is the authoritative override."""
-    import os
-
-    env_dbt = os.environ.get("DBT", "").strip()
-    if env_dbt and Path(env_dbt).exists():
-        return env_dbt
-    main_tree = REPO_ROOT
-    while not (main_tree / ".venv").exists() and main_tree.parent != main_tree:
-        main_tree = main_tree.parent
-    candidate = main_tree / ".venv" / "Scripts" / "dbt.exe"
-    if candidate.exists():
-        return str(candidate)
-    # POSIX layout fallback (not exercised on this Windows workstation, kept honest).
-    posix = main_tree / ".venv" / "bin" / "dbt"
-    return str(posix) if posix.exists() else "dbt"
-
-
-def test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph() -> None:
-    before_status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=TREE_ROOT, capture_output=True, text=True,
-    ).stdout
-
-    with tempfile.TemporaryDirectory(prefix="ergasterion-consumer-smoke-") as tmp:
-        estate = Path(tmp) / "estate"
-
-        # (1) `ergasterion init <dir>` -- through the real CLI multiplexer.
-        p = _run_cli(["init", str(estate)], cwd=Path(tmp))
-        if p.returncode != 0:
-            _fail("`ergasterion init <dir>` failed", p)
-        assert (estate / "dbt_project.yml").exists()
-
-        # (2) The toy domain + declaration (fixture-class, reused from tests/python/test_emit.py)
-        # plus the one hand-authored served canonical model emit_contracts/odps need.
-        domains_dir = estate / "domains"
-        (domains_dir / "fixture.yml").write_text(
-            yaml.safe_dump(_toy_domain(), sort_keys=False), encoding="utf-8",
-        )
-        test_emit._write_declaration(estate / "declarations", "toysrc.yml", test_emit._fixture_declaration())
-        canonical_dir = estate / "models" / "canonical"
-        canonical_dir.mkdir(parents=True, exist_ok=True)
-        (canonical_dir / "canonical_alpha.sql").write_text(_CANONICAL_ALPHA_SQL, encoding="utf-8")
-        (canonical_dir / "_canonical.yml").write_text(_CANONICAL_SCHEMA_YML, encoding="utf-8")
-
-        # The one manual step GETTING-STARTED.md names: a raw seed for the toy source plus
-        # its authored seeds: column_types block (the scaffold ships dbt_project.yml with
-        # no seeds: block by design -- this domain adds its own, exactly as documented).
-        seeds_dir = estate / "seeds"
-        (seeds_dir / "raw_toysrc_things.csv").write_text(
-            "id,alpha_name,alpha_code,beta_name\n"
-            "1,Alpha One,A1,Beta One\n"
-            "2,Alpha Two,A2,Beta Two\n",
-            encoding="utf-8",
-        )
-        project = yaml.safe_load((estate / "dbt_project.yml").read_text(encoding="utf-8"))
-        project["seeds"] = {
-            "ergasterion": {
-                "+quote_columns": False,
-                "raw_toysrc_things": {
-                    "+column_types": {
-                        "id": "string", "alpha_name": "string", "alpha_code": "string", "beta_name": "string",
-                    },
-                },
-            },
-        }
-        (estate / "dbt_project.yml").write_text(yaml.safe_dump(project, sort_keys=False), encoding="utf-8")
-
-        # (3) dbt packages from a COPY of this repo's own dbt_packages/ -- no `dbt deps`
-        # network fetch. packages-install-path is fixed at runtime/data/dbt/packages (the
-        # scaffold's own dbt_project.yml projection), so copying straight to that path is
-        # the direct route the scaffold's own GETTING-STARTED.md documents.
-        repo_dbt_packages = REPO_ROOT / "dbt_packages"
-        assert repo_dbt_packages.is_dir(), "expected this repo's own dbt_packages/ to exist for the offline copy"
-        scaffold_packages_dest = estate / "runtime" / "data" / "dbt" / "packages"
-        scaffold_packages_dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(repo_dbt_packages, scaffold_packages_dest)
-
-        # (4) `ergasterion emit --estate-root <estate>` -- zero engine edits: the engine
-        # tree under test is read-only from this call's perspective, only <estate> is
-        # written.
-        p = _run_cli(["emit", "--estate-root", str(estate)], cwd=Path(tmp))
-        if p.returncode != 0:
-            _fail("`ergasterion emit --estate-root <estate>` failed", p)
-        for expect in ("hub_alpha.sql", "hub_beta.sql", "link_alpha_beta.sql", "bv_alpha_golden_record.sql"):
-            found = list((estate / "models").rglob(expect))
-            assert found, f"expected {expect} to be emitted into the scaffolded estate"
-
-        # (5) `dbt parse` -- warehouse-free (parse never connects) AND network-free (the
-        # packages are already on disk from step 3, `dbt deps` is never invoked).
-        dbt = _dbt_exe()
-        p = subprocess.run(
-            [dbt, "parse", "--profiles-dir", "profiles", "--no-partial-parse", "-t", "bigquery"],
-            cwd=str(estate), capture_output=True, text=True,
-        )
-        if p.returncode != 0:
-            _fail("`dbt parse` against the scaffolded estate failed", p)
-        scaffold_target = estate / "runtime" / "data" / "dbt" / "target"
-        assert (scaffold_target / "manifest.json").exists(), (
-            "dbt parse must produce runtime/data/dbt/target/manifest.json (the fixed target-path)"
-        )
-        # ergasterion.estate.EstateContext still defaults manifest_path to the conventional
-        # <root>/target/manifest.json (ergasterion/emit_contracts.py, ergasterion/emit_graph.py
-        # both read through it) even though dbt now writes under the relocated target-path --
-        # GETTING-STARTED.md's "Generating contracts..." section names this exact copy step;
-        # this test performs it the same way a consumer following that doc would.
-        (estate / "target").mkdir(parents=True, exist_ok=True)
-        shutil.copy2(scaffold_target / "manifest.json", estate / "target" / "manifest.json")
-
-        # (6) Execute the generated estate locally. A parse proves the SQL is syntactically
-        # available to dbt; this build also binds aliases and relations against DuckDB.
-        build_env = os.environ.copy()
-        for name in tuple(build_env):
-            if name.startswith("DPF_SF_"):
-                build_env.pop(name)
-        consumer_duckdb = estate / "runtime" / "data" / "consumer_scaffold.duckdb"
-        build_env["DPF_DUCKDB_PATH"] = str(consumer_duckdb)
-        p = subprocess.run(
-            [dbt, "build", "--profiles-dir", "profiles", "--no-partial-parse", "-t", "duckdb"],
-            cwd=str(estate), capture_output=True, text=True, env=build_env,
-        )
-        if p.returncode != 0:
-            _fail("`dbt build -t duckdb` against the scaffolded estate failed", p)
-        assert consumer_duckdb.exists(), (
-            "the consumer build must create its local DuckDB database under runtime/data/"
-        )
-        with duckdb.connect(str(consumer_duckdb), read_only=True) as con:
-            rows = con.execute(
-                "select alpha_name, alpha_code "
-                "from main_canonical.canonical_alpha order by alpha_code"
-            ).fetchall()
-        assert rows == [("Alpha One", "A1"), ("Alpha Two", "A2")], (
-            "the consumer build must preserve each source record's canonical payload"
-        )
-
-        # (7) contracts + ODPS descriptor + graph map, all emitted inside the scaffolded
-        # estate, all through the real CLI.
-        for sub in ("contracts", "odps", "graph"):
-            p = _run_cli([sub, "--estate-root", str(estate)], cwd=Path(tmp))
-            if p.returncode != 0:
-                _fail(f"`ergasterion {sub} --estate-root <estate>` failed", p)
-        assert list((estate / "contracts").glob("*/canonical_alpha.odcs.yml")), "ODCS contract must be emitted"
-        assert (estate / "contracts" / "odps" / "toyfixture.odps.yml").exists(), "ODPS descriptor must be emitted"
-        # The graph emitter keys its output dir by the domains/*.yml FILE STEM ("fixture"),
-        # a separate namespace from odcs.domain ("toyfixture", used by contracts/odps).
-        assert list((estate / "graphs" / "fixture").glob("*")), "graph artefact suite must be emitted"
-
-        # Third-party packages and dbt's compiled target/state are not authored scaffold
-        # output -- all under the fixed runtime/data/ root now (see runtime/local.yml),
-        # plus the conventional target/ manifest.json copy the contracts/graph steps need.
-        skip_dirs = ("runtime/data", "target")
-        exclude = {
-            p.resolve()
-            for d in skip_dirs
-            for p in (estate / d).rglob("*")
-            if (estate / d).exists()
-        }
-        hits = _residue_hits(estate, exclude=exclude)
-        assert not hits, f"domain-token residue in the emitted toy estate: {hits}"
-
-    # (8) Zero engine edits: none of the above touched the engine tree under test.
-    after_status = subprocess.run(
-        ["git", "status", "--porcelain"], cwd=TREE_ROOT, capture_output=True, text=True,
-    ).stdout
-    assert before_status == after_status, (
-        "the consumer smoke must make zero engine edits -- git status changed:\n"
-        f"before:\n{before_status}\nafter:\n{after_status}"
-    )
-
-
 TESTS = [
     test_scaffold_structure_and_macro_fidelity,
+    test_scaffolded_estate_emits_through_the_product_route_out_of_the_box,
     test_scaffold_package_data_is_current,
     test_scaffold_model_keys_are_engine_generic_layers,
     test_scaffold_missing_engine_data_fails_whole,
     test_scaffold_force_flag,
     test_scaffold_output_is_domain_token_clean,
-    test_consumer_scaffold_toy_domain_emit_parse_contracts_odps_graph,
 ]
 
 

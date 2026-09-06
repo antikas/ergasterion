@@ -1,11 +1,11 @@
-"""Closed Pydantic projections of the frozen Bronze portable IDL: delivery input,
+"""Closed Pydantic projections of the frozen Landing portable IDL: delivery input,
 raw-receipt, reprocessing/remediation, migrations/state, validation/disposition,
 lifecycle/publication/projection intent and confirmation, attestation, backup and
 evidence records -- everything not already covered by
-``ergasterion.framework.bronze_contract`` (vocabulary + contract declaration) or
+``ergasterion.framework.landing_contract`` (vocabulary + contract declaration) or
 ``ergasterion.framework.runtime_binding`` (runtime binding + deployment + capabilities +
 readiness). Builds on both of those modules; neither imports this one, so the
-dependency chain stays one-way. See ``bronze_contract``'s module docstring for the
+dependency chain stays one-way. See ``landing_contract``'s module docstring for the
 shared design notes (structural-only scope, no file I/O at import time, the IDL pin).
 
 This module also carries the port declarations (``PORTS``, ``PORT_OPERATION_ORDER``) and
@@ -26,17 +26,17 @@ from typing import Annotated, Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-import ergasterion.framework.bronze_contract as bronze_contract
+import ergasterion.framework.landing_contract as landing_contract
 import ergasterion.framework.runtime_binding as runtime_binding
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     EXPECTED_IDL_SHA256,
     AttemptState,
     Base64Url,
     BackupAction,
     BackoffKind,
     BlockPhase,
-    BronzeInterfaces,
-    BronzeProductContract,
+    LandingInterfaces,
+    LandingProductContract,
     ByteStringBase64Url,
     ClosedModel,
     ContentEncoding,
@@ -264,7 +264,7 @@ VisibilityIdentity = Annotated[
 ]
 
 
-class BronzeEvidence(ClosedModel):
+class LandingEvidence(ClosedModel):
     raw_receipt: RawReceipt
     candidate_ref: OpaqueRef
     candidate_digest: Digest
@@ -326,7 +326,7 @@ class MaterializationSession(ClosedModel):
 
 
 class CandidateReadQuery(ClosedModel):
-    evidence: BronzeEvidence
+    evidence: LandingEvidence
     after_sequence: NonNegativeIntegerString | None
     max_frames: PositiveInteger
     max_bytes: PositiveIntegerString
@@ -393,8 +393,8 @@ class MaterializationCompletion(ClosedModel):
     output_visibility: VisibilityIdentity | None
 
 
-class MaterializedBronzeEvidence(ClosedModel):
-    prepared: BronzeEvidence
+class MaterializedLandingEvidence(ClosedModel):
+    prepared: LandingEvidence
     disposition_ref: OpaqueRef
     accepted_ref: OpaqueRef
     accepted_content_digest: Digest
@@ -403,7 +403,7 @@ class MaterializedBronzeEvidence(ClosedModel):
 
 
 class ReleaseVisibilityBinding(ClosedModel):
-    materialized: MaterializedBronzeEvidence
+    materialized: MaterializedLandingEvidence
     visibility: ReleaseVisibilityIdentity
 
 
@@ -559,7 +559,7 @@ class ContractLifecycleRequest(ClosedModel):
     action: ContractLifecycleAction
     expected_state_revision: NonNegativeIntegerString
     expected_deployment_revision: NonNegativeIntegerString | None
-    contract: BronzeProductContract
+    contract: LandingProductContract
     migration: Migration | None
     permit_pre_intent_fence: bool
 
@@ -594,7 +594,7 @@ class DeliveryPublicationPayload(ClosedModel):
     transport_payload_digest: Digest
     raw_receipt_ref: OpaqueRef
     raw_receipt_digest: Digest
-    bronze_partition_ref: OpaqueRef
+    landing_partition_ref: OpaqueRef
     accepted_content_digest: Digest
     ruleset_digest: Digest
     validation_result_digest: Digest
@@ -622,7 +622,7 @@ class WholeDeliveryReprocessingPayload(ClosedModel):
     readiness_digest: Digest
     raw_receipt_ref: OpaqueRef
     raw_receipt_digest: Digest
-    bronze_partition_ref: OpaqueRef
+    landing_partition_ref: OpaqueRef
     accepted_content_digest: Digest
     ruleset_digest: Digest
     validation_result_digest: Digest
@@ -651,7 +651,7 @@ class RemediationReleasePayload(ClosedModel):
     transport_payload_digest: Digest
     raw_receipt_ref: OpaqueRef
     raw_receipt_digest: Digest
-    bronze_partition_ref: OpaqueRef
+    landing_partition_ref: OpaqueRef
     accepted_content_digest: Digest
     ruleset_digest: Digest
     validation_result_digest: Digest
@@ -836,7 +836,7 @@ class PublishedLedgerRow(ClosedModel):
     transport_payload_digest: Digest
     raw_receipt_ref: OpaqueRef
     raw_receipt_digest: Digest
-    bronze_partition_ref: OpaqueRef
+    landing_partition_ref: OpaqueRef
     accepted_content_digest: Digest
     ruleset_digest: Digest
     validation_result_digest: Digest
@@ -894,7 +894,7 @@ class RunLineage(ClosedModel):
 
 
 class LineageLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.lineage"]
+    kind: Literal["landing.lineage"]
     lineage: LineageDescriptor
     run_lineage: RunLineage
 
@@ -907,7 +907,7 @@ class ProductMetadata(ClosedModel):
     published_schema_digest: Digest
     source_schema: tuple[SourceField, ...]
     quality: QualityPolicy
-    interfaces: BronzeInterfaces
+    interfaces: LandingInterfaces
     latest_stream_status_ref: OpaqueRef
     latest_publication_ref: OpaqueRef | None = None
 
@@ -915,32 +915,32 @@ class ProductMetadata(ClosedModel):
 
 
 class MetadataLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.metadata"]
+    kind: Literal["landing.metadata"]
     metadata: ProductMetadata
 
 
 class ContractEvidenceLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.contract"]
-    contract: BronzeProductContract
+    kind: Literal["landing.contract"]
+    contract: LandingProductContract
 
 
 class SchemaEvidenceLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.schema"]
+    kind: Literal["landing.schema"]
     metadata: ProductMetadata
 
 
 class ReceiptLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.receipt"]
+    kind: Literal["landing.receipt"]
     receipt: RawReceipt
 
 
 class QualityLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.quality"]
+    kind: Literal["landing.quality"]
     validation: ValidationResultHandoff
 
 
 class QuarantineLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.quarantine"]
+    kind: Literal["landing.quarantine"]
     validation: ValidationResultHandoff
     decision: RemediationDecision | None
 
@@ -952,13 +952,13 @@ class PublicationConfirmationHandoff(ClosedModel):
 
 
 class PublicationLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.publication"]
+    kind: Literal["landing.publication"]
     confirmation: PublicationConfirmationHandoff
     ledger: PublishedLedgerRow
 
 
 class DeletionEvidenceLifecyclePayload(ClosedModel):
-    kind: Literal["bronze.deletion_evidence"]
+    kind: Literal["landing.deletion_evidence"]
     evidence: DeletionEvidence
 
 
@@ -977,7 +977,7 @@ LifecyclePayload = Union[
 
 class LifecycleEvent(ClosedModel):
     event_id: Digest
-    event_type: "bronze_contract.LifecycleEventType"
+    event_type: "landing_contract.LifecycleEventType"
     logical_identity: LogicalIdentity
     state_revision: NonNegativeIntegerString
     event_ordinal: NonNegativeIntegerString
@@ -1298,7 +1298,7 @@ class CommandError(ClosedModel):
 
 class PlanCommandResult(ClosedModel):
     kind: Literal["plan"]
-    execution_plan: "bronze_contract.ExecutionPlan"
+    execution_plan: "landing_contract.ExecutionPlan"
     runtime_manifest: RuntimeManifest
     runtime_manifest_digest: Digest
     findings: tuple[Finding, ...]
@@ -1404,7 +1404,7 @@ class AttemptEvidenceItem(ClosedModel):
 
 class ContractEvidenceItem(ClosedModel):
     kind: Literal["contract"]
-    contract: BronzeProductContract
+    contract: LandingProductContract
 
 
 class SchemaEvidenceItem(ClosedModel):
@@ -1562,7 +1562,7 @@ CommandResult = Annotated[
 class CommandEnvelope(ClosedModel):
     schema_: Literal["ergasterion.command-result/v1"] = Field(alias="schema")
     command: Token
-    status: "bronze_contract.CommandStatus"
+    status: "landing_contract.CommandStatus"
     logical_identity: LogicalIdentity | None
     contract_digest: Digest | None
     execution_plan_digest: Digest | None
@@ -1636,7 +1636,7 @@ class ScratchReadPage(ClosedModel):
 
 # --------------------------------------------------------------------------- registry
 #
-# ``ALL_*`` merges this module's own records with ``bronze_contract`` and
+# ``ALL_*`` merges this module's own records with ``landing_contract`` and
 # ``runtime_binding``'s registries -- the full, exact-153-record IDL coverage set the
 # schema bundle and equivalence report are generated from.
 
@@ -1657,7 +1657,7 @@ RECORD_MODELS: dict[str, type[BaseModel]] = {
     "RawReceipt": RawReceipt,
     "ReleaseVisibilityIdentity": ReleaseVisibilityIdentity,
     "ReprocessVisibilityIdentity": ReprocessVisibilityIdentity,
-    "BronzeEvidence": BronzeEvidence,
+    "LandingEvidence": LandingEvidence,
     "RawReadHandle": RawReadHandle,
     "RawReadPage": RawReadPage,
     "LandingPreparation": LandingPreparation,
@@ -1671,7 +1671,7 @@ RECORD_MODELS: dict[str, type[BaseModel]] = {
     "ValidationResult": ValidationResult,
     "SnapshotAcceptance": SnapshotAcceptance,
     "MaterializationCompletion": MaterializationCompletion,
-    "MaterializedBronzeEvidence": MaterializedBronzeEvidence,
+    "MaterializedLandingEvidence": MaterializedLandingEvidence,
     "ReleaseVisibilityBinding": ReleaseVisibilityBinding,
     "ReprocessingClaim": ReprocessingClaim,
     "RemediationEvaluation": RemediationEvaluation,
@@ -1808,19 +1808,19 @@ UNION_MODELS: dict[str, object] = {
 }
 
 ALL_RECORD_MODELS: dict[str, type[BaseModel]] = {
-    **bronze_contract.RECORD_MODELS,
+    **landing_contract.RECORD_MODELS,
     **runtime_binding.RECORD_MODELS,
     **RECORD_MODELS,
 }
-ALL_ENUM_MODELS = dict(bronze_contract.ENUM_MODELS)
+ALL_ENUM_MODELS = dict(landing_contract.ENUM_MODELS)
 ALL_UNION_MODELS: dict[str, object] = {
-    **bronze_contract.UNION_MODELS,
-    "LogicalType": bronze_contract.LogicalType,
+    **landing_contract.UNION_MODELS,
+    "LogicalType": landing_contract.LogicalType,
     **UNION_MODELS,
 }
 
 for _model in ALL_RECORD_MODELS.values():
-    _model.model_rebuild(force=True, _types_namespace={**vars(bronze_contract), **vars(runtime_binding), **globals()})
+    _model.model_rebuild(force=True, _types_namespace={**vars(landing_contract), **vars(runtime_binding), **globals()})
 del _model
 
 REVERSE_RECORD_NAMES: dict[type[BaseModel], str] = {cls: name for name, cls in ALL_RECORD_MODELS.items()}
@@ -1831,12 +1831,12 @@ an IDL name through this, rather than the other direction."""
 
 # --------------------------------------------------------------------------- IDL type-expression resolution
 #
-# ``docs/specifications/bronze-portable-idl-v1.json``'s ``type_expression_grammar``: a
+# ``docs/specifications/landing-portable-idl-v1.json``'s ``type_expression_grammar``: a
 # field's ``type`` is a scalar/enum/record/union name, or ``list<T>``/``map<Token,T>``
 # over one of those. This section resolves that string against the *actual* Python
 # annotation a model class carries for the same field -- object identity for scalar
 # aliases (``Digest`` is compared to the literal ``Annotated[str, ...]`` object bound to
-# that name in ``bronze_contract``, not just "some string"), class identity for records
+# that name in ``landing_contract``, not just "some string"), class identity for records
 # and enums, structural equality for unions, and recursive unwrapping for ``tuple[X, ...]``
 # / ``dict[str, X]``. It is what lets ``generate_equivalence_report`` catch a field typed
 # with the wrong scalar, enum, record or union -- not merely a field with the right name.
@@ -1844,27 +1844,27 @@ an IDL name through this, rather than the other direction."""
 SCALAR_ALIAS_BY_IDL_NAME: dict[str, object] = {
     "String": str,
     "Boolean": bool,
-    "SafeInteger": bronze_contract.SafeInteger,
-    "PositiveInteger": bronze_contract.PositiveInteger,
-    "NonNegativeInteger": bronze_contract.NonNegativeInteger,
-    "IntegerString": bronze_contract.IntegerString,
-    "NonNegativeIntegerString": bronze_contract.NonNegativeIntegerString,
-    "PositiveIntegerString": bronze_contract.PositiveIntegerString,
-    "DecimalString": bronze_contract.DecimalString,
-    "Digest": bronze_contract.Digest,
-    "ContentId": bronze_contract.ContentId,
-    "Base64Url": bronze_contract.Base64Url,
-    "ByteStringBase64Url": bronze_contract.ByteStringBase64Url,
-    "Token": bronze_contract.Token,
-    "Identifier": bronze_contract.Identifier,
-    "EstateNamespace": bronze_contract.EstateNamespace,
-    "SemVer": bronze_contract.SemVer,
-    "UtcInstant": bronze_contract.UtcInstant,
-    "Date": bronze_contract.DateScalar,
-    "FileMode": bronze_contract.FileMode,
-    "JsonPointer": bronze_contract.JsonPointer,
-    "OpaqueRef": bronze_contract.OpaqueRef,
-    "ErrorCode": bronze_contract.ErrorCode,
+    "SafeInteger": landing_contract.SafeInteger,
+    "PositiveInteger": landing_contract.PositiveInteger,
+    "NonNegativeInteger": landing_contract.NonNegativeInteger,
+    "IntegerString": landing_contract.IntegerString,
+    "NonNegativeIntegerString": landing_contract.NonNegativeIntegerString,
+    "PositiveIntegerString": landing_contract.PositiveIntegerString,
+    "DecimalString": landing_contract.DecimalString,
+    "Digest": landing_contract.Digest,
+    "ContentId": landing_contract.ContentId,
+    "Base64Url": landing_contract.Base64Url,
+    "ByteStringBase64Url": landing_contract.ByteStringBase64Url,
+    "Token": landing_contract.Token,
+    "Identifier": landing_contract.Identifier,
+    "EstateNamespace": landing_contract.EstateNamespace,
+    "SemVer": landing_contract.SemVer,
+    "UtcInstant": landing_contract.UtcInstant,
+    "Date": landing_contract.DateScalar,
+    "FileMode": landing_contract.FileMode,
+    "JsonPointer": landing_contract.JsonPointer,
+    "OpaqueRef": landing_contract.OpaqueRef,
+    "ErrorCode": landing_contract.ErrorCode,
 }
 
 
@@ -2110,33 +2110,33 @@ PORTS: dict[str, PortDeclaration] = {
     "LandingAdapter": PortDeclaration("landing_adapter", {
         "begin_prepare": PortMethod(
             (("attempt_id", "Digest"), ("receipt", "RawReceipt"), ("raw", "RawReadHandle"),
-             ("contract", "BronzeProductContract"), ("visibility", "VisibilityIdentity")),
+             ("contract", "LandingProductContract"), ("visibility", "VisibilityIdentity")),
             "LandingPreparation", ("codec_error", "framing_error", "integrity_error"),
         ),
         "append_raw": PortMethod((("preparation", "LandingPreparation"), ("page", "RawReadPage")), "LandingPreparation",
                                   ("sequence_conflict", "codec_error", "framing_error", "integrity_error")),
-        "finish_prepare": PortMethod((("preparation", "LandingPreparation"),), "BronzeEvidence",
+        "finish_prepare": PortMethod((("preparation", "LandingPreparation"),), "LandingEvidence",
                                       ("codec_error", "framing_error", "integrity_error")),
         "read_candidate": PortMethod((("query", "CandidateReadQuery"),), "CandidateFramePage",
                                       ("item_too_large", "not_found", "access_denied", "integrity_error")),
         "begin_materialization": PortMethod(
-            (("attempt_id", "Digest"), ("evidence", "BronzeEvidence"), ("evaluation_id", "Digest"),
+            (("attempt_id", "Digest"), ("evidence", "LandingEvidence"), ("evaluation_id", "Digest"),
              ("ruleset_digest", "Digest")),
             "MaterializationSession", ("evidence_conflict", "capacity_exceeded"),
         ),
         "append_dispositions": PortMethod((("session", "MaterializationSession"), ("page", "DispositionPage")),
                                            "MaterializationSession",
                                            ("sequence_conflict", "evidence_conflict", "capacity_exceeded")),
-        "finish_materialization": PortMethod((("completion", "MaterializationCompletion"),), "MaterializedBronzeEvidence",
+        "finish_materialization": PortMethod((("completion", "MaterializationCompletion"),), "MaterializedLandingEvidence",
                                               ("evidence_conflict", "capacity_exceeded", "integrity_error")),
-        "bind_release_visibility": PortMethod((("binding", "ReleaseVisibilityBinding"),), "MaterializedBronzeEvidence",
+        "bind_release_visibility": PortMethod((("binding", "ReleaseVisibilityBinding"),), "MaterializedLandingEvidence",
                                                ("evidence_conflict", "row_attribution_error", "integrity_error")),
         "source_native_query": PortMethod((("query", "SourceNativeQuery"),), "SourceNativePage",
                                            ("access_denied", "item_too_large", "not_found")),
         "disposition_query": PortMethod((("query", "DispositionQuery"),), "DispositionQueryPage",
                                          ("access_denied", "item_too_large", "not_found")),
         "verify_open": PortMethod((("input", "ExternalReceiptInput"), ("visibility", "DeliveryVisibilityIdentity")),
-                                   "BronzeEvidence", ("integrity_error", "row_attribution_error")),
+                                   "LandingEvidence", ("integrity_error", "row_attribution_error")),
     }),
     "RemediationRepository": PortDeclaration("remediation_repository", {
         "record_decision": PortMethod((("decision", "RemediationDecision"),), "RemediationDecision",
@@ -2174,9 +2174,9 @@ PORTS: dict[str, PortDeclaration] = {
 # --------------------------------------------------------------------------- generation (dev/test only)
 #
 # Every function below takes an explicit ``idl_path``; none is called at import time.
-# ``tests/python/test_bronze_schema.py`` calls these from a repository checkout to
-# regenerate ``ergasterion/schemas/bronze-product-v1.schema.json`` and
-# ``ergasterion/schemas/bronze-portable-idl-equivalence.json`` and assert byte-identity
+# ``tests/python/test_landing_schema.py`` calls these from a repository checkout to
+# regenerate ``ergasterion/schemas/landing-product-v1.schema.json`` and
+# ``ergasterion/schemas/landing-portable-idl-equivalence.json`` and assert byte-identity
 # against the committed files -- the "regenerated ... byte-identical, checks itself" gate.
 
 def load_idl(idl_path: str | Path) -> dict:
@@ -2197,7 +2197,7 @@ def generate_schema_bundle(idl_path: str | Path, vectors_path: str | Path | None
     exact IDL record name, sharing one ``$defs`` section (``pydantic.json_schema.
     models_json_schema``) so a type referenced by many records (``LogicalIdentity``,
     ``Digest``-shaped scalars, ...) is defined once, not duplicated per top-level
-    record. When ``vectors_path`` is given (``tests/fixtures/bronze_schema_vectors.json``
+    record. When ``vectors_path`` is given (``tests/fixtures/landing_schema_vectors.json``
     at generation time), each record that has at least one positive vector carries an
     ``examples`` array of those vectors' payloads -- the packaged schema then ships
     worked examples alongside the shapes, not shapes alone."""
@@ -2228,7 +2228,7 @@ def generate_schema_bundle(idl_path: str | Path, vectors_path: str | Path | None
         records[name] = entry
 
     return {
-        "schema": "ergasterion.bronze-product-schema-bundle/v1",
+        "schema": "ergasterion.landing-product-schema-bundle/v1",
         "idl_schema": idl["schema"],
         "idl_version": idl["idl_version"],
         "idl_sha256": EXPECTED_IDL_SHA256,
@@ -2290,8 +2290,8 @@ def _scalar_base_type(alias: object) -> object:
 def _scalar_checks(idl: dict) -> dict[str, dict]:
     """Check every IDL ``scalars`` entry against the actual constraint bound to the
     same-named alias in ``SCALAR_ALIAS_BY_IDL_NAME``: base type always; pattern via
-    ``bronze_contract.SCALAR_PATTERNS`` when the IDL entry carries one; numeric or
-    string-length bounds via ``bronze_contract.SCALAR_BOUNDS`` when the IDL entry
+    ``landing_contract.SCALAR_PATTERNS`` when the IDL entry carries one; numeric or
+    string-length bounds via ``landing_contract.SCALAR_BOUNDS`` when the IDL entry
     carries those; and, for ``ErrorCode``'s ``enum_ref``, that the alias is a
     ``Literal`` over exactly the IDL's own ``error_codes`` set. Presence of a
     same-named alias alone is not checked as sufficient anywhere in this function --
@@ -2321,12 +2321,12 @@ def _scalar_checks(idl: dict) -> dict[str, dict]:
         ok = base_ok
 
         if "pattern" in entry:
-            pattern_ok = bronze_contract.SCALAR_PATTERNS.get(name) == entry["pattern"]
+            pattern_ok = landing_contract.SCALAR_PATTERNS.get(name) == entry["pattern"]
             detail["pattern_ok"] = pattern_ok
             ok = ok and pattern_ok
 
         if "minimum" in entry or "maximum" in entry:
-            bounds = bronze_contract.SCALAR_BOUNDS.get(name, {})
+            bounds = landing_contract.SCALAR_BOUNDS.get(name, {})
             bounds_ok = (
                 bounds.get("minimum") == entry.get("minimum")
                 and bounds.get("maximum") == entry.get("maximum")
@@ -2335,7 +2335,7 @@ def _scalar_checks(idl: dict) -> dict[str, dict]:
             ok = ok and bounds_ok
 
         if "min_length" in entry or "max_length" in entry:
-            bounds = bronze_contract.SCALAR_BOUNDS.get(name, {})
+            bounds = landing_contract.SCALAR_BOUNDS.get(name, {})
             length_ok = (
                 bounds.get("min_length") == entry.get("min_length")
                 and bounds.get("max_length") == entry.get("max_length")
@@ -2362,7 +2362,7 @@ def _port_operation_order_checks(idl: dict) -> dict[str, dict]:
 
 def _handoff_schema_binding_checks(idl: dict) -> dict[str, dict]:
     """Check every IDL ``handoff_schema_bindings`` entry against
-    ``bronze_contract.HANDOFF_SCHEMA_BINDINGS``: the schema id resolves to a
+    ``landing_contract.HANDOFF_SCHEMA_BINDINGS``: the schema id resolves to a
     ``HandoffSchemaId`` member, the record type name resolves to a
     ``HandoffRecordType`` member, the record type name resolves to a real record model
     in ``ALL_RECORD_MODELS``, and the Python pairing for that schema id equals the IDL
@@ -2371,14 +2371,14 @@ def _handoff_schema_binding_checks(idl: dict) -> dict[str, dict]:
     checks: dict[str, dict] = {}
     for schema_id_value, record_type_name in sorted(idl["handoff_schema_bindings"].items()):
         try:
-            schema_id = bronze_contract.HandoffSchemaId(schema_id_value)
+            schema_id = landing_contract.HandoffSchemaId(schema_id_value)
             schema_id_ok = True
         except ValueError:
             schema_id = None
             schema_id_ok = False
 
         try:
-            record_type = bronze_contract.HandoffRecordType(record_type_name)
+            record_type = landing_contract.HandoffRecordType(record_type_name)
             record_type_ok = True
         except ValueError:
             record_type = None
@@ -2389,7 +2389,7 @@ def _handoff_schema_binding_checks(idl: dict) -> dict[str, dict]:
         pairing_ok = (
             schema_id_ok
             and record_type_ok
-            and bronze_contract.HANDOFF_SCHEMA_BINDINGS.get(schema_id) == record_type
+            and landing_contract.HANDOFF_SCHEMA_BINDINGS.get(schema_id) == record_type
         )
 
         ok = schema_id_ok and record_type_ok and model_ok and pairing_ok
@@ -2421,7 +2421,7 @@ def generate_equivalence_report(idl_path: str | Path) -> dict:
     ``handoff_schema_bindings``, per IDL entry: the schema id resolves to a
     ``HandoffSchemaId`` member, the record type name resolves to a
     ``HandoffRecordType`` member and to a real record model in ``ALL_RECORD_MODELS``,
-    and the Python pairing in ``bronze_contract.HANDOFF_SCHEMA_BINDINGS`` equals the
+    and the Python pairing in ``landing_contract.HANDOFF_SCHEMA_BINDINGS`` equals the
     IDL pairing. One verdict per IDL surface plus a summary total.
 
     This covers the IDL's structural sections -- the ones that state a shape a wire
@@ -2552,7 +2552,7 @@ def generate_equivalence_report(idl_path: str | Path) -> dict:
             "methods": method_checks,
         }
 
-    error_codes_ok = set(idl["error_codes"]) == set(bronze_contract.ERROR_CODES)
+    error_codes_ok = set(idl["error_codes"]) == set(landing_contract.ERROR_CODES)
     scalar_checks = _scalar_checks(idl)
     port_operation_order_checks = _port_operation_order_checks(idl)
     handoff_schema_binding_checks = _handoff_schema_binding_checks(idl)
@@ -2573,7 +2573,7 @@ def generate_equivalence_report(idl_path: str | Path) -> dict:
     ok_handoff_schema_bindings = sum(1 for v in handoff_schema_binding_checks.values() if v["status"] == "ok")
 
     return {
-        "schema": "ergasterion.bronze-portable-idl-equivalence/v1",
+        "schema": "ergasterion.landing-portable-idl-equivalence/v1",
         "idl_schema": idl["schema"],
         "idl_version": idl["idl_version"],
         "idl_sha256": EXPECTED_IDL_SHA256,

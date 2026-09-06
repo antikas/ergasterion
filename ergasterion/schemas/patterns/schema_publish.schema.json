@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/schema_publish.schema.json",
+  "title": "schema_publish step configuration (architecture section 4)",
+  "description": "Versioning policy: additive is minor, breaking is major (architecture section 7).",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "schema_publish" },
+    "versioning_policy": { "type": "string", "minLength": 1 }
+  }
+}

@@ -4,9 +4,11 @@ source:
   system: CARTIVO web storefront (e-commerce domain)
   priority: 40
 
-# NO canonical_mappings: the e-commerce domain has no OpenIM model repo. This
-# deliberately exercises the optional-canonical-validation skip path (delta 2) and is
-# part of the agnosticism proof -- not an omission to fix.
+# No canonical_mappings block: a canonical product declares which entity of
+# the reference model each of its own entities reads, in its own
+# declaration under declarations/products/, and
+# `ergasterion validate-canonical` proves that against a checkout of the
+# model. This file is a source declaration and carries no such block.
 
 tables:
   customers:

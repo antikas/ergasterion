@@ -1,0 +1,66 @@
+# The fund identity cross-reference the estate publishes: for one
+# source system's fund record, the fund identity the business
+# holds that record to be.
+#
+# It exists as a product of its own so the delivered cross-reference is
+# read once, under names the products downstream can use, and so the
+# delivered relation itself is read by exactly one product (owner ruling
+# R5). The key it publishes is the pair a source record is identified by,
+# stated as one column, because that is what a lookup joins on.
+#
+# Nothing resolves on it. The resolution merges on the identifiers the
+# source systems state, so this cross-reference stays free to judge the
+# merge it never took part in.
+product:
+  name: fund_identity
+  domain: reference
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: reference-domain
+
+sources:
+  - contract: reference.fund_overlap_manifest@1
+    expect:
+      fields:
+        - source_system
+        - source_record_id
+        - true_fund_external_id
+        - overlap_note
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: true_fund_external_id, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: source_system, to: identity_source_system, type: string}
+      - {from: source_record_id, to: identity_source_record_id, type: string}
+      - {from: true_fund_external_id, to: fund_external_identity, type: string}
+      - {from: overlap_note, to: fund_identity_note, type: string}
+  - pattern: calculated_fields
+    fields:
+      - {name: fund_identity_key, type: string, expression: "concat(identity_source_system, ':', identity_source_record_id)"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The fund identity each source system record belongs to, keyed by the system and record together."
+    ownership: reference-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

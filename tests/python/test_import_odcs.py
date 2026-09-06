@@ -4,12 +4,12 @@ No pytest in this repo's .venv, so this follows the plain assert-and-report conv
 of tests/python/test_emit.py and tests/python/test_emit_contracts.py: each test_* raises
 AssertionError on failure, main() runs them all and reports PASS/FAIL (exit 0 = all
 green, 1 = any failure). All declarations/*.yml written by these tests live under a
-tempfile.TemporaryDirectory and ergasterion/emit.DECLARATIONS_DIR is monkeypatched to point
+tempfile.TemporaryDirectory and the estate context's declarations_dir is pointed
 at it -- never at the real declarations/ directory (the real dir is this repo's live
 SSOT and must not gain a stray fixture file from a test run).
 
 Covers the item's acceptance:
-  1. a well-formed ODCS v3.x contract seeds a skeleton that ergasterion/emit.py's
+  1. a well-formed ODCS v3.x contract seeds a skeleton that the typed
      load_declarations() validator accepts as-is (vault_entities: [] is a legitimate,
      already-valid state -- the TODOs are for a human to act on, not blockers to load).
   2. round-trip: seeding from one of the engine's generated ODCS contracts
@@ -37,17 +37,18 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion import emit
 from ergasterion import import_odcs as io_mod
 from ergasterion.estate import EstateContext
 from ergasterion.source_delivery import load_typed_declarations
 
-REPO_ROOT = emit.REPO_ROOT
+REPO_ROOT = Path(__file__).resolve().parents[2]
 # A generated ODCS v3.1.0 contract from ergasterion/emit_contracts.py.
 # the round-trip fixture named in the item's acceptance criterion 2. Self-contained (no
 # customProperties survivorship block), so it also exercises the "contract carries no
 # vault/survivorship info" path cleanly.
-ROUND_TRIP_FIXTURE = REPO_ROOT / "contracts" / "ecommerce" / "dim_customer_segment.odcs.yml"
+ROUND_TRIP_FIXTURE = (
+    REPO_ROOT / "contracts" / "products" / "reference" / "customer_segment" / "customer_segment.odcs.yml"
+)
 
 
 def _write(tmp_path: Path, name: str, text: str) -> Path:
@@ -130,21 +131,23 @@ def test_empty_properties_rejected() -> None:
 
 
 def test_well_formed_contract_seeds_skeleton_validator_accepts() -> None:
-    """Acceptance 1: a well-formed ODCS v3.x contract seeds a skeleton that
-    ergasterion/emit.py's load_declarations() accepts (vault_entities: [] loads clean;
-    the TODOs are for a human, not a load-time blocker)."""
+    """Acceptance 1: a well-formed ODCS v3.x contract seeds a declaration the typed
+    loader reads without a complaint (a seed-backed table carries no Landing contract,
+    and the TODOs are for a human rather than a load-time blocker)."""
     source_name, text = io_mod.seed_declaration(ROUND_TRIP_FIXTURE, source_name="dpf_round_trip_fixture")
     assert source_name == "dpf_round_trip_fixture"
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
-        _write(tmp_path, f"{source_name}.yml", text)
-        # Context construction, not global monkeypatching: declarations/ points at the
-        # temp dir; domains/ still resolves against the committed estate root.
-        ctx = emit.EstateContext.resolve(estate_root=emit.REPO_ROOT, declarations_dir=tmp_path)
-        declarations = emit.load_declarations(ctx=ctx)
-        assert len(declarations) == 1, "expected exactly the one seeded declaration to load"
-        assert declarations[0]["source"]["name"] == source_name
+        decls_dir = tmp_path / "declarations"
+        decls_dir.mkdir()
+        _write(decls_dir, f"{source_name}.yml", text)
+        seeded = yaml.safe_load(text)
+        assert seeded["source"]["name"] == source_name
+
+        ctx = EstateContext.resolve(estate_root=tmp_path, declarations_dir=decls_dir)
+        typed = load_typed_declarations(ctx)
+        assert typed.tables == {}, "a seed-backed declaration carries no Landing contract"
 
 
 def test_round_trip_schema_matches_source_contract() -> None:
@@ -334,7 +337,7 @@ def test_landing_seed_is_still_the_default() -> None:
     --landing argument stays byte-identical to before this module gained a second mode."""
     _, text = io_mod.seed_declaration(ROUND_TRIP_FIXTURE, source_name="dpf_round_trip_fixture")
     seeded = yaml.safe_load(text)
-    table = seeded["tables"]["dim_customer_segment"]
+    table = next(iter(seeded["tables"].values()))
     assert "raw_model" in table
     assert "landing" not in table and "delivery" not in table
 
@@ -400,9 +403,9 @@ def test_landing_source_physical_type_preferred_over_logical_type() -> None:
 
 
 def test_landing_source_loads_as_a_draft_through_source_delivery() -> None:
-    """The seeded landing/delivery block round-trips through both consumers: the legacy
-    emit.py loader (structural gate only) and ergasterion.source_delivery's typed loader
-    (resolves to an explicit draft placeholder, never a guessed production contract)."""
+    """The seeded landing/delivery block round-trips through
+    ergasterion.source_delivery's typed loader, which resolves it to an explicit draft
+    placeholder rather than a guessed production contract."""
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         path = _write(tmp_path, "acme.odcs.yml", yaml.safe_dump(_SOURCE_MODE_DOC))
@@ -412,11 +415,6 @@ def test_landing_source_loads_as_a_draft_through_source_delivery() -> None:
         decls_dir.mkdir()
         _write(decls_dir, f"{source_name}.yml", text)
 
-        emit_ctx = emit.EstateContext.resolve(estate_root=emit.REPO_ROOT, declarations_dir=decls_dir)
-        declarations = emit.load_declarations(ctx=emit_ctx)
-        assert declarations[0]["tables"]["orders"]["landing"]["kind"] == "source"
-
-        (tmp_path / "domains").mkdir()
         typed_ctx = EstateContext.resolve(estate_root=tmp_path, declarations_dir=decls_dir)
         typed = load_typed_declarations(typed_ctx)
         table = typed.tables[(source_name, "orders")]

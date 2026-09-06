@@ -1,0 +1,95 @@
+# The product that exercises all seven transformation patterns the dbt
+# translator renders: batch_transfer, schema_transform (rename, cast and
+# drop), calculated_fields (one inline expression and one named rule),
+# data_enrichment (an as-of read of a reference product), data_filtering
+# (two named predicates), data_publish (incremental, keyed) and the
+# checkpointing wrapper.
+#
+# Its source is bound to a fixture relation for local proof (architecture
+# section 12): no product in this estate publishes retail.order_landing, so
+# the binding carries the fields that relation delivers.
+product:
+  name: order
+  domain: retail
+  version: "1.0"
+  layer: shaped
+  owner: retail-domain
+
+sources:
+  - contract: retail.order_landing@1
+    kind: fixture
+    fixture:
+      relation: order_landing
+      fields:
+        - {name: order_id, type: string}
+        - {name: status_code, type: string}
+        - {name: segment_code, type: string}
+        - {name: ordr_dt, type: date}
+        - {name: cust_id, type: string}
+        - {name: ordr_ttl, type: {name: decimal, precision: 12, scale: 2}}
+        - {name: junk_col, type: string}
+    expect:
+      fields: [order_id, status_code, segment_code, ordr_dt, cust_id, ordr_ttl, junk_col]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: quarantine
+    error_threshold: 0.25
+    rules:
+      - field: order_id
+        completeness: 1.0
+  - pattern: schema_transform
+    mapping:
+      - {from: ordr_dt, to: ordered_on, type: date}
+      - {from: cust_id, to: customer_id, type: string}
+      - {from: ordr_ttl, to: order_total, type: {name: decimal, precision: 12, scale: 2}}
+      - {from: junk_col, drop: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: is_open, type: boolean, expression: "status_code IN ('N', 'P')"}
+      - {name: order_band, type: string, rule: order_band_v1, rule_version: 1}
+  - pattern: data_enrichment
+    lookups:
+      - contract: retail.customer_segment@1
+        "on": {segment_code: segment_code}
+        fields: [segment_label]
+        no_match: null
+        temporal:
+          as_of: ordered_on
+          effective: effective_from
+  - pattern: data_filtering
+    predicates:
+      - name: open_only
+        expression: "is_open"
+      - name: positive_value
+        expression: "order_total > 0"
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - field: order_id
+        unique: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Open orders, banded by value and enriched with the segment in force on the order date."
+    ownership: retail-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [order_id]
+
+target:
+  shape: declared
+  contract:
+    freshness: "hourly"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential
+  checkpoint: true

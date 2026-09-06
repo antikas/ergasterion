@@ -1,0 +1,35 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "reference.benchmark_index_returns",
+  "relations": {
+    "auxiliary": [
+      "reference.benchmark_index_returns__checked",
+      "reference.benchmark_index_returns__current",
+      "reference.benchmark_index_returns__quarantine",
+      "reference.benchmark_index_returns__sla"
+    ],
+    "published": [
+      "reference.benchmark_index_returns"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

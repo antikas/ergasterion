@@ -1,0 +1,62 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "One row per order, with how many lines it carried, how many units they ordered and what they took.",
+  "freshness": "daily by 10:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "order_summary",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.order_star@1"
+  ],
+  "quality": [
+    {
+      "description": "order_id must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "order_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "order_line_count",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "order_units",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "order_revenue",
+          "required": false,
+          "type": {
+            "name": "decimal",
+            "precision": 12,
+            "scale": 2
+          }
+        },
+        {
+          "name": "order_first_line_date",
+          "required": false,
+          "type": "date"
+        }
+      ],
+      "name": "ecommerce.order_summary"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

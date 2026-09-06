@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/calculated_fields.schema.json",
+  "title": "calculated_fields step configuration (architecture section 4)",
+  "description": "Named fields, each carrying either an inline SQL expression or a named-rule reference (architecture section 3.2's two equal routes) -- never both, never neither. 'type' is shaped loosely here; the neutral-type system is enforced once in ergasterion/framework/declaration.py.",
+  "type": "object",
+  "required": ["pattern", "fields"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "calculated_fields" },
+    "fields": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "type": { "type": ["string", "object"] },
+          "expression": { "type": "string", "minLength": 1 },
+          "rule": { "type": "string", "minLength": 1 },
+          "rule_version": { "type": "integer", "minimum": 1 }
+        },
+        "oneOf": [
+          { "required": ["expression"], "not": { "required": ["rule"] } },
+          { "required": ["rule"], "not": { "required": ["expression"] } }
+        ]
+      }
+    }
+  }
+}

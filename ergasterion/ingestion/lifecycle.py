@@ -1,5 +1,5 @@
 """Product, field and run lineage, product metadata, deletion-evidence handoff
-and the mandatory Bronze graph occurrence check.
+and the mandatory Landing graph occurrence check.
 
 Lineage is derived from the authored contract and the observed run, never from
 a catalogue. Format normalisation is explicit in the projection mapping;
@@ -12,8 +12,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     ExecutionPlan,
     GraphEdge,
     GraphOccurrence,
@@ -23,7 +23,6 @@ from ergasterion.framework.bronze_contract import (
     LifecycleEventType,
     ProcessingOutcome,
 )
-from ergasterion.framework.models import Layer
 from ergasterion.framework.resolver import resolve
 from ergasterion.ingestion.records import (
     DeletionEvidence,
@@ -53,20 +52,20 @@ from ergasterion.source_delivery import (
     compute_source_schema_digest,
 )
 
-# The eight mandatory Bronze occurrences, in the resolver's canonical
+# The eight mandatory landing occurrences, in the resolver's canonical
 # occurrence_id order. Omission or reordering of this sequence fails closed.
 MANDATORY_OCCURRENCE_IDS: tuple[str, ...] = tuple(
-    occurrence.occurrence_id for occurrence in resolve(Layer.BRONZE).occurrences
+    occurrence.occurrence_id for occurrence in resolve("landing").occurrences
 )
 
 # Data-flow order the publication barrier walks. Reordering these relative to
 # each other is a graph integrity failure even if the full sorted tuple matches.
 MANDATORY_PHASE_ORDER: tuple[str, ...] = (
-    "bronze.ingest",
-    "bronze.validate",
-    "bronze.contract",
-    "bronze.schema",
-    "bronze.publish",
+    "landing.ingest",
+    "landing.validate",
+    "landing.contract",
+    "landing.schema",
+    "landing.publish",
 )
 
 
@@ -79,7 +78,7 @@ def _dump(value: Any) -> Any:
 def require_mandatory_graph(plan: ExecutionPlan) -> tuple[str, ...]:
     """Fail closed if a mandatory occurrence is omitted or reordered.
 
-    The wire plan must carry exactly the eight Bronze occurrences in the
+    The wire plan must carry exactly the eight Landing occurrences in the
     resolver's canonical order, and the five phase/barrier occurrences must
     appear in data-flow order inside that list.
     """
@@ -92,10 +91,10 @@ def require_mandatory_graph(plan: ExecutionPlan) -> tuple[str, ...]:
         )
     checkpoint = next(
         occurrence for occurrence in plan.occurrences
-        if occurrence.occurrence_id == "bronze.checkpoint"
+        if occurrence.occurrence_id == "landing.checkpoint"
     )
     expected_members = tuple(
-        occurrence_id for occurrence_id in actual if occurrence_id != "bronze.checkpoint"
+        occurrence_id for occurrence_id in actual if occurrence_id != "landing.checkpoint"
     )
     if tuple(checkpoint.members) != expected_members:
         raise PortError(
@@ -112,7 +111,7 @@ def require_mandatory_graph(plan: ExecutionPlan) -> tuple[str, ...]:
     return actual
 
 
-def derive_field_lineage(contract: BronzeProductContract) -> tuple[ProjectionField, ...]:
+def derive_field_lineage(contract: LandingProductContract) -> tuple[ProjectionField, ...]:
     """Physical source field to published column. The projection mapping is the
     lineage; a published column may only rename and restate nullability/type,
     never compute a business predicate."""
@@ -127,11 +126,11 @@ def derive_field_lineage(contract: BronzeProductContract) -> tuple[ProjectionFie
     return tuple(lineage)
 
 
-def derive_source_schema(contract: BronzeProductContract) -> tuple[SourceField, ...]:
+def derive_source_schema(contract: LandingProductContract) -> tuple[SourceField, ...]:
     return tuple(contract.landing.physical_columns)
 
 
-def contract_digests(contract: BronzeProductContract) -> tuple[Digest, Digest, Digest]:
+def contract_digests(contract: LandingProductContract) -> tuple[Digest, Digest, Digest]:
     return (
         compute_contract_digest(contract),
         compute_source_schema_digest(contract),
@@ -140,7 +139,7 @@ def contract_digests(contract: BronzeProductContract) -> tuple[Digest, Digest, D
 
 
 def build_lineage_descriptor(
-    contract: BronzeProductContract, execution_plan_digest: Digest,
+    contract: LandingProductContract, execution_plan_digest: Digest,
 ) -> LineageDescriptor:
     projection = derive_field_lineage(contract)
     basis = {
@@ -159,7 +158,7 @@ def build_lineage_descriptor(
 
 def build_run_lineage(
     *,
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     run_id: Digest,
     attempt_id: Digest,
     delivery_id: str | None,
@@ -251,7 +250,7 @@ def build_run_lineage(
 
 
 def build_product_metadata(
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     *,
     latest_stream_status_ref: str,
     latest_publication_ref: str | None = None,
@@ -329,28 +328,28 @@ def quality_handoff(
 
 
 def lineage_payload(descriptor: LineageDescriptor, run_lineage: RunLineage) -> LineageLifecyclePayload:
-    return LineageLifecyclePayload(kind="bronze.lineage", lineage=descriptor, run_lineage=run_lineage)
+    return LineageLifecyclePayload(kind="landing.lineage", lineage=descriptor, run_lineage=run_lineage)
 
 
 def metadata_payload(metadata: ProductMetadata) -> MetadataLifecyclePayload:
-    return MetadataLifecyclePayload(kind="bronze.metadata", metadata=metadata)
+    return MetadataLifecyclePayload(kind="landing.metadata", metadata=metadata)
 
 
 def quality_payload(handoff: ValidationResultHandoff) -> QualityLifecyclePayload:
-    return QualityLifecyclePayload(kind="bronze.quality", validation=handoff)
+    return QualityLifecyclePayload(kind="landing.quality", validation=handoff)
 
 
 def quarantine_payload(
     handoff: ValidationResultHandoff, decision: RemediationDecision | None,
 ) -> QuarantineLifecyclePayload:
-    return QuarantineLifecyclePayload(kind="bronze.quarantine", validation=handoff, decision=decision)
+    return QuarantineLifecyclePayload(kind="landing.quarantine", validation=handoff, decision=decision)
 
 
 def publication_payload(
     run_id: Digest, attempt_id: Digest, confirmation: ProjectionConfirmation, ledger: PublishedLedgerRow,
 ) -> PublicationLifecyclePayload:
     return PublicationLifecyclePayload(
-        kind="bronze.publication",
+        kind="landing.publication",
         confirmation=PublicationConfirmationHandoff(
             run_id=run_id, attempt_id=attempt_id, confirmation=confirmation,
         ),
@@ -358,15 +357,15 @@ def publication_payload(
     )
 
 
-def bronze_execution_plan(
-    contract: BronzeProductContract,
+def landing_execution_plan(
+    contract: LandingProductContract,
     *,
     execution_plan_digest: Digest | None = None,
 ) -> ExecutionPlan:
-    """Wire ``ExecutionPlan`` for the normative Bronze graph, with contract and
+    """Wire ``ExecutionPlan`` for the normative landing graph, with contract and
     both schema digests bound on the record."""
 
-    resolved = resolve(Layer.BRONZE)
+    resolved = resolve("landing")
     contract_digest, source_schema_digest, published_schema_digest = contract_digests(contract)
     wrapper_id = resolved.wrapper_id
     wrapper_members = resolved.wrapper_members
@@ -435,11 +434,11 @@ def observer_event_order() -> tuple[LifecycleEventType, ...]:
     quarantine are validation observers; lineage and metadata follow publish."""
 
     return (
-        LifecycleEventType.BRONZE_QUALITY,
-        LifecycleEventType.BRONZE_QUARANTINE,
-        LifecycleEventType.BRONZE_PUBLICATION,
-        LifecycleEventType.BRONZE_LINEAGE,
-        LifecycleEventType.BRONZE_METADATA,
+        LifecycleEventType.LANDING_QUALITY,
+        LifecycleEventType.LANDING_QUARANTINE,
+        LifecycleEventType.LANDING_PUBLICATION,
+        LifecycleEventType.LANDING_LINEAGE,
+        LifecycleEventType.LANDING_METADATA,
     )
 
 
@@ -457,7 +456,7 @@ __all__ = [
     "MANDATORY_OCCURRENCE_IDS",
     "MANDATORY_PHASE_ORDER",
     "bind_deletion_evidence",
-    "bronze_execution_plan",
+    "landing_execution_plan",
     "build_lineage_descriptor",
     "build_product_metadata",
     "build_run_lineage",

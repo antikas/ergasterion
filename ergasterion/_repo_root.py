@@ -1,7 +1,7 @@
 """Package anchor for the source tree containing the running ``ergasterion`` package.
 
 ``REPO_ROOT = Path(__file__).resolve().parents[1]`` is the parent of ``ergasterion/``: for both
-script-mode (``python ergasterion/emit.py``) and an editable install this is the source tree.
+script-mode (``python ergasterion/emit_products.py``) and an editable install this is the source tree.
 
 This is a dependency-free leaf of the import graph. ``ergasterion.estate`` imports it as the final
 fallback of the estate-root resolution chain (``--estate-root`` > ``DPF_ESTATE_ROOT`` >

@@ -1,0 +1,6 @@
+rec_id,src_sys,order_ref,line_no,order_dt,cust_ref,cust_nm,cust_seg,chan_code,chan_nm,qty,net_amt,tax_amt,changed_dt
+R-01,crm,O-1001,1,2026-01-05,C-001,Ada Byron,standard,CH-WEB,Web,2,100.00,20.00,2026-01-05
+R-02,crm,O-1001,2,2026-01-05,C-001,Ada Byron,standard,CH-WEB,Web,1,50.00,10.00,2026-01-05
+R-03,orders,O-1002,1,2026-03-10,C-001,Ada Byron,premium,CH-WEB,Web store,3,300.00,60.00,2026-03-10
+R-04,crm,O-1003,1,2026-02-01,C-002,Grace Hopper,premium,CH-APP,Mobile app,5,250.00,50.00,2026-02-01
+R-05,orders,O-1004,1,2026-04-02,C-002,Grace Hopper,premium,CH-APP,Mobile app,1,75.00,15.00,2026-04-02

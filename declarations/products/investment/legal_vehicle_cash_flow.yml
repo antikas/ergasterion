@@ -1,0 +1,62 @@
+# Cash flows the book of record states against a legal vehicle rather
+# than against a fund, against the vehicle the estate resolved.
+#
+# The read is on the system and the vehicle identifier together, because
+# both systems that state vehicles use the same identifiers for them.
+product:
+  name: legal_vehicle_cash_flow
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.vantora_vehicle_cash_flow@1
+    expect:
+      fields:
+        - source_record_id
+        - source_vehicle_id
+        - source_cash_flow_on
+        - source_cash_flow_type
+        - source_direction
+        - source_amount_usd
+        - source_currency
+        - vehicle_cash_flow_source_system
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: source_record_id, not_null: true}
+      - {field: source_cash_flow_on, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: vehicle_cash_flow_signed_amount_usd, type: {name: decimal, precision: 18, scale: 2}, expression: "case when source_direction = 'inflow' then source_amount_usd else -source_amount_usd end"}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.legal_vehicle_conformed@1
+        "on": {vehicle_cash_flow_source_system: vehicle_source_system, source_vehicle_id: source_vehicle_id}
+        fields: [vehicle_business_key, fund_business_key]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every cash flow against a legal vehicle, signed, against the vehicle and fund the estate resolved."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

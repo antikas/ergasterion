@@ -1,0 +1,34 @@
+# This estate's own named-rule catalogue. Under named_only estate policy a
+# declaration carries no inline expression at all, so every derivation and
+# every predicate this estate states is one of these rules, referenced by
+# name and version.
+#
+# The implementations manifest names, per declared adapter, the dbt macro
+# that implements the rule. Both adapters name the same macro because the
+# macro name is what a generated model calls; its body dispatches per
+# adapter inside macros/ if it ever needs to.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: ticket_priority_v1
+    version: 1
+    description: >-
+      Band a ticket by the minutes it has been open into the estate's
+      declared priority bands.
+    inputs:
+      - {name: open_minutes, type: integer}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: ticket_priority_v1}
+      - {translator: dbt, adapter: bigquery, macro: ticket_priority_v1}
+  - name: ticket_is_open_v1
+    version: 1
+    description: >-
+      Whether a ticket's declared state counts as open for this estate.
+    inputs:
+      - {name: ticket_state, type: string}
+    output:
+      type: boolean
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: ticket_is_open_v1}
+      - {translator: dbt, adapter: bigquery, macro: ticket_is_open_v1}

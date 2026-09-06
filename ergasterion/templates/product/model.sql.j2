@@ -1,0 +1,15 @@
+{{ generated_header }}
+{{ model_config }}
+
+with
+{%- for cte in ctes %}
+{{ cte.name }} as (
+{{ cte.body }}
+){{ "," if not loop.last }}
+{%- endfor %}
+
+select
+{%- for column in columns %}
+    {{ column }}{{ "," if not loop.last }}
+{%- endfor %}
+from {{ final_cte }}

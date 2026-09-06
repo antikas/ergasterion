@@ -1,0 +1,74 @@
+# The order line to article relationship: each order line beside the
+# article it ordered, merged on the shared product code (architecture
+# section 8, the consolidating generation, in its merge form).
+#
+# Every line names an article both catalogues or one of them states, and
+# every article the estate recognises has been ordered at least once, so
+# the merge matches on both sides here. It is still a merge and not a
+# lookup, because the relationship is the product: the two sides are equal
+# and either may carry a row the other does not.
+product:
+  name: order_line_product
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.order_line@1
+    expect:
+      fields:
+        - product_code
+        - order_line_record_id
+        - order_id
+        - line_number
+        - line_quantity
+        - line_unit_price
+        - line_revenue
+        - line_order_date
+  - contract: ecommerce.product@1
+    expect:
+      fields:
+        - product_code
+        - product_name
+        - product_brand
+        - product_category
+        - product_list_price
+        - product_as_of_date
+
+combine:
+  method: merge
+  keys: [product_code]
+  join: outer
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: product_code, not_null: true}
+      - reconcile:
+          metric: row_count
+          contracts: [ecommerce.order_line@1, ecommerce.product@1]
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Each order line beside the article it ordered, and each article nothing has ordered."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

@@ -1,0 +1,190 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The manager vault: identity, payload versions, the surviving record and the point-in-time relation over them.",
+  "freshness": "daily by 08:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "gp_vault",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.gp_conformed@1"
+  ],
+  "quality": [
+    {
+      "description": "source_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "source_name must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "gp_business_key must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "gp_business_key must be unique",
+      "dimension": "uniqueness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "gp_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "gp_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.gp_vault__hub_gp"
+    },
+    {
+      "fields": [
+        {
+          "name": "gp_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "hashdiff",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "hashdiff_basis_version",
+          "required": true,
+          "type": "integer"
+        },
+        {
+          "name": "gp_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_domicile",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_relationship_start_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "gp_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_source_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "effective_from",
+          "required": true,
+          "type": "date"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.gp_vault__sat_gp_detail"
+    },
+    {
+      "fields": [
+        {
+          "name": "gp_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "gp_business_key",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "gp_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_domicile",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_relationship_start_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "gp_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "load_datetime",
+          "required": true,
+          "type": "timestamp"
+        },
+        {
+          "name": "record_source",
+          "required": true,
+          "type": "string"
+        }
+      ],
+      "name": "investment.gp_vault__golden_gp"
+    },
+    {
+      "fields": [
+        {
+          "name": "gp_hk",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "as_of",
+          "required": true,
+          "type": "date"
+        },
+        {
+          "name": "gp_detail_effective_from",
+          "required": false,
+          "type": "date"
+        }
+      ],
+      "name": "investment.gp_vault__pit_gp"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

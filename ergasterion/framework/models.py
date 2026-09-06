@@ -14,19 +14,12 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 import rfc8785
 
 
 # --------------------------------------------------------------------------- vocabulary
-
-
-class Layer(str, Enum):
-    """The closed medallion vocabulary: Bronze, Silver, and Gold."""
-
-    BRONZE = "bronze"
-    SILVER = "silver"
-    GOLD = "gold"
 
 
 class PatternId(str, Enum):
@@ -90,7 +83,7 @@ class EdgeRole(str, Enum):
 class HandoffSchemaId(str, Enum):
     """The closed set of target-neutral handoff schema identities an edge can carry.
     Full record shapes live in the frozen IDL
-    ``docs/specifications/bronze-portable-idl-v1.json``; this registry names the
+    ``docs/specifications/landing-portable-idl-v1.json``; this registry names the
     identity only, for edge typing and conformance checks."""
 
     RAW_EVIDENCE = "ergasterion.raw-evidence/v1"
@@ -110,36 +103,87 @@ class FrameworkError(ValueError):
     code: str = "framework_error"
 
 
-class InvalidLayerArgumentError(FrameworkError):
-    """Raised when ``resolve()`` receives a value that is not a ``Layer``
-    member. A plain string such as ``"bronze"`` equals ``Layer.BRONZE.value``
-    but fails the identity check ``layer is Layer.BRONZE``: this error names
-    the exact failure, with its own code, so a non-``Layer`` argument is
-    rejected before any ``Layer``-specific error construction runs."""
+class UnknownProfileError(FrameworkError):
+    """Raised when a profile name is not one of the engine's reference profiles
+    (``landing``, ``integration``, ``derivation``, ``consolidation``,
+    ``serving``) or, for an estate that renames or adds its own, not a name
+    the caller's profile source recognises. A product naming an unknown
+    profile fails closed on this error (architecture section 5)."""
 
-    code = "invalid_layer_argument"
+    code = "unknown_profile"
 
-    def __init__(self, layer: object) -> None:
-        self.layer = layer
+    def __init__(self, profile_name: object) -> None:
+        self.profile_name = profile_name
+        super().__init__(f"unknown profile: {profile_name!r}")
+
+
+class UnsupportedProfileError(FrameworkError):
+    """Raised deterministically when a profile is a recognised reference
+    profile but has no executable composition yet. In this release only
+    ``landing`` resolves an execution graph; ``integration``, ``derivation``,
+    ``consolidation`` and ``serving`` are registered as composition-constraint
+    data (their mandatory/optional/forbidden sets and ordering) with no
+    authoring surface behind them yet."""
+
+    code = "unsupported_profile"
+
+    def __init__(self, profile_name: str) -> None:
+        self.profile_name = profile_name
         super().__init__(
-            f"resolve() requires a Layer member, got {layer!r} ({type(layer).__name__}); "
-            "a plain string value is rejected even when it matches a Layer token"
+            f"profile {profile_name!r} is unsupported_profile: landing is the only "
+            "profile that resolves an executable composition in this release"
         )
 
 
-class UnsupportedLayerError(FrameworkError):
-    """Raised deterministically when a layer has no executable composition yet.
-    Silver and Gold raise this in version 1: they carry no hidden historical
-    composition, mandatory/optional/forbidden table, or occurrence graph."""
+class InvalidProfileDefinitionError(FrameworkError):
+    """Raised when a profile's own data is malformed: a mandatory, optional or
+    forbidden entry names a token that is not one of the fifteen canonical
+    patterns, the three sets are not pairwise disjoint, or an ordering entry
+    names a pattern the profile does not classify as mandatory or optional.
+    A profile naming an unknown pattern fails closed on this error."""
 
-    code = "unsupported_layer"
+    code = "invalid_profile_definition"
 
-    def __init__(self, layer: Layer) -> None:
-        self.layer = layer
-        super().__init__(
-            f"layer {layer.value!r} is unsupported_layer: Bronze is the only layer "
-            "that resolves an executable composition"
-        )
+    def __init__(self, profile_name: str, reason: str) -> None:
+        self.profile_name = profile_name
+        self.reason = reason
+        super().__init__(f"profile {profile_name!r} is malformed: {reason}")
+
+
+# --------------------------------------------------------------------------- relation vocabulary
+
+
+@dataclass(frozen=True)
+class RelationField:
+    """One field of one relation: its name, its neutral type (a scalar
+    string or a decimal/structured-type object, architecture section 3.3),
+    and whether the composition requires it to be non-null.
+
+    ``description`` is what a consumer has to know about the column beyond
+    its name and type, and only a shape that generates the column sets it:
+    a column the composition carries is described by the declaration that
+    produced it. The published contract carries it through."""
+
+    name: str
+    type: Any
+    required: bool = False
+    description: str | None = None
+
+
+@dataclass(frozen=True)
+class RelationSchema:
+    """One relation a product's shape renders: its fully qualified name
+    (``domain.name``) and its ordered field list.
+
+    Both types live here, in the neutral vocabulary, rather than in
+    ``ergasterion.framework.contract``: the shape registry decides which
+    relations a product publishes and with which fields
+    (``ergasterion.framework.shapes``), and the contract propagates the
+    field set through the composition. One vocabulary, read by both, so
+    neither carries a private copy of the other's."""
+
+    name: str
+    fields: tuple[RelationField, ...] = ()
 
 
 # --------------------------------------------------------------------------- graph IR
@@ -187,7 +231,15 @@ class Edge:
 
 @dataclass(frozen=True)
 class ExecutionPlan:
-    """The resolved, immutable, serialisable execution graph for one layer.
+    """The resolved, immutable, serialisable execution graph for one named
+    profile.
+
+    ``profile`` is the profile name the graph was resolved for (for example
+    ``"landing"``): a plain string, never a layer label. Reference profile
+    names describe what the composition does and carry no organisation's
+    layer or product vocabulary (architecture section 5); a layer label is an
+    estate mapping over profiles, read only as a lookup key, never part of
+    this plan's identity.
 
     ``occurrences`` and ``edges`` are stored in the plan's canonical order
     (occurrences sorted by ``occurrence_id``; edges in the normative declaration
@@ -196,7 +248,7 @@ class ExecutionPlan:
     occurrence IDs it encloses.
     """
 
-    layer: Layer
+    profile: str
     occurrences: tuple[Occurrence, ...]
     edges: tuple[Edge, ...]
     wrapper_id: str
@@ -205,10 +257,10 @@ class ExecutionPlan:
     def __post_init__(self) -> None:
         ids = [o.occurrence_id for o in self.occurrences]
         if len(set(ids)) != len(ids):
-            raise FrameworkError(f"execution plan for layer {self.layer.value!r} has duplicate occurrence IDs: {ids}")
+            raise FrameworkError(f"execution plan for profile {self.profile!r} has duplicate occurrence IDs: {ids}")
         if sorted(ids) != ids:
             raise FrameworkError(
-                f"execution plan for layer {self.layer.value!r} occurrences are not sorted by occurrence_id"
+                f"execution plan for profile {self.profile!r} occurrences are not sorted by occurrence_id"
             )
         if self.wrapper_id not in ids:
             raise FrameworkError(f"wrapper_id {self.wrapper_id!r} is not a declared occurrence")
@@ -246,7 +298,7 @@ class ExecutionPlan:
 def _plan_digest_document(plan: ExecutionPlan) -> dict:
     return {
         "schema": "ergasterion.execution-graph-shape/v1",
-        "layer": plan.layer.value,
+        "profile": plan.profile,
         "occurrences": [
             {
                 "occurrence_id": o.occurrence_id,
@@ -277,10 +329,15 @@ def compute_plan_digest(plan: ExecutionPlan) -> str:
 
     The digest document is tagged with the schema identity
     ``ergasterion.execution-graph-shape/v1`` and covers this framework's typed
-    occurrence/edge graph shape only: ``layer``, ``occurrences``, ``edges``,
-    ``wrapper_id`` and ``wrapper_members``. This identity is distinct from the
-    frozen IDL's ``ExecutionPlan.execution_plan_digest``
-    (``docs/specifications/bronze-portable-idl-v1.json``), which covers a wider
+    occurrence/edge graph shape only: ``profile``, ``occurrences``, ``edges``,
+    ``wrapper_id`` and ``wrapper_members``. ``profile`` is the one axis that
+    changed when Landing's fixed layer identity became a named profile
+    (architecture section 5): the same landing graph that used to digest
+    under ``"layer": "landing"`` now digests under ``"profile": "landing"``,
+    so a translator built against the pre-profile digest is correctly
+    rejected as stale rather than silently accepted. This identity is
+    distinct from the frozen IDL's ``ExecutionPlan.execution_plan_digest``
+    (``docs/specifications/landing-portable-idl-v1.json``), which covers a wider
     record carrying ``logical_identity``, ``product_version``,
     ``contract_digest``, ``source_schema_digest``, ``published_schema_digest``,
     ``occurrences``, ``edges`` and ``handoffs``. A translator's ``plan_digest()``
@@ -298,6 +355,32 @@ def compute_plan_digest(plan: ExecutionPlan) -> str:
 # These shapes live here, on the framework side of the one-way dependency, so
 # the router (routing.py) can compose them across translators without importing
 # ergasterion.translators. translators/base.py imports them from this module.
+
+
+@dataclass(frozen=True)
+class Capability:
+    """One (pattern-or-shape, translator, adapter) triple a translator
+    registers with the router (architecture section 3.4: "A capability is a
+    tuple"). ``pattern_or_shape`` is a pattern's exact registry value
+    (``PatternId.value``) or a registered shape's name
+    (``ergasterion.framework.shapes.SHAPE_REGISTRY``); the router does not
+    care which kind of token it is, it only matches whatever token the
+    estate's translator table names for an occurrence's pattern or a
+    product's shape. ``translator`` is the declaring translator's own
+    ``target_name`` -- a translator that names a foreign ``target_name``
+    here is a coherence bug the router rejects, never silently accepted.
+    ``adapter`` is one platform the estate declares (for example
+    ``"duckdb"`` or ``"bigquery"``).
+
+    Lives here, on the framework side of the one-way dependency, so both
+    ``ergasterion.framework.routing`` (the router) and
+    ``ergasterion.translators.base`` (every translator's ``capabilities()``)
+    import the same identity without either importing the other.
+    """
+
+    pattern_or_shape: str
+    translator: str
+    adapter: str
 
 
 @dataclass(frozen=True)

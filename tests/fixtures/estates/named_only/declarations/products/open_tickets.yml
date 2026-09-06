@@ -1,0 +1,55 @@
+# The derived product, stated with named rules alone. Both of its calculated
+# fields name a rule -- ticket_priority_v1 and ticket_is_open_v1 -- and
+# neither carries an inline expression, because this estate's
+# expression_mode is named_only (architecture check 10).
+#
+# The seeded population is what makes the known answers known: five delivered
+# tickets, three in a state the open rule accepts (15, 120 and 600 minutes
+# open) and two it rejects, and the priority rule bands the five as three
+# normal, one high and one urgent.
+product:
+  name: open_tickets
+  domain: service
+  version: "1.0"
+  layer: derived
+  profile: derivation
+  owner: fixture-team
+
+sources:
+  - contract: service.ticket_events@1
+    expect:
+      fields: [ticket_id, queue, ticket_state, open_minutes]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: ticket_id
+        not_null: true
+      - field: ticket_id
+        unique: true
+  - pattern: calculated_fields
+    fields:
+      - {name: priority, type: string, rule: ticket_priority_v1, rule_version: 1}
+      - {name: is_open, type: boolean, rule: ticket_is_open_v1, rule_version: 1}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per open ticket with its declared priority band."
+    ownership: fixture-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "hourly"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

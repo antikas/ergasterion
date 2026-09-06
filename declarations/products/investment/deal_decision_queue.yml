@@ -1,0 +1,60 @@
+# The decision queue a person reads: every decision event the log carries,
+# beside the deal it decided.
+#
+# It reads the deal from the vault's surviving record, naming that relation
+# (owner ruling R4), so a decision on an item the estate does not recognise
+# as a deal is still a row here with the deal columns empty. That is the
+# point of a queue: it shows what was decided, not only what reconciles.
+product:
+  name: deal_decision_queue
+  domain: investment
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: investment-domain
+
+sources:
+  - contract: investment.deal_decision_current@1
+    expect:
+      fields:
+        - decision_id
+        - deal_external_identity
+        - decision_outcome
+        - decision_conditions
+        - decision_actor
+        - decision_decided_at
+        - decision_is_final
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: decision_id, not_null: true}
+      - {field: decision_id, unique: true}
+  - pattern: data_enrichment
+    lookups:
+      - contract: investment.deal_vault@1
+        relation: golden_deal
+        "on": {deal_external_identity: deal_business_key}
+        fields: [deal_name, deal_strategy, deal_originating_team]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Every decision in force, beside the deal it decided and the desk that originated it."
+    ownership: investment-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

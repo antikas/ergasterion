@@ -1,0 +1,51 @@
+# A self-contained estate that exercises the operational data store shape
+# (architecture section 6): one delivered feed carrying raw change events
+# from two source systems, and one integrated product, shape: ods, that
+# reshapes it into entity relations with declared keys and effectivity, a
+# cross-reference relation and an audit tail.
+#
+# The layer labels "delivered" and "integrated" are names the engine has
+# never seen and never interprets. Each is a key into the tables below.
+# Both map to the serving profile: the delivered feed is a fixture-bound
+# source read by batch_transfer, exactly as architecture section 12
+# describes local proof, so neither product needs the landing profile's
+# batch_ingestion connection configuration.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    delivered:
+      profiles: [serving]
+    integrated:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    delivered:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    integrated:
+      batch_transfer: dbt
+      data_validation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      ods: dbt
+      data_contracts: publication
+      metadata_capture: publication
+      lineage_capture: publication

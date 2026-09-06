@@ -4,8 +4,9 @@
 # Prerequisites:
 #   * Git and Bash.
 #   * Python 3.11+ with the project dependencies installed.
-#   * dbt Core with the Snowflake, BigQuery, and DuckDB adapters installed.
-#   * Network access on the first run only, if dbt_packages/ has not been populated.
+#   * dbt Core with the BigQuery and DuckDB adapters installed.
+#   * Network access on the first run only, if neither dbt_packages/ nor
+#     DPF_DBT_PACKAGE_CACHE (a directory of the pinned Hub packages) is present.
 #
 # Set PY and/or DBT to select specific executables. When unset, Python resolves from
 # python3 (then python) on PATH and dbt resolves from PATH.
@@ -63,38 +64,44 @@ grep -Eq 'duckdb:[[:space:]]+1\.11\.0' <<< "$DBT_VERSION" \
 echo "Using Python: $PY"
 echo "Using dbt: $DBT"
 
-echo "=== offline gate: emit (byte-stable) + emitter test scripts + three-target parse + DuckDB build ==="
+echo "=== offline gate: product route (byte-stable) + two-target parse + DuckDB build ==="
 echo "=== scaffold package-data gate: ergasterion/scaffold/ byte-matches its sources ==="
 "$PY" ergasterion/sync_scaffold.py --check || fail "packaged scaffold drifted from its sources (run: python ergasterion/sync_scaffold.py)"
 
-EMIT_OUTPUT=$("$PY" ergasterion/emit.py --check)
-EMIT_STATUS=$?
-printf '%s\n' "$EMIT_OUTPUT"
-
-# Structural, machine-readable orphan signal: emit.py --check prints a stable
-# ORPHANS=<n> marker on every run. Read that marker, never the prose message alone
-# (prose can be reworded without the check drifting with it). Its absence is itself
-# a failure -- an emit.py that stops printing the marker must not silently pass.
-ORPHAN_MARKER=$(grep -oE '^ORPHANS=[0-9]+' <<< "$EMIT_OUTPUT" | tail -n1)
-[ -n "$ORPHAN_MARKER" ] || fail "ergasterion/emit.py --check produced no ORPHANS=<n> marker line -- structural orphan signal missing"
-ORPHAN_COUNT=${ORPHAN_MARKER#ORPHANS=}
-
-# emit.py returns 1 for two independent causes -- a dialect-lint offense and a
-# byte-stability diff -- named separately here so a failure message points at the
-# right one instead of a blanket "not byte-stable".
-if [ "$EMIT_STATUS" -ne 0 ] && grep -q '^dialect-lint FAIL' <<< "$EMIT_OUTPUT"; then
-  fail "dialect-lint failed: construct(s) incompatible with a declared adapter found in model/test SQL (see emit --check output above)"
-fi
-if [ "$ORPHAN_COUNT" -gt 0 ]; then
-  fail "orphaned generated model output would be deleted (ORPHANS=$ORPHAN_COUNT; see emit --check output above)"
-fi
-if [ "$EMIT_STATUS" -ne 0 ]; then
-  fail "generated model output is not byte-stable"
-fi
+# The estate-wide structural gate, standalone: it validates every model in the tree
+# against every declared target budget, reading the product route's own private
+# relations out of the manifests that route wrote.
 "$PY" ergasterion/structure_gate.py || fail "structure gate: a declared target budget is breached (see output above)"
-"$PY" streamlit/test_scoring_config.py || exit 1
-[ -d dbt_packages ] || "$DBT" deps --profiles-dir profiles || exit 1
-"$DBT" parse --profiles-dir profiles --no-partial-parse -t snowflake || exit 1
+# The pinned dbt Hub packages. A checkout that already carries dbt_packages/ uses it
+# untouched. Otherwise DPF_DBT_PACKAGE_CACHE, a directory holding the same packages with
+# a package-lock.yml matching packages.yml, materialises them with no network call; only
+# a run with neither reaches for `dbt deps`.
+if [ ! -d dbt_packages ]; then
+  if [ -n "${DPF_DBT_PACKAGE_CACHE:-}" ] && [ -d "${DPF_DBT_PACKAGE_CACHE:-}" ]; then
+    echo "=== materialising the pinned dbt Hub packages from DPF_DBT_PACKAGE_CACHE (no dbt deps, no network) ==="
+    "$PY" - "$DPF_DBT_PACKAGE_CACHE" "$REPO_ROOT" <<'PYEOF' || fail "DPF_DBT_PACKAGE_CACHE does not match packages.yml's pins"
+import sys
+from pathlib import Path
+
+import yaml
+
+cache, repo = Path(sys.argv[1]), Path(sys.argv[2])
+declared = {p["package"]: p["version"] for p in yaml.safe_load((repo / "packages.yml").read_text(encoding="utf-8"))["packages"]}
+locked = {p["package"]: p["version"] for p in yaml.safe_load((cache / "package-lock.yml").read_text(encoding="utf-8"))["packages"]}
+if locked != declared:
+    raise SystemExit(f"DPF_DBT_PACKAGE_CACHE package-lock.yml {locked} does not match packages.yml {declared}")
+print("DPF_DBT_PACKAGE_CACHE pins verified:", locked)
+PYEOF
+    mkdir -p dbt_packages || fail "cannot create dbt_packages/"
+    for package in "$DPF_DBT_PACKAGE_CACHE"/*/; do
+      name=$(basename "$package")
+      [ "$name" = "*" ] && continue
+      cp -r "$package" "dbt_packages/$name" || fail "materialising $name from DPF_DBT_PACKAGE_CACHE"
+    done
+  else
+    "$DBT" deps --profiles-dir profiles || fail "dbt deps (set DPF_DBT_PACKAGE_CACHE to stay offline)"
+  fi
+fi
 "$DBT" parse --profiles-dir profiles --no-partial-parse -t bigquery || exit 1
 "$PY" ergasterion/dialect_lint.py --target duckdb || exit 1
 "$DBT" parse --profiles-dir profiles --no-partial-parse -t duckdb || exit 1
@@ -112,8 +119,23 @@ echo "=== ODCS contract gate: schema-validate + byte-stable (never-hand-edited) 
 echo "=== ODPS (Bitol) descriptor gate: schema-validate + byte-stable (never-hand-edited) ==="
 "$PY" ergasterion/emit_odps.py --check || { echo "FAIL: ODPS (Bitol) descriptors drifted, were hand-edited, or are schema-invalid"; exit 1; }
 
-echo "=== property-graph projection gate: byte-stable + structural tests ==="
-"$PY" ergasterion/emit_graph.py --check || { echo "FAIL: property-graph artefacts drifted or were hand-edited"; exit 1; }
+echo "=== product-graph projection gate: byte-stable + structural tests ==="
+"$PY" ergasterion/emit_graph.py --check || { echo "FAIL: product-graph artefacts drifted or were hand-edited"; exit 1; }
+
+# The product route's own drift gate. It validates and routes every product
+# declaration and re-renders the dbt project the declarations imply, then
+# reports any divergence from what is on disk without writing. An estate with
+# no product declarations yet emits nothing and passes, which is the honest
+# reading of a tree that declares no products.
+echo "=== product route gate: byte-stable dbt project from the product declarations ==="
+"$PY" ergasterion/emit_products.py --check || { echo "FAIL: product models drifted, were hand-edited, or failed a gate"; exit 1; }
+
+# The architecture acceptance run: the thirteen checks of
+# docs/architecture/engine-architecture.md section 14, each deterministic and offline.
+# It runs here, after every generator has reported its own drift, because check 1 reads
+# exactly what those generators wrote.
+PY="$PY" bash "$SCRIPT_DIR/validate_engine_architecture.sh" \
+  || fail "engine architecture acceptance (see the per-check lines above)"
 
 # Every generator/gate check above has now run and written its state. What is left is each
 # generator/gate's OWN self-test file -- read-only proofs against that state, with no ordering

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/data_contracts.schema.json",
+  "title": "data_contracts step configuration (architecture section 4)",
+  "description": "Nothing beyond the target contract block: this occurrence marks where the ODCS contract and its compliance check are emitted from the declaration's own target.contract.",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "data_contracts" }
+  }
+}

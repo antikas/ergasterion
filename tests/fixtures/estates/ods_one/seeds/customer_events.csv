@@ -1,0 +1,7 @@
+eid,ssys,skey,ent_id,nm,seg,pts,chg_ts,op
+EV-01,crm,CRM-100,E-001,Ada Byron,standard,10,2026-01-05 09:00:00,insert
+EV-02,billing,BILL-200,E-001,Ada Byron,premium,10,2026-02-10 09:00:00,update
+EV-03,crm,CRM-100,E-001,Ada B. Byron,premium,15,2026-03-15 09:00:00,update
+EV-04,crm,CRM-101,E-002,Grace Hopper,premium,20,2026-01-20 09:00:00,insert
+EV-05,billing,BILL-201,E-002,Grace Hopper,premium,20,2026-04-01 09:00:00,update
+EV-06,crm,CRM-100,E-002,Grace Hopper,premium,25,2026-05-01 09:00:00,update

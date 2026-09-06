@@ -1,0 +1,41 @@
+# This estate's own named-rule catalogue. The engine reference catalogue
+# ships as the default; an estate catalogue may add rules to it and may
+# never redeclare one of its names.
+#
+# Two rules, for the two reasons architecture section 3.2 admits one. The
+# first is genuinely dialect-divergent: taking the domain out of an email
+# address is spelled differently on each declared adapter, so its macro
+# dispatches per adapter and the declaration never sees either spelling.
+# The second is a business rule the estate wants reviewed and versioned as
+# code rather than restated in every product that bands an order; its one
+# implementation is valid on both adapters.
+#
+# Both name one macro per rule across the adapters, because the macro name
+# is what a generated model calls; where the adapters diverge, the
+# divergence sits inside the macro's own dispatch.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: customer_email_domain_v1
+    version: 1
+    description: >-
+      The domain part of a customer email address, and nothing when the
+      address carries none.
+    inputs:
+      - {name: email, type: string}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: dpf_crm_email_domain}
+      - {translator: dbt, adapter: bigquery, macro: dpf_crm_email_domain}
+  - name: order_value_band_v1
+    version: 1
+    description: >-
+      Band an order by the total value the source system states for it,
+      into the value bands this estate reports on.
+    inputs:
+      - {name: order_total, type: {name: decimal, precision: 12, scale: 2}}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: dpf_crm_order_value_band}
+      - {translator: dbt, adapter: bigquery, macro: dpf_crm_order_value_band}

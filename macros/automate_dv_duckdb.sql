@@ -1,4 +1,9 @@
-{# DuckDB dispatch implementations for the AutomateDV 0.11.5 leaf macros used by this project. #}
+{#-
+  DuckDB dispatch arms for the AutomateDV leaf macros the installed package resolves
+  through adapter.dispatch. The package is a declared dbt dependency (packages.yml),
+  and its own macros fail closed on DuckDB without these arms, so they belong to the
+  estate that declares the package rather than to any product route.
+-#}
 
 {%- macro duckdb__get_escape_characters() -%}
     {%- do return(('"', '"')) -%}
@@ -45,26 +50,4 @@
 
 {% macro duckdb__hash_alg_sha1() -%}
     {%- do return(automate_dv.cast_binary('UPPER(SHA1([HASH_STRING_PLACEHOLDER]))', quote=false)) -%}
-{%- endmacro %}
-
-{%- macro duckdb__sat(src_pk, src_hashdiff, src_payload, src_extra_columns, src_eff, src_ldts, src_source, source_model) -%}
-    {#
-      Local DuckDB builds replay the complete staged history on every run. Keep
-      AutomateDV's satellite SQL authoritative, then suppress only semantic
-      versions already stored by business key, hashdiff, and effective time.
-
-      The suppression body is the shared dpf_sat_replay_suppression (declared in
-      macros/automate_dv_snowflake.sql alongside the Snowflake arm that adopts it),
-      so this target and Snowflake render one key, one comparison and one body.
-    #}
-    {{- dpf_sat_replay_suppression(
-        src_pk=src_pk,
-        src_hashdiff=src_hashdiff,
-        src_payload=src_payload,
-        src_extra_columns=src_extra_columns,
-        src_eff=src_eff,
-        src_ldts=src_ldts,
-        src_source=src_source,
-        source_model=source_model
-    ) -}}
 {%- endmacro %}

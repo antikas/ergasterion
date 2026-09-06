@@ -1,0 +1,7 @@
+# This estate's declared interface boundaries: the model paths whose
+# artefacts may materialise as views. It declares none. The ods shape
+# computes; it is never an interface boundary, so every relation this
+# estate's products publish materialises as a table, and the structural
+# budget below is what still governs the views the translator renders
+# privately under a product's namespace.
+view_layers: []

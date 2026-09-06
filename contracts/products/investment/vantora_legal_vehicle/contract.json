@@ -1,0 +1,112 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Legal vehicles as VANTORA states them, on the schema both vehicle feeds share.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "vantora_legal_vehicle",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.vantora_legal_vehicle_extract@1"
+  ],
+  "quality": [
+    {
+      "description": "vehicle_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "vehicle_name must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "source_vehicle_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_fund_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_parent_vehicle_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_vehicle_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_jurisdiction",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_incorporation_text",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_incorporated_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "source_reported_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "vehicle_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_identity_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_normalised_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_lei",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.vantora_legal_vehicle"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

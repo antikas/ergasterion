@@ -1,0 +1,53 @@
+# The estate that switches inline SQL off. `expression_mode: named_only`
+# (architecture section 3.2; owner rulings R2 and R3; check 10) means no
+# declaration in this estate may carry an inline expression at all: every
+# derivation and every predicate is a named rule, referenced by name and
+# version, implemented per translator and adapter in macros/ beside the
+# translator that renders it.
+#
+# The worked estates keep their inline SQL. This one is where the other mode
+# is proven, so the two modes are both live and neither is theoretical.
+#
+# The layer labels "delivered" and "derived" are names the engine has never
+# seen and never interprets. Each is a key into the tables below.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: named_only
+  structured_types:
+    - array
+  labels:
+    delivered:
+      profiles: [serving]
+    derived:
+      profiles: [derivation]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    delivered:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    derived:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

@@ -1,4 +1,4 @@
-"""The nine Bronze runtime port protocols and the ``PortSet`` bundle the
+"""The nine Landing runtime port protocols and the ``PortSet`` bundle the
 deterministic ingestion service (``ergasterion.ingestion.runtime``) is built
 against.
 
@@ -30,8 +30,8 @@ from ergasterion.ingestion.records import (
     AttemptPage,
     AttemptQuery,
     Base64Url,
-    BronzeEvidence,
-    BronzeProductContract,
+    LandingEvidence,
+    LandingProductContract,
     CandidateFramePage,
     CandidateReadQuery,
     ContractLifecycleRequest,
@@ -56,7 +56,7 @@ from ergasterion.ingestion.records import (
     ManagedPayloadInput,
     MaterializationCompletion,
     MaterializationSession,
-    MaterializedBronzeEvidence,
+    MaterializedLandingEvidence,
     NonNegativeIntegerString,
     OperationalStatus,
     OutboxEntry,
@@ -218,33 +218,33 @@ class DeliveryStateStorePort(Protocol):
 @runtime_checkable
 class LandingAdapterPort(Protocol):
     def begin_prepare(
-        self, attempt_id: Digest, receipt: RawReceipt, raw: RawReadHandle, contract: BronzeProductContract,
+        self, attempt_id: Digest, receipt: RawReceipt, raw: RawReadHandle, contract: LandingProductContract,
         visibility: VisibilityIdentity,
     ) -> LandingPreparation: ...
 
     def append_raw(self, preparation: LandingPreparation, page: RawReadPage) -> LandingPreparation: ...
 
-    def finish_prepare(self, preparation: LandingPreparation) -> BronzeEvidence: ...
+    def finish_prepare(self, preparation: LandingPreparation) -> LandingEvidence: ...
 
     def read_candidate(self, query: CandidateReadQuery) -> CandidateFramePage: ...
 
     def begin_materialization(
-        self, attempt_id: Digest, evidence: BronzeEvidence, evaluation_id: Digest, ruleset_digest: Digest
+        self, attempt_id: Digest, evidence: LandingEvidence, evaluation_id: Digest, ruleset_digest: Digest
     ) -> MaterializationSession: ...
 
     def append_dispositions(self, session: MaterializationSession, page: DispositionPage) -> MaterializationSession: ...
 
-    def finish_materialization(self, completion: MaterializationCompletion) -> MaterializedBronzeEvidence: ...
+    def finish_materialization(self, completion: MaterializationCompletion) -> MaterializedLandingEvidence: ...
 
-    def bind_release_visibility(self, binding: ReleaseVisibilityBinding) -> MaterializedBronzeEvidence: ...
+    def bind_release_visibility(self, binding: ReleaseVisibilityBinding) -> MaterializedLandingEvidence: ...
 
-    def materialize_release(self, request: ReleaseMaterializationRequest) -> MaterializedBronzeEvidence: ...
+    def materialize_release(self, request: ReleaseMaterializationRequest) -> MaterializedLandingEvidence: ...
 
     def source_native_query(self, query: SourceNativeQuery) -> SourceNativePage: ...
 
     def disposition_query(self, query: DispositionQuery) -> DispositionQueryPage: ...
 
-    def verify_open(self, input: ExternalReceiptInput, visibility: DeliveryVisibilityIdentity) -> BronzeEvidence: ...
+    def verify_open(self, input: ExternalReceiptInput, visibility: DeliveryVisibilityIdentity) -> LandingEvidence: ...
 
 
 # --------------------------------------------------------------------------- RemediationRepository
@@ -291,7 +291,7 @@ class KeyResolverPort(Protocol):
 
 @dataclass(frozen=True)
 class PortSet:
-    """One implementation of each of the nine Bronze runtime ports -- the exact
+    """One implementation of each of the nine Landing runtime ports -- the exact
     field names ``RuntimePortBindings`` uses, so a resolved binding and a
     ``PortSet`` name the same nine slots. Passed to ``IngestionRuntime``
     (``ergasterion.ingestion.runtime``) and to

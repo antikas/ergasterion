@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/checkpoint_retries.schema.json",
+  "title": "checkpoint_retries configuration -- the top-level 'checkpointing' block (architecture sections 3.1, 4)",
+  "description": "Granularity, retries, backoff: a wrapper around the whole composition, not an ordered step. It is declared once, in the product's top-level 'checkpointing' block, never as an entry in 'steps' -- this schema therefore carries no 'pattern' key, unlike every other pattern's step schema. 'checkpoint' is the verification hook of architecture section 12: declared true, it forces table materialisation intent for the product and registers the product's relation in the emitted graph (ergasterion/framework/graph.py). It is the only materialisation intent a product declaration carries; everything else about physical layout is adapter convention and estate policy.",
+  "type": "object",
+  "required": ["granularity", "max_retries", "backoff"],
+  "additionalProperties": false,
+  "properties": {
+    "granularity": { "type": "string", "enum": ["step", "composition"] },
+    "max_retries": { "type": "integer", "minimum": 0 },
+    "backoff": { "type": "string", "enum": ["none", "fixed", "exponential"] },
+    "checkpoint": { "type": "boolean" }
+  }
+}

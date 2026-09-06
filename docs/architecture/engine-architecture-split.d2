@@ -1,0 +1,109 @@
+# docs/architecture/engine-architecture-split.d2
+#
+# The boundary between neutral declarations and technology or platform code.
+# Rendered with:
+#   d2 --layout elk docs/architecture/engine-architecture-split.d2 docs/architecture/engine-architecture-split.svg
+# The committed SVG is generated from this source with the command above.
+
+canvas: {
+  label: ""
+  style.fill: "#0d1117"
+  style.stroke: "#0d1117"
+  direction: down
+
+  declaration: "Neutral declaration" {
+    class: neutral
+    direction: right
+    allowed: "Allowed\npatterns | neutral types | contract references\nnamed rules | inline SQL when the estate permits it" {
+      class: item
+    }
+    rejected: "Rejected\ntechnology syntax | platform references\npaths | connection details | executable code" {
+      class: reject
+    }
+  }
+
+  gates: "Engine gates" {
+    class: engine
+    direction: right
+    neutrality: "1. Neutrality\nreject technology and\nplatform coupling" {
+      class: stage
+    }
+    plan: "2. Neutral plan\npatterns | schemas\nrule signatures" {
+      class: stage
+    }
+    completeness: "3. Completeness\nresolve every named rule\nfor each target pair" {
+      class: stage
+    }
+    neutrality -> plan -> completeness
+  }
+
+  specifics: "Technology and platform boundary" {
+    class: plugin
+    direction: right
+    translators: "Translators own technology\nSQL models | landing runtime\ncontracts, metadata, lineage" {
+      class: axis
+    }
+    adapters: "Adapters own platforms\nDuckDB reference | BigQuery deployment\nnew platforms arrive as packages" {
+      class: axis
+    }
+    rules: "Named-rule implementations\nrendering | dialect | types | layout\nresolved by translator + adapter" {
+      class: impl
+    }
+  }
+
+  declaration.allowed -> gates.neutrality
+  gates.completeness -> specifics.rules
+  specifics.translators -> specifics.rules {
+    style.stroke: "#d29922"
+  }
+  specifics.adapters -> specifics.rules {
+    style.stroke: "#d29922"
+  }
+}
+
+classes: {
+  neutral: {
+    style.fill: "#0d1117"
+    style.stroke: "#3fb950"
+    style.font-color: "#7ee787"
+    style.stroke-dash: 2
+  }
+  item: {
+    style.fill: "#122117"
+    style.stroke: "#3fb950"
+    style.font-color: "#c9d1d9"
+  }
+  reject: {
+    style.fill: "#3d2020"
+    style.stroke: "#f85149"
+    style.font-color: "#ffa198"
+  }
+  engine: {
+    style.fill: "#0f1a2b"
+    style.stroke: "#388bfd"
+    style.font-color: "#79c0ff"
+    style.stroke-width: 2
+  }
+  stage: {
+    style.fill: "#161b22"
+    style.stroke: "#388bfd"
+    style.font-color: "#c9d1d9"
+  }
+  plugin: {
+    style.fill: "#0d1117"
+    style.stroke: "#d29922"
+    style.font-color: "#e3b341"
+    style.stroke-dash: 2
+  }
+  axis: {
+    style.fill: "#1f1a0b"
+    style.stroke: "#d29922"
+    style.font-color: "#e3b341"
+  }
+  impl: {
+    style.fill: "#1f1a0b"
+    style.stroke: "#d29922"
+    style.font-color: "#e3b341"
+    style.stroke-width: 2
+  }
+}

@@ -1,0 +1,82 @@
+# The normalised manager name, against the business key the manager vault
+# resolved that manager on.
+#
+# A fund states the manager it is run by as a name, and three of the four
+# source systems state no manager identifier beside it. The manager vault
+# identifies a manager by its legal entity identifier where one is stated,
+# so a fund quoting only a name has to come through this mapping to reach
+# the manager identity the estate agreed.
+#
+# It reads the conformed manager records rather than the vault's surviving
+# record, because a manager reached through two spellings has to resolve
+# from either of them, and the surviving record keeps one. Every record of
+# one manager carries the same business key, which is what the published
+# count proves: an identifier that reached two managers would fail the
+# post-resolution rule instead of attaching the association to one of them.
+product:
+  name: gp_name_index
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.gp_conformed@1
+    expect:
+      fields:
+        - gp_identity_key
+        - gp_source_system
+        - gp_normalised_name
+        - gp_lei
+        - gp_external_id
+        - gp_business_key
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - {field: gp_business_key, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: gp_name_lookup_key, type: string, expression: "upper(trim(gp_normalised_name))"}
+  - pattern: data_filtering
+    predicates:
+      - name: manager_name_stated_only
+        expression: "gp_name_lookup_key is not null"
+  - pattern: data_aggregation
+    grain: [gp_name_lookup_key]
+    aggregates:
+      - {name: gp_business_key, expression: "min(gp_business_key)", type: string}
+      - {name: gp_entity_count, expression: "count(distinct gp_business_key)", type: integer}
+    late_arrival_policy: recompute_period
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - {field: gp_name_lookup_key, not_null: true}
+      - {field: gp_name_lookup_key, unique: true}
+      - {field: gp_entity_count, max: 1}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Each normalised manager name against the business key the manager vault resolved it to."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [gp_name_lookup_key]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

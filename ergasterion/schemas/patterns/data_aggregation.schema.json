@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/data_aggregation.schema.json",
+  "title": "data_aggregation step configuration (architecture section 4)",
+  "description": "Grain, groups, aggregate expressions, late-arrival policy. Each aggregate declares its own neutral type: an aggregate replaces the field set it groups, so its type cannot be carried over from an input field and the contract derivation (ergasterion/framework/contract.py) fails closed without it. 'type' is shaped loosely here (string or object); the neutral-type system itself is enforced once, in ergasterion/framework/declaration.py.",
+  "type": "object",
+  "required": ["pattern", "grain", "aggregates"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "data_aggregation" },
+    "grain": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "groups": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "aggregates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "expression", "type"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "expression": { "type": "string", "minLength": 1 },
+          "type": { "type": ["string", "object"] }
+        }
+      }
+    },
+    "late_arrival_policy": { "type": "string", "minLength": 1 }
+  }
+}

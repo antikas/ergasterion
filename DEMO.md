@@ -1,147 +1,99 @@
-# Source Declaration Demo
+# Onboarding a source, and declaring a product from it
 
-To onboard a source:
+When a new feed arrives, you need to record what the source sends before you can declare
+what the warehouse should publish from it. Ergasterion keeps those as two separate,
+reviewable decisions.
 
-1. Add synthetic or approved raw input files under `seeds/`.
-2. Write a source declaration at `declarations/<source>.yml` (by hand, or seeded from a
-   supplier's ODCS contract -- see "Worked example: hand me your data contract," below).
-3. Run `python ergasterion/emit.py`.
-4. Validate metadata generation with `dbt parse --profiles-dir profiles --no-partial-parse`.
-5. Run `dbt build` only in an environment with the target warehouse available.
+A **source** is an incoming feed. It is declared once, at `declarations/<source>.yml`,
+describing the tables and columns a delivered batch carries, how each one is typed, and
+how the batch reaches the estate. Two importers below seed that file from what a supplier
+already has, so nobody types a column list twice.
 
-The declaration is the onboarding contract for everything the emitter generates: the
-raw tables, typed staging projections, deterministic ER branches, bridge joins, and
-the raw-vault entities the source feeds. The Python emitter is deterministic:
-templates plus declarations produce dbt SQL, with no LLM in the generation path.
+A **product** is what the engine builds. It is declared at
+`declarations/products/<domain>/<name>.yml`: the layer label it sits in, the contracts it
+consumes, the ordered patterns it composes, and the shape of what it publishes.
+`ergasterion emit-products` turns every declaration there into dbt models, their schema
+documentation, their generated tests, the product's runtime manifest, its published
+contract and descriptor, and its node in the estate graph.
 
-This declaration describes a source's shape to the domain generator: which columns
-it has and which real-world thing each one refers to. It is a separate concern from
-a source's **Bronze Product Contract**, the earlier-stage declaration that governs
-how a delivered batch is received, checked, and published before the domain
-generator ever reads it. [`docs/architecture/bronze-ingestion.md`](docs/architecture/bronze-ingestion.md)
-covers that mechanism and [`docs/specifications/bronze-product-v1.md`](docs/specifications/bronze-product-v1.md)
-is its field-by-field reference; [`RUNBOOK.md`](RUNBOOK.md) section 3 is the Bronze
-operator command sequence.
+To onboard a source and publish something from it:
 
-A single source per entity is the normal, complete case. You describe your sources and
-the factory builds the warehouse from them: typed staging, the append-only history
-vault, golden records, the served tables, contracts, and the graph map, all from one
-source if that is all you have. The entity-resolution and survivorship machinery earns
-its keep when several sources describe the same real-world thing. The `entity_resolution`
-branch discussed below is what a source opts into when it overlaps existing records,
-never a precondition for onboarding.
+1. Make the delivered data reachable. Add approved or synthetic input files under `seeds/`,
+   or bind a delivered relation through a Landing Product Contract
+   ([`docs/specifications/landing-product-v1.md`](docs/specifications/landing-product-v1.md)
+   is its field-by-field reference; [`RUNBOOK.md`](RUNBOOK.md) section 4 is the operator
+   command sequence).
+2. Write the source declaration at `declarations/<source>.yml`, by hand or seeded from a
+   supplier's ODCS contract or the source system's raw DDL. Both are worked below.
+3. Declare one product per thing you want published, under `declarations/products/`.
+4. Run `ergasterion emit-products`.
+5. Check the generated project with `dbt parse --profiles-dir profiles --no-partial-parse`.
+6. Run `dbt build` against the reference adapter, or prepare it for a deployment adapter.
 
-One distinction matters here: the pipeline regenerates from the declaration alone,
-with no hand edits to any generated file. The entity resolution ground truth does
-not. If the source declares an `entity_resolution` branch, the pipeline can resolve
-its records against existing funds, but scoring how well it resolved them needs a
-human-labelled answer key: `seeds/entity_resolution_overlap_manifest.csv`. That
-manifest is a labelled-data input the pipeline reads, not pipeline code the emitter
-produces. A person adds one row per source record whose true fund identity is already
-known. You can emit an ER-participating source without adding its rows to the manifest,
-but the build will fail. The precision test treats an unlabelled resolved record as
-missing ground truth and stops the pipeline.
+The engine is deterministic. Declarations plus the estate's own configuration produce the
+whole project, with no model in the generation path. Nothing under `models/`, `contracts/`,
+`manifests/` or `graphs/` is hand-authored: every file there carries the generated marker
+and is rewritten from its declaration on the next run.
 
-A declaration in the **investment domain** can also carry a `canonical_mappings`
-block per entity -- an **optional, investment-domain-specific** onboarding aid, not a
-factory-wide requirement. The block documents the intended attribute lineage to the
-OpenIM canonical model for onboarding review. When `--openim-root` points to a local
-model checkout, `ergasterion/emit.py` checks spelling and schema drift. Without a valid
-checkout it records a warning and continues. The block does not generate the canonical
-layer: `models/canonical/*.sql` remains hand-authored. A domain with no external model
-simply omits the block; the e-commerce declarations do exactly that (see "Worked example:
-adding a whole new domain," below).
-
-The fourth-source proof is `CHRONO`, declared in `declarations/chrono.yml` with
-raw files named `seeds/raw_chrono_*.csv`. It uses Chronograph-shaped column names,
-overlaps existing funds through LEI and shared external IDs, and adds a new
-synthetic fund, `Helio Climate Fund I`.
-
-## Worked example: adding a whole new domain
-
-The e-commerce customer view shows how to define a domain whose vocabulary is completely separate from the investment example. The engine (`ergasterion/emit.py` and `ergasterion/templates/`) carries no entity or source vocabulary. A domain lives in one model configuration plus its declarations, seeds, and labelled identity manifest. Each step below points to a working file in this repository.
-
-The repository contains two worked domains, so the example directories are populated. A new estate created with `ergasterion init <directory>` contains the same directory structure, the shared macros, and an empty project ready for its first domain. Use `domains/ecommerce.yml` as the concrete example for your own `domains/<your-domain>.yml`.
-
-1. **Domain model config** (`domains/<domain>.yml`, e.g. `domains/ecommerce.yml`): define the payload and hashed keys for `customer`, `product`, `order`, and `order_line`; then define the hubs, links, golden records, and deterministic customer match keys. Customers match first on a shared loyalty id and then on a normalised email. All domain files are merged at generation time, and the loader rejects duplicate section keys.
-2. **Declarations**, one per source: `declarations/cartivo.yml` for the storefront, `declarations/mercaro.yml` for the marketplace, and `declarations/relatio.yml` for the partial-coverage CRM. Each uses the same `vault_entities` shape as an investment declaration and points it at the e-commerce entities. E-commerce has no external reference model, so its declarations omit `canonical_mappings` (see the README's "What this is not").
-3. **Seeds**: invented customer, product, and order data for each feed. The fixtures include a shared loyalty id, an email that differs only by case, and a customer visible in only one feed. These ordinary disagreements exercise the same cross-source mechanism as the investment fixtures.
-4. **The entity-resolution manifest, staged BEFORE the first build**: `seeds/<domain>_er_overlap_manifest.csv` (e-commerce: `seeds/customer_er_overlap_manifest.csv`). It contains one row per source record whose true customer identity is already known by hand. An entity that participates in resolution with no manifest rows can be emitted, but its build fails. The precision test treats an unlabelled resolved record as missing ground truth.
-5. Run `python ergasterion/emit.py`, then `dbt parse --profiles-dir profiles --no-partial-parse` for the structural check, then `dbt build` against a configured warehouse target.
-
-**What stays hand-authored:** the clean consumable layer, including `canonical_customer`, `canonical_product`, the dimensions, and `fact_order`, is designed by a person on top of the generated source-facing pipeline. The investment domain follows the same boundary.
-
-Customer resolution is deterministic in this domain. Records that share neither a loyalty id nor a normalised email remain separate. The customer path does not enter the probabilistic review queue. The review console displays probabilistic investment matches and deal decisions.
+A product declaration names no technology and no platform. `estate.yml` maps each layer
+label onto the profile a composition must satisfy. It also maps each pattern to its
+translator. Changing that ownership is an estate configuration change. The engine and
+product declarations stay unchanged.
 
 ## Worked example: hand me your data contract
 
-Every source onboarded above started from a blank `declarations/<source>.yml`, written
-column by column. A supplier may already have an **ODCS contract**, a YAML document that
-follows the Bitol Open Data Contract Standard. ODCS describes a dataset's schema in a
-vendor-neutral format understood by tools including Databricks, Collibra, OpenMetadata,
-and `datacontract-cli`. `ergasterion/import_odcs.py` turns that contract into a declaration
-skeleton.
+A supplier may already have an **ODCS contract**, a YAML document that follows the Bitol
+Open Data Contract Standard. ODCS describes a dataset's schema in a vendor-neutral format
+understood by a range of tools. `ergasterion import-odcs` turns that contract into a
+source-declaration skeleton.
 
-It reads each column's name, type, and required, unique, or primary-key status. It writes
-a `declarations/<source>.yml` with projection stubs and the corresponding
-`seed_tests` and `model_tests`. It does **not** guess how this
-source's records map onto this factory's vault entities, how they resolve against
-other sources, or how they should be prioritised in survivorship if two sources
-disagree about the same fact. No ODCS contract carries that information -- it is
-domain knowledge that lives with the person onboarding the source, not with the
-supplier who wrote the contract. The seeder marks every one of those gaps with an
-explicit `# TODO` comment and a worked example lifted from a real declaration, so
-nothing is silently assumed on your behalf.
+It reads each column's name, type, and required, unique or primary-key status. It writes a
+`declarations/<source>.yml` with projection stubs and the matching `seed_tests` and
+`model_tests`. The input contract cannot say which products should read the source, how
+records match across sources, or which source wins a disagreement. The person onboarding
+the source owns those decisions. The seeder marks each gap with an explicit `# TODO` and a
+worked example from a real declaration.
 
-Try it against one of this repository's own contracts (`ergasterion/emit_contracts.py`'s
-output, `contracts/ecommerce/dim_customer_segment.odcs.yml`) -- a stand-in for "a
-supplier just sent me their ODCS contract":
+Try it against one of this repository's own generated contracts, a stand-in for a supplier
+sending you theirs:
 
 ```bash
-python ergasterion/import_odcs.py contracts/ecommerce/dim_customer_segment.odcs.yml --source acme_supplier
+ergasterion import-odcs contracts/products/reference/customer_segment/customer_segment.odcs.yml --source acme_supplier
 ```
 
-This writes `declarations/acme_supplier.yml`. Open it: the `projection` list already
-has one entry per column, cast to the right type (`cast(... as string)`, or
-`{{ dpf_safe_cast('...', 'date') }}` for anything that can fail to parse);
-`seed_tests`/`model_tests` already carry `not_null`/`unique` wherever the contract
-declared a column required or unique. The `vault_entities: []` at the bottom of each
-table is empty on purpose, with a commented-out worked example directly above it
-showing the shape to fill in -- see `declarations/cartivo.yml` for a complete one.
-Fill in `vault_entities` and, where they apply, the `entity_resolution` and
-`canonical_mappings` TODO blocks at the end. Then run `python ergasterion/emit.py` as
-usual. The imported file is now a normal, hand-editable declaration, not a generated
-artefact.
+This writes `declarations/acme_supplier.yml`. Open it: the `projection` list already has
+one entry per column, cast to the right type; `seed_tests` and `model_tests` already carry
+`not_null` and `unique` wherever the contract declared a column required or unique. Fill in
+the `# TODO` blocks, then declare the products that read the source. The imported file is a
+normal, hand-editable declaration from that point on, not a generated artefact.
 
-The seeder refuses a contract it cannot safely read, naming the exact problem instead
-of guessing:
+The seeder refuses a contract it cannot safely read, naming the exact problem instead of
+guessing:
 
 ```bash
-python ergasterion/import_odcs.py some_old_contract.yml --source acme_supplier
+ergasterion import-odcs some_old_contract.yml --source acme_supplier
 # FAIL: some_old_contract.yml: ODCS v2.2.2 is not supported -- this is a pre-v3 contract.
 # ODCS v3.0.0 was a breaking rewrite over v2 (uuid->id, quantumName->dataProduct, ...).
 # Upgrade the contract to ODCS v3.x before importing -- see
 # https://bitol-io.github.io/open-data-contract-standard/latest/ .
 ```
 
-A contract missing its schema section, missing a column name, or declaring a `kind`
-other than `DataContract` fails the same way: one line naming what is wrong, before
-anything is written to disk.
+A contract missing its schema section, missing a column name, or declaring a `kind` other
+than `DataContract` fails the same way: one line naming what is wrong, before anything is
+written to disk.
 
 ## Worked example: seeding from raw DDL
 
 Not every source hands you an ODCS contract. Often what you have instead is the raw
-`CREATE TABLE` statements a source system already uses -- or a model you want to onboard
-that is only described that way. `ergasterion/import_ddl.py` (`ergasterion import-ddl`) reads
-that DDL directly and writes the same kind of TODO-stubbed starting point `import_odcs.py`
-writes from a contract, the same refusal to guess anything the input does not state.
+`CREATE TABLE` statements the source system already uses. `ergasterion import-ddl` reads
+that DDL directly and writes the same kind of TODO-stubbed starting point, with the same
+refusal to guess anything the input does not state.
 
-It has two modes, because a DDL statement set can describe two different things.
+It reads one source system's own `CREATE TABLE` set and writes a
+`declarations/<source>.yml` stub. Each column becomes one projection entry, cast to the
+right type. The DDL's own `NOT NULL`, `PRIMARY KEY` and `UNIQUE` constraints supply the
+`not_null`, `unique` and primary-key tests. Save this to a file, `customers.sql`:
 
-**`--mode feed`** reads one source system's own `CREATE TABLE` set and writes a
-`declarations/<source>.yml` stub: one projection entry per column, cast to the right
-type, with `not_null` / `unique` / primary-key tests filled in from the DDL's own
-`NOT NULL` / `PRIMARY KEY` / `UNIQUE` constraints. Save this to a file, `customers.sql`:
 ```sql
 CREATE TABLE customers (
     id INTEGER PRIMARY KEY,
@@ -151,128 +103,43 @@ CREATE TABLE customers (
     is_active BOOLEAN
 );
 ```
+
 then run:
+
 ```bash
-ergasterion import-ddl customers.sql --mode feed --source acme_crm
+ergasterion import-ddl customers.sql --source acme_crm
 ```
+
 This writes `declarations/acme_crm.yml`. Which real-world thing each table's records
 describe, and how they resolve against other sources, is left as an explicit `# TODO`
-block -- no DDL states that either, so nothing here guesses on your behalf.
+block: no DDL states that either, so nothing here guesses on your behalf.
 
-**`--mode model`** reads a whole domain's `CREATE TABLE` set, one that declares its own
-`PRIMARY KEY` and `FOREIGN KEY` constraints, and writes a `domains/<name>.yml` stub: one
-entity per table, with hub and link config derived from the primary/foreign-key
-structure (a table whose primary key is entirely foreign keys becomes a link; a plain
-foreign key elsewhere becomes a relationship between two entities). Save this to
-`model.sql`:
-```sql
-CREATE TABLE customer (
-    customer_id INTEGER PRIMARY KEY,
-    email VARCHAR(255) NOT NULL
-);
+`--landing source` emits a landing and delivery draft carrying the physical schema alone.
+Use it when batches arrive through the ingestion runtime. The default creates a seed-backed
+declaration for local fixtures.
 
-CREATE TABLE order_header (
-    order_id INTEGER PRIMARY KEY,
-    customer_id INTEGER NOT NULL,
-    order_date DATE NOT NULL,
-    FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
-);
-```
-then run:
-```bash
-ergasterion import-ddl model.sql --mode model --domain acme
-```
-This writes `domains/acme.yml` with a `customer` entity, an `order_header` entity, and a
-link (`order_header_customer`) connecting them, the same shape `domains/ecommerce.yml`
-uses for its own order-to-customer link. Survivorship rules, entity-resolution match
-keys, and the map-lane relation vocabulary are never inferable from a key structure
-alone, so those stay `# TODO` blocks.
+The importer refuses to overwrite a destination that already exists unless you pass
+`--force`, and `--force` overwrites: it never merges with hand edits you have already made,
+the same one-way seeding rule `import-odcs` follows.
 
-Both modes refuse to overwrite a destination that already exists unless you pass
-`--force` -- and `--force` overwrites, it never merges with hand edits you have already
-made, the same one-way seeding rule `import_odcs.py` follows. Fill in the `# TODO` blocks,
-then run `python ergasterion/emit.py` (or `ergasterion emit`) as usual: the seeded file is a
-normal, hand-editable declaration or domain config from that point on, not a generated
-artefact.
+## What keeps the example honest
 
-## Worked example: adding a new entity type (legal vehicle / SPV)
+The e-commerce example contains 33 products across five profiles, including four reference
+products. Three overlapping customer feeds pass through the complete route. Its evidence
+includes:
 
-Onboarding a whole new **entity type**, not just a new source of an existing one,
-is a code-plus-declaration change, and the SPV/legal-vehicle layer is the worked
-example. The steps:
+- **emission**, byte-stable across two runs, with every declaration validated against the
+  profile its label admits and every occurrence routed through the estate's translator
+  table;
+- **the per-adapter gates**, run for every adapter the estate declares: parse, dialect and
+  the structural budgets under `declarations/targets/`;
+- **an executed DuckDB build** of the repository's two worked domains, with every generated
+  test and all 40 known-answer assertions passing;
+- **the contracts, the descriptors and the graph**, generated from the same declarations,
+  schema-validated and checked for drift on every run.
 
-1. **Emitter configs** (`ergasterion/emit.py`): add the entity to `ENTITY_CONFIGS`
-   (payload + hashed columns), and, for a first-class entity, `HUB_CONFIGS`,
-   `LINK_CONFIGS`, and `BV_CONFIGS`. `legal_vehicle` adds `hub_legal_vehicle`,
-   `link_investment_vehicle`, and `bv_legal_vehicle_golden_record`, plus a
-   satellite-only `legal_vehicle_cash_flow` rider (the same shape `fund_cash_flow`
-   uses against fund).
-2. **Declarations**: add `vault_entities` blocks in at least two sources so
-   survivorship has something to arbitrate, plus the vehicle and vehicle-grain
-   cash-flow seeds. The seeds follow the subtle-discrepancy convention (a re-spelt
-   name, a missing date) and one vehicle nests under another via `parent_vehicle_id`.
-3. **Keying**: `golden_legal_vehicle_key` is a bridge-select hash of the declared
-   natural vehicle id: `stable_golden_key('legal_vehicle', vehicle_natural_id)`.
-   There is **no entity resolution for vehicles** and no `res_legal_vehicle` model
-   ; the bridge joins `res_fund` only
-   to resolve the vehicle's parent fund. Because vehicles do not enter entity
-   resolution, they need **no** rows in `entity_resolution_overlap_manifest.csv`.
-4. **Hand-authored on top**: `canonical_legal_vehicle`, `dim_legal_vehicle`, and the
-   vehicle→fund aggregation bridge are hand-authored, like every canonical/mart model.
-5. **Named test**: `assert_vehicle_to_fund_cash_flow_conservation` checks the
-   vehicle-grain flows reconcile to the fund's own total within epsilon.
+`bash scripts/validate_engine_architecture.sh` runs the thirteen architecture acceptance
+checks over that evidence and prints one line per check.
 
-Run `python ergasterion/emit.py`, then `dbt parse` / `dbt build` as with any source.
-
-If the source declares an `entity_resolution` branch, add its labelled manifest rows
-to `seeds/entity_resolution_overlap_manifest.csv` before running the build. The
-precision test rejects resolved source records that have no labelled answer.
-
-## Worked example: operating the deal pipeline
-
-The deal pipeline uses the same declaration, generation, resolution, and golden-record
-path as other entities. It adds one source, `ORIGO`. Deal identity matching is
-source-local within ORIGO; fund identity matching spans all declared fund sources.
-
-The demo arc, run end to end:
-
-1. **Declare.** `declarations/origo.yml` and `seeds/raw_origo_deals.csv` describe
-   the source. `python ergasterion/emit.py`
-   regenerates `hub_deal`, `res_deal`, `bv_deal_golden_record`, and the stage-history
-   and approvals models on top.
-2. **Build**, then open the management console (`RUNBOOK.md` §9) and select the
-   **Deal Approvals** tab.
-3. **The deferred deal.** `ORIGO-EXT-001`, "Project Atlas", sits awaiting a decision. Its
-   investment committee deferred it in March (the seeded decision,
-   `DEC-ORIGO-EXT-001-01`), so it is still at the DECISION stage with no terminal
-   call made. This is the live-approval moment: approve it with conditions.
-4. **Approve with conditions**, then **rebuild**. A targeted `dbt build
-   --profiles-dir profiles --target snowflake --select int_deal_latest_decision+
-   int_entity_resolution_latest_decision+` takes well under a minute. The next build
-   derives Project Atlas's next stage row (COMMITTED) from that decision
-   (`int_deal_stage_from_decision.sql`); the deal drops out of the awaiting-decision queue
-   because `deal_approval_queue` only ever lists deals still at DECISION with no
-   terminal decision recorded.
-5. **Pipeline Browser tab** shows the funnel with Project Atlas at COMMITTED;
-   the awaiting-decision queue count the analyst saw a moment ago has emptied by one.
-
-**What the example proves:**
-
-- **The three fixture decisions set the starting state.**
-  Project Atlas deferred (`DEC-ORIGO-EXT-001-01`), and the merged Cedar Renewables
-  pair (`ORIGO-EXT-DUP-B`) first deferred then approved with conditions
-  (`DEC-ORIGO-EXT-DUP-B-01`/`-02`), which is why Cedar Renewables already sits at
-  COMMITTED before anyone touches the console. Cedar Renewables carries no fund
-  conversion (`converted_record_type` is blank for both its source rows) -- only
-  the direct-lending deal `ORIGO-EXT-002` ("Orion Credit Facility") converts, into
-  the existing `Orion Credit Opportunities I` fund golden key.
-- **Approval uses a parameterised insert.** The write-back goes to
-  `deal_decision_log`. The reset procedure is in the Snowflake demo section of
-  `RUNBOOK.md`.
-- **The ER Review Queue tab's Riverstone pair is a different kind of moment.**
-  `D-009`/`D-010` ("Riverstone Logistics" / "Riverstone Logistix") share no external
-  id, only similar names, so they sit in the SAME tier-2 middle-band review queue an
-  uncertain fund pair would, with the same composite-score decomposition and a
-  golden-key **preview**. Reviewing or even approving that pair in the ER tab does
-  does not mint a row in the deal pipeline immediately. A merge decision changes
-  `res_deal` and the pipeline mart on the next `dbt build`.
+The importers make no business decision for the user. Their output is an editable starting
+file, and a person must resolve every marked gap before publishing a product from it.

@@ -1,0 +1,58 @@
+# The "consolidation" profile, also under the "silver" label. Declares two
+# product sources, satisfying the consolidation minimum, and says how they
+# combine: their columns merged on the customer key. Both sources carry an
+# email column, and a merge never picks one of two, so the storefront's is
+# conformed to a name of its own as it is read.
+product:
+  name: customer_360
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: consolidation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.customer@1
+  - contract: ecommerce.storefront_customer@1
+    conform:
+      mapping:
+        - {from: email, to: storefront_email, type: string}
+
+combine:
+  method: merge
+  keys: [customer_id]
+  join: outer
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: data_curation
+    entity: customer
+    resolution:
+      strategy: deterministic
+      keys: [customer_id]
+    survivorship:
+      email: most_recent
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Consolidated customer view across CRM and storefront."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

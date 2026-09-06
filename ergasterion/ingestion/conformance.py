@@ -1,4 +1,4 @@
-"""The packaged Bronze runtime-port conformance seam.
+"""The packaged Landing runtime-port conformance seam.
 
 A data-driven harness proving ``IngestionRuntime`` (``ergasterion.ingestion.
 runtime``) drives the nine ports correctly across the submission family:
@@ -52,8 +52,8 @@ from ergasterion.ingestion.records import (
     AttemptPage,
     AttemptQuery,
     AttemptState,
-    BronzeEvidence,
-    BronzeProductContract,
+    LandingEvidence,
+    LandingProductContract,
     CandidateField,
     CandidateFrame,
     CandidateFramePage,
@@ -85,7 +85,7 @@ from ergasterion.ingestion.records import (
     ManagedPayloadInput,
     MaterializationCompletion,
     MaterializationSession,
-    MaterializedBronzeEvidence,
+    MaterializedLandingEvidence,
     OperationalStatus,
     OutboxCompletion,
     OutboxEnqueue,
@@ -145,7 +145,7 @@ from ergasterion.ingestion.records import (
     VerificationKeyRecord,
     VisibilityIdentity,
 )
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     BackupRestoreCapability,
     CapabilityCodecKind,
     ContentEncoding,
@@ -803,11 +803,11 @@ class FakeLandingAdapter:
     _prepared_receipt: dict[Digest, RawReceipt] = field(default_factory=dict)
     _rows: dict[Digest, list[dict]] = field(default_factory=dict)
     _sessions: dict[Digest, MaterializationSession] = field(default_factory=dict)
-    _evidence: dict[Digest, BronzeEvidence] = field(default_factory=dict)
-    _release_accepted: dict[Digest, MaterializedBronzeEvidence] = field(default_factory=dict)
+    _evidence: dict[Digest, LandingEvidence] = field(default_factory=dict)
+    _release_accepted: dict[Digest, MaterializedLandingEvidence] = field(default_factory=dict)
 
     def begin_prepare(self, attempt_id: Digest, receipt: RawReceipt, raw: RawReadHandle,
-                       contract: BronzeProductContract, visibility: VisibilityIdentity) -> LandingPreparation:
+                       contract: LandingProductContract, visibility: VisibilityIdentity) -> LandingPreparation:
         preparation_id = canonical_digest({"attempt_id": attempt_id, "raw": receipt.raw_receipt_digest})
         self._prepared_receipt[preparation_id] = receipt
         return LandingPreparation(preparation_id=preparation_id, attempt_id=attempt_id,
@@ -818,11 +818,11 @@ class FakeLandingAdapter:
         self._rows[preparation.preparation_id] = rows
         return _evolve(preparation, next_offset=page.next_offset or preparation.next_offset, closed=page.eof)
 
-    def finish_prepare(self, preparation: LandingPreparation) -> BronzeEvidence:
+    def finish_prepare(self, preparation: LandingPreparation) -> LandingEvidence:
         if self.finish_prepare_fault is not None:
             raise PortError(self.finish_prepare_fault, "landing preparation failed permanently")
         receipt = self._prepared_receipt[preparation.preparation_id]
-        evidence = BronzeEvidence(
+        evidence = LandingEvidence(
             raw_receipt=receipt, candidate_ref=preparation.preparation_id,
             candidate_digest=canonical_digest({"rows": self._rows.get(preparation.preparation_id, [])}),
             frame_index_ref=preparation.preparation_id, frame_index_digest=canonical_digest({"index": preparation.preparation_id}),
@@ -852,7 +852,7 @@ class FakeLandingAdapter:
             ))
         return CandidateFramePage(frames=tuple(frames), next_after_sequence=None, bytes_returned="0", more=False)
 
-    def begin_materialization(self, attempt_id: Digest, evidence: BronzeEvidence, evaluation_id: Digest,
+    def begin_materialization(self, attempt_id: Digest, evidence: LandingEvidence, evaluation_id: Digest,
                                ruleset_digest: Digest) -> MaterializationSession:
         session_id = canonical_digest({"attempt": attempt_id, "evaluation": evaluation_id})
         session = MaterializationSession(session_id=session_id, attempt_id=attempt_id, evaluation_id=evaluation_id,
@@ -866,29 +866,29 @@ class FakeLandingAdapter:
         self._sessions[session.session_id] = updated
         return updated
 
-    def finish_materialization(self, completion: MaterializationCompletion) -> MaterializedBronzeEvidence:
+    def finish_materialization(self, completion: MaterializationCompletion) -> MaterializedLandingEvidence:
         if self.finish_materialization_fault is not None:
             raise PortError(self.finish_materialization_fault, "landing materialization failed permanently")
         prepared = self._evidence[completion.session.session_id]
         accepted = int(completion.validation.accepted_count)
-        return MaterializedBronzeEvidence(
+        return MaterializedLandingEvidence(
             prepared=prepared, disposition_ref=completion.session.session_id,
             accepted_ref=f"{completion.session.session_id}-accepted",
             accepted_content_digest=canonical_digest({"session": completion.session.session_id, "accepted": accepted}),
             candidate_keyset=None, published_visibility=None,
         )
 
-    def bind_release_visibility(self, binding: ReleaseVisibilityBinding) -> MaterializedBronzeEvidence:
+    def bind_release_visibility(self, binding: ReleaseVisibilityBinding) -> MaterializedLandingEvidence:
         return _evolve(binding.materialized, published_visibility=binding.visibility)
 
-    def materialize_release(self, request: ReleaseMaterializationRequest) -> MaterializedBronzeEvidence:
+    def materialize_release(self, request: ReleaseMaterializationRequest) -> MaterializedLandingEvidence:
         cached = self._release_accepted.get(request.release_id)
         if cached is not None:
             return cached
         prepared = self._evidence[request.raw_ref]
         rows = self._rows.get(request.raw_ref, [])
         accepted_ref = f"release-{request.release_id}-accepted"
-        materialized = MaterializedBronzeEvidence(
+        materialized = MaterializedLandingEvidence(
             prepared=prepared, disposition_ref=f"release-{request.release_id}", accepted_ref=accepted_ref,
             accepted_content_digest=canonical_digest({
                 "release": request.release_id,
@@ -906,7 +906,7 @@ class FakeLandingAdapter:
     def disposition_query(self, query: DispositionQuery) -> DispositionQueryPage:
         return DispositionQueryPage(items=(), snapshot_token="snapshot-0", next_cursor=None, bytes_returned="0", more=False)
 
-    def verify_open(self, input: ExternalReceiptInput, visibility: DeliveryVisibilityIdentity) -> BronzeEvidence:
+    def verify_open(self, input: ExternalReceiptInput, visibility: DeliveryVisibilityIdentity) -> LandingEvidence:
         payload = input.receipt.payload
         receipt = RawReceipt(
             schema="ergasterion.raw-receipt/v1", claim_digest=payload.delivery_claim_digest,
@@ -915,7 +915,7 @@ class FakeLandingAdapter:
             manifest=RawManifestObject(content_id=f"sha256:{payload.manifest_digest}", algorithm="sha256", byte_length="0"),
             raw_receipt_digest=payload.raw_digest,
         )
-        return BronzeEvidence(
+        return LandingEvidence(
             raw_receipt=receipt, candidate_ref=payload.candidate_ref, candidate_digest=payload.candidate_digest,
             frame_index_ref=payload.frame_index_ref, frame_index_digest=payload.frame_index_digest, visibility=visibility,
         )
@@ -1019,7 +1019,7 @@ class FakeProjectionPublisher:
         revision = max((int(i.projection_revision) for i in batch.intents), default=self.cursor_revision)
         self.cursor_revision = revision
         identity = batch.intents[0].logical_identity if batch.intents else self.logical_identity
-        return ProjectionCursor(logical_identity=identity, projection_target="bronze",
+        return ProjectionCursor(logical_identity=identity, projection_target="landing",
                                  projection_revision=str(revision), projection_intent_digest=None)
 
 
@@ -1213,7 +1213,7 @@ def build_capabilities(
 
 
 def build_runtime_binding(
-    contract: BronzeProductContract, capabilities: dict[str, AdapterCapabilities], execution_plan_digest: Digest,
+    contract: LandingProductContract, capabilities: dict[str, AdapterCapabilities], execution_plan_digest: Digest,
     implementation_version: str = "1.0.0", max_parallel_attempts: int = 2,
     validation_memory_bytes: str = "67108864", scratch_reservation_bytes: str = "33554432",
     process_memory_bytes: str = "268435456",
@@ -1224,14 +1224,14 @@ def build_runtime_binding(
 
     relation_names = tuple(ProjectionRelations.model_fields)
     relations = ProjectionRelations(
-        schema_ref="bronze",
-        **{name: f"bronze.{name}" for name in relation_names if name not in ("database_ref", "schema_ref")},
+        schema_ref="landing",
+        **{name: f"landing.{name}" for name in relation_names if name not in ("database_ref", "schema_ref")},
     )
     return RuntimeBinding(
         schema="ergasterion.runtime-binding/v1", binding_id="reference-local", binding_version="1.0.0",
         environment="local", logical_identity=contract.logical_identity,
         contract_digest=canonical_digest(contract.model_dump(mode="json", by_alias=True)),
-        execution_plan_digest=execution_plan_digest, projection_target="bronze",
+        execution_plan_digest=execution_plan_digest, projection_target="landing",
         ports=RuntimePortBindings(**{
             field_name: PortBinding(
                 adapter_id=f"reference-{field_name.replace('_', '-')}", implementation_version=implementation_version,
@@ -1258,7 +1258,7 @@ def build_runtime_binding(
 
 
 def build_readiness(
-    contract: BronzeProductContract, runtime_manifest_digest: Digest,
+    contract: LandingProductContract, runtime_manifest_digest: Digest,
     result: ReadinessResult = ReadinessResult.READY, revoked_at: str | None = None,
 ) -> InterfaceReadiness:
     """The readiness record publication checks: verified against exactly this
@@ -1268,8 +1268,8 @@ def build_readiness(
     digest = canonical_digest(contract.model_dump(mode="json", by_alias=True))
     return InterfaceReadiness(
         schema="ergasterion.interface-readiness/v1", logical_identity=contract.logical_identity,
-        projection_target="bronze", runtime_manifest_digest=runtime_manifest_digest, contract_digest=digest,
-        source_schema_digest=digest, published_schema_digest=digest, version_interface_ref="bronze.v1",
+        projection_target="landing", runtime_manifest_digest=runtime_manifest_digest, contract_digest=digest,
+        source_schema_digest=digest, published_schema_digest=digest, version_interface_ref="landing.v1",
         capability_digest=digest, classification=contract.product.classification,
         access_policy_ref=contract.product.access_policy_ref, retention_policy_ref=contract.product.retention_policy_ref,
         protection_profile="synthetic_local_only", result=result, readiness_digest=digest,
@@ -1278,20 +1278,20 @@ def build_readiness(
 
 
 def build_deployment(
-    contract: BronzeProductContract, runtime_manifest_digest: Digest, candidate_manifest_digest: Digest | None = None,
+    contract: LandingProductContract, runtime_manifest_digest: Digest, candidate_manifest_digest: Digest | None = None,
 ) -> RuntimeDeployment:
     return RuntimeDeployment(
         logical_identity=contract.logical_identity,
         contract_digest=canonical_digest(contract.model_dump(mode="json", by_alias=True)),
-        projection_target="bronze", candidate_manifest_digest=candidate_manifest_digest,
+        projection_target="landing", candidate_manifest_digest=candidate_manifest_digest,
         active_manifest_digest=runtime_manifest_digest, retired_manifest_digests=(), deployment_revision="0",
     )
 
 
 def contract_variant(
-    contract: BronzeProductContract, integration_kind: str | None = None,
+    contract: LandingProductContract, integration_kind: str | None = None,
     publication_mode: PublicationPolicy | None = None, delivery_mode: DeliveryMode | None = None,
-) -> BronzeProductContract:
+) -> LandingProductContract:
     """A copy of ``contract`` carrying the delivery-shape switches vectors and
     tests select between: managed or external integration, whether the quality
     policy admits partial publication, and the delivery mode. Everything else --
@@ -1365,7 +1365,7 @@ def record_port_calls(ports: PortSet) -> tuple[PortSet, dict[str, list[str]]]:
 
 
 def exercise_all_operations(
-    ports: PortSet, stream_state: StreamState, contract: BronzeProductContract, payload_handle: Token,
+    ports: PortSet, stream_state: StreamState, contract: LandingProductContract, payload_handle: Token,
     clock: Clock | None = None, key_id: Token = REFERENCE_KEY_ID,
 ) -> dict[str, tuple[str, ...]]:
     """Call every operation of all nine ports at least once and report, per
@@ -1403,7 +1403,7 @@ def exercise_all_operations(
             expected_state_revision=state.state_revision, expected_deployment_revision=None,
             contract=contract, migration=None, permit_pre_intent_fence=False,
         )).state
-    cursor = recorded.projection_publisher.read_cursor(identity, "bronze")
+    cursor = recorded.projection_publisher.read_cursor(identity, "landing")
     deployment_revision = "0"
     for action in ("register", "activate"):
         transition = store.deployment_lifecycle(DeploymentLifecycleRequest(
@@ -1528,13 +1528,13 @@ def exercise_all_operations(
     revision = str(int(state.required_projection_revision) + 1)
     intent_base = {
         "schema": "ergasterion.projection-intent/v1", "logical_identity": identity.model_dump(mode="json"),
-        "contract_digest": contract_digest, "projection_target": "bronze", "projection_revision": revision,
+        "contract_digest": contract_digest, "projection_target": "landing", "projection_revision": revision,
         "originating_state_revision": state.state_revision, "kind": "heartbeat",
         "payload_digest": heartbeat_digest,
     }
     intent = ProjectionIntent(
         schema="ergasterion.projection-intent/v1", logical_identity=identity, contract_digest=contract_digest,
-        projection_target="bronze", projection_revision=revision, originating_state_revision=state.state_revision,
+        projection_target="landing", projection_revision=revision, originating_state_revision=state.state_revision,
         kind=ProjectionIntentKind.HEARTBEAT, execution_plan_digest=plan_digest,
         runtime_manifest_digest=manifest_digest, payload=heartbeat, payload_digest=heartbeat_digest,
         projection_intent_digest=canonical_digest(intent_base),
@@ -1625,7 +1625,7 @@ def load_vectors(path: Path | None = None) -> tuple[dict, ...]:
 
 
 def memory_ports_factory(
-    vector: dict, contract: BronzeProductContract, payload_handle: Token,
+    vector: dict, contract: LandingProductContract, payload_handle: Token,
 ) -> tuple[PortSet, StreamState]:
     """The reference ``ports_factory``: read one vector's fault declarations and
     build the in-memory ``PortSet`` they describe. A real adapter set supplies
@@ -1642,7 +1642,7 @@ def memory_ports_factory(
 
 
 def run_adapter_conformance(
-    vector: dict, contract: BronzeProductContract, ports_factory=memory_ports_factory,
+    vector: dict, contract: LandingProductContract, ports_factory=memory_ports_factory,
 ) -> VectorOutcome:
     """Run one submission-family vector end to end through a fresh
     ``IngestionRuntime`` over the ``PortSet`` ``ports_factory`` returns, and
@@ -1664,8 +1664,8 @@ def run_adapter_conformance(
     ports, stream_state = ports_factory(vector, contract, handle)
     clock = fixed_clock()
     runtime = IngestionRuntime(ports, clock)
-    plan_digest = canonical_digest({"plan": "bronze"})
-    manifest_digest = canonical_digest({"manifest": "bronze"})
+    plan_digest = canonical_digest({"plan": "landing"})
+    manifest_digest = canonical_digest({"manifest": "landing"})
     run_id = canonical_digest({"run": vector["id"]})
 
     contract_digest = canonical_digest(contract.model_dump(mode="json", by_alias=True))
@@ -1766,7 +1766,7 @@ def run_adapter_conformance(
         return VectorOutcome(vector["id"], True, f"error outcome matched: {exc.code!r}")
 
 
-def run_all(vectors: tuple[dict, ...], contract: BronzeProductContract) -> tuple[VectorOutcome, ...]:
+def run_all(vectors: tuple[dict, ...], contract: LandingProductContract) -> tuple[VectorOutcome, ...]:
     return tuple(run_adapter_conformance(vector, contract) for vector in vectors)
 
 

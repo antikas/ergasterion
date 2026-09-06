@@ -1,4 +1,4 @@
-"""Assert-script tests for the DuckDB Bronze bundle and operational read models.
+"""Assert-script tests for the DuckDB Landing bundle and operational read models.
 
 DuckDB landing, remediation, projection and lifecycle adapters are passed to
 ``ergasterion.ingestion.conformance`` and the packaged ``adapter-v1.json``
@@ -21,8 +21,8 @@ if __package__ in (None, ""):
     import sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     DispositionStatus,
     EvidenceKind,
     Finding,
@@ -40,8 +40,8 @@ from ergasterion.ingestion.conformance import (
     load_vectors,
     run_adapter_conformance,
 )
-from ergasterion.ingestion.duckdb_bronze import (
-    BRONZE_RELATIONS,
+from ergasterion.ingestion.duckdb_landing import (
+    LANDING_RELATIONS,
     DuckDBLandingAdapter,
     DuckDBStore,
     dumps,
@@ -89,7 +89,7 @@ from ergasterion.ingestion.records import (
 from ergasterion.ingestion.runtime import PortError, canonical_digest, digest_token
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "bronze_schema_vectors.json"
+SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "landing_schema_vectors.json"
 NOW = "2026-01-01T00:00:00.000000Z"
 DIGEST_A = "a" * 64
 DIGEST_B = "b" * 64
@@ -98,12 +98,12 @@ DIGEST_D = "d" * 64
 DIGEST_E = "e" * 64
 
 
-def _sample_contract() -> BronzeProductContract:
+def _sample_contract() -> LandingProductContract:
     document = json.loads(SCHEMA_VECTORS_PATH.read_text(encoding="utf-8"))
     for vector in document["positive"]:
-        if vector["record"] == "BronzeProductContract":
-            return BronzeProductContract.model_validate(vector["payload"])
-    raise AssertionError("no BronzeProductContract positive vector found")
+        if vector["record"] == "LandingProductContract":
+            return LandingProductContract.model_validate(vector["payload"])
+    raise AssertionError("no LandingProductContract positive vector found")
 
 
 def _managed_contract():
@@ -220,7 +220,7 @@ def _materialize(landing, evidence, frames_status, *, attempt_id=DIGEST_A, visib
     )), dispositions
 
 
-def _intent(identity, kind, payload, revision: str, *, target="bronze", contract_digest=DIGEST_B):
+def _intent(identity, kind, payload, revision: str, *, target="landing", contract_digest=DIGEST_B):
     payload_digest = canonical_digest(payload.model_dump(mode="json", by_alias=True))
     base = {
         "schema": "ergasterion.projection-intent/v1", "logical_identity": identity.model_dump(mode="json"),
@@ -241,7 +241,7 @@ def _publication_payload(visibility, *, accepted_ref="accepted-1"):
         kind="delivery_publication", attempt_id=DIGEST_A, visibility=visibility, product_version="1.0.0",
         contract_digest=DIGEST_B, source_schema_digest=DIGEST_C, published_schema_digest=DIGEST_D,
         readiness_digest=DIGEST_E, delivery_claim_digest=DIGEST_A, transport_payload_digest=DIGEST_B,
-        raw_receipt_ref="raw-ref", raw_receipt_digest=DIGEST_C, bronze_partition_ref=accepted_ref,
+        raw_receipt_ref="raw-ref", raw_receipt_digest=DIGEST_C, landing_partition_ref=accepted_ref,
         accepted_content_digest=DIGEST_D, ruleset_digest=DIGEST_E, validation_result_digest=DIGEST_A,
         accepted_count="1", progress_claim={"kind": "opaque_batch"}, deletion_evidence=None,
         scheduled_boundary_at=NOW, warning_deadline_at=NOW, error_deadline_at=NOW,
@@ -250,7 +250,7 @@ def _publication_payload(visibility, *, accepted_ref="accepted-1"):
 
 
 def _bundle(tmp: Path):
-    store = DuckDBStore(Path(tmp) / "bronze.duckdb")
+    store = DuckDBStore(Path(tmp) / "landing.duckdb")
     landing = DuckDBLandingAdapter(store)
     remediation = DuckDBRemediationRepository(store)
     publisher = DuckDBProjectionPublisher(store)
@@ -299,7 +299,7 @@ def test_adapter_conformance_vectors_pass_against_duckdb() -> None:
 def test_exercise_all_operations_with_duckdb_ports() -> None:
     contract = _managed_contract()
     with tempfile.TemporaryDirectory() as tmp:
-        store = DuckDBStore(Path(tmp) / "bronze.duckdb")
+        store = DuckDBStore(Path(tmp) / "landing.duckdb")
         ports, state = build_memory_ports(
             contract.logical_identity, content_by_handle={"exercise": [{"key": "a", "accept": True}]},
         )
@@ -424,11 +424,11 @@ def test_replay_conflict_gap_revision_atomic_projection_and_unpublished_exclusio
             materialized, _dispositions = _materialize(landing, evidence, ("accepted",), visibility=visibility)
             payload = _publication_payload(visibility, accepted_ref=materialized.accepted_ref)
             intent = _intent(identity, ProjectionIntentKind.DELIVERY_PUBLICATION, payload, "1")
-            assert publisher.ledger_rows(identity, "bronze") == ()
+            assert publisher.ledger_rows(identity, "landing") == ()
             confirmation = publisher.apply_gap_ordered(intent)
             assert confirmation.projection_revision == "1"
             assert publisher.apply_gap_ordered(intent).projection_intent_digest == intent.projection_intent_digest
-            published = publisher.published_visibility_set(identity, "bronze")
+            published = publisher.published_visibility_set(identity, "landing")
             assert (visibility.epoch, visibility.kind, visibility.id) in published
             _expect_error(
                 "projection_gap",
@@ -443,7 +443,7 @@ def test_replay_conflict_gap_revision_atomic_projection_and_unpublished_exclusio
                 lambda: publisher.apply_gap_ordered(stale),
                 "a stale current revision with different bytes must conflict",
             )
-            assert len(publisher.ledger_rows(identity, "bronze")) == 1
+            assert len(publisher.ledger_rows(identity, "landing")) == 1
             other_vis = DeliveryVisibilityIdentity(epoch="0", kind="delivery", id=digest_token(DIGEST_B, "delivery"))
             unpublished = store.fetchall(
                 """SELECT _ergasterion_visibility_id FROM accepted_rows
@@ -456,7 +456,7 @@ def test_replay_conflict_gap_revision_atomic_projection_and_unpublished_exclusio
             )
             other_payload = _publication_payload(other_vis, accepted_ref="not-published")
             # unpublished tuples stay out of the ledger until a successful apply
-            assert (other_vis.epoch, other_vis.kind, other_vis.id) not in publisher.published_visibility_set(identity, "bronze")
+            assert (other_vis.epoch, other_vis.kind, other_vis.id) not in publisher.published_visibility_set(identity, "landing")
             _ = other_payload
         finally:
             store.close()
@@ -478,22 +478,22 @@ def test_visibility_ancestry_and_versioned_interfaces_coexist_across_reset() -> 
                 ),
                 version_interface=VersionInterface(
                     logical_identity=identity, product_version="1.1.0", contract_digest=DIGEST_C,
-                    root_visibility_epoch="0", relation_ref="bronze.v1_1", active=True,
+                    root_visibility_epoch="0", relation_ref="landing.v1_1", active=True,
                 ),
                 ancestry=(
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="1", ancestor_epoch="1",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="1", ancestor_epoch="0",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                 ),
                 readiness_digest=DIGEST_D, prior_committed_at=NOW,
             )
             publisher.apply_gap_ordered(_intent(identity, ProjectionIntentKind.MIGRATION, carry, "1", contract_digest=DIGEST_C))
-            carry_alias = publisher.active_alias(identity, "bronze")
+            carry_alias = publisher.active_alias(identity, "landing")
             reset = MigrationProjectionPayload(
                 kind="migration",
                 migration=Migration(
@@ -503,31 +503,31 @@ def test_visibility_ancestry_and_versioned_interfaces_coexist_across_reset() -> 
                 ),
                 version_interface=VersionInterface(
                     logical_identity=identity, product_version="2.0.0", contract_digest=DIGEST_D,
-                    root_visibility_epoch="2", relation_ref="bronze.v2", active=True,
+                    root_visibility_epoch="2", relation_ref="landing.v2", active=True,
                 ),
                 ancestry=(
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="2", ancestor_epoch="2",
-                        projection_target="bronze", projection_revision="2",
+                        projection_target="landing", projection_revision="2",
                     ),
                 ),
                 readiness_digest=DIGEST_A, prior_committed_at=NOW,
             )
             publisher.apply_gap_ordered(_intent(identity, ProjectionIntentKind.MIGRATION, reset, "2", contract_digest=DIGEST_D))
-            versions = publisher.version_interfaces(identity, "bronze")
+            versions = publisher.version_interfaces(identity, "landing")
             assert len(versions) == 2
             refs = {item.relation_ref for item in versions}
-            assert "bronze.v1_1" in refs and "bronze.v2" in refs
+            assert "landing.v1_1" in refs and "landing.v2" in refs
             assert sum(1 for item in versions if item.active) == 1
             by_ref = {item.relation_ref: item.active for item in versions}
-            assert by_ref["bronze.v1_1"] is False
-            assert by_ref["bronze.v2"] is True
+            assert by_ref["landing.v1_1"] is False
+            assert by_ref["landing.v2"] is True
             for row in store.fetchall("SELECT active, json FROM version_registry"):
                 parsed = json.loads(row["json"])
                 assert bool(row["active"]) is bool(parsed["active"])
-            assert publisher.active_alias(identity, "bronze") == "bronze.v2"
+            assert publisher.active_alias(identity, "landing") == "landing.v2"
             assert carry_alias in refs
-            ancestry = publisher.ancestry_rows(identity, "bronze")
+            ancestry = publisher.ancestry_rows(identity, "landing")
             assert any(row.descendant_epoch == "1" and row.ancestor_epoch == "0" for row in ancestry)
             assert any(row.descendant_epoch == "2" and row.ancestor_epoch == "2" for row in ancestry)
         finally:
@@ -550,16 +550,16 @@ def test_reset_retires_prior_version_interface_json_active() -> None:
                 ),
                 version_interface=VersionInterface(
                     logical_identity=identity, product_version="1.1.0", contract_digest=DIGEST_C,
-                    root_visibility_epoch="0", relation_ref="bronze.v1_1", active=True,
+                    root_visibility_epoch="0", relation_ref="landing.v1_1", active=True,
                 ),
                 ancestry=(
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="1", ancestor_epoch="1",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="1", ancestor_epoch="0",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                 ),
                 readiness_digest=DIGEST_D, prior_committed_at=NOW,
@@ -574,20 +574,20 @@ def test_reset_retires_prior_version_interface_json_active() -> None:
                 ),
                 version_interface=VersionInterface(
                     logical_identity=identity, product_version="2.0.0", contract_digest=DIGEST_D,
-                    root_visibility_epoch="2", relation_ref="bronze.v2", active=True,
+                    root_visibility_epoch="2", relation_ref="landing.v2", active=True,
                 ),
                 ancestry=(
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="2", ancestor_epoch="2",
-                        projection_target="bronze", projection_revision="2",
+                        projection_target="landing", projection_revision="2",
                     ),
                 ),
                 readiness_digest=DIGEST_A, prior_committed_at=NOW,
             )
             publisher.apply_gap_ordered(_intent(identity, ProjectionIntentKind.MIGRATION, reset, "2", contract_digest=DIGEST_D))
-            versions = publisher.version_interfaces(identity, "bronze")
-            assert [item.relation_ref for item in versions if item.active] == ["bronze.v2"]
-            assert [item.relation_ref for item in versions if not item.active] == ["bronze.v1_1"]
+            versions = publisher.version_interfaces(identity, "landing")
+            assert [item.relation_ref for item in versions if item.active] == ["landing.v2"]
+            assert [item.relation_ref for item in versions if not item.active] == ["landing.v1_1"]
             rows = store.fetchall(
                 "SELECT active, json FROM version_registry WHERE identity_key = ?",
                 [dumps(identity)],
@@ -674,16 +674,16 @@ def test_release_ancestry_lookup_scopes_evaluation_identity() -> None:
                 ),
                 version_interface=VersionInterface(
                     logical_identity=foreign, product_version="1.1.0", contract_digest=DIGEST_C,
-                    root_visibility_epoch="99", relation_ref="bronze.v1_1", active=True,
+                    root_visibility_epoch="99", relation_ref="landing.v1_1", active=True,
                 ),
                 ancestry=(
                     VisibilityAncestryRow(
                         logical_identity=foreign, descendant_epoch="2", ancestor_epoch="2",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                     VisibilityAncestryRow(
                         logical_identity=foreign, descendant_epoch="2", ancestor_epoch="99",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                 ),
                 readiness_digest=DIGEST_D, prior_committed_at=NOW,
@@ -730,16 +730,16 @@ def test_release_ancestry_lookup_scopes_evaluation_identity() -> None:
                 ),
                 version_interface=VersionInterface(
                     logical_identity=identity, product_version="1.1.0", contract_digest=DIGEST_C,
-                    root_visibility_epoch="99", relation_ref="bronze.v1_1", active=True,
+                    root_visibility_epoch="99", relation_ref="landing.v1_1", active=True,
                 ),
                 ancestry=(
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="2", ancestor_epoch="2",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                     VisibilityAncestryRow(
                         logical_identity=identity, descendant_epoch="2", ancestor_epoch="99",
-                        projection_target="bronze", projection_revision="1",
+                        projection_target="landing", projection_revision="1",
                     ),
                 ),
                 readiness_digest=DIGEST_D, prior_committed_at=NOW,
@@ -756,7 +756,7 @@ def test_release_ancestry_lookup_scopes_evaluation_identity() -> None:
 def test_orphan_recovery_and_restart_against_same_file() -> None:
     contract = _managed_contract()
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "bronze.duckdb"
+        path = Path(tmp) / "landing.duckdb"
         store = DuckDBStore(path)
         landing = DuckDBLandingAdapter(store)
         try:
@@ -795,7 +795,7 @@ def test_snapshot_barrier_pointer_ordering_is_atomic() -> None:
             publisher.apply_gap_ordered(_intent(identity, ProjectionIntentKind.DELIVERY_PUBLICATION, _publication_payload(first), "1"))
             status = json.loads(store.fetchone("SELECT json FROM stream_status")["json"])
             pointer = status["latest_snapshot_visibility"]["id"]
-            ledger = publisher.published_visibility_set(identity, "bronze")
+            ledger = publisher.published_visibility_set(identity, "landing")
             assert pointer == first.id
             assert (first.epoch, first.kind, first.id) in ledger
             publisher.apply_gap_ordered(_intent(identity, ProjectionIntentKind.DELIVERY_PUBLICATION, _publication_payload(second), "2"))
@@ -803,12 +803,12 @@ def test_snapshot_barrier_pointer_ordering_is_atomic() -> None:
             assert status["latest_snapshot_visibility"]["id"] == second.id
             history = store.fetchall("SELECT visibility_id FROM snapshot_history")
             assert any(row["visibility_id"] == first.id for row in history)
-            assert len(publisher.ledger_rows(identity, "bronze")) == 2
+            assert len(publisher.ledger_rows(identity, "landing")) == 2
         finally:
             store.close()
 
 
-def test_projection_corruption_rebuilds_while_bronze_partitions_remain() -> None:
+def test_projection_corruption_rebuilds_while_landing_partitions_remain() -> None:
     contract = _managed_contract()
     identity = contract.logical_identity
     with tempfile.TemporaryDirectory() as tmp:
@@ -818,14 +818,14 @@ def test_projection_corruption_rebuilds_while_bronze_partitions_remain() -> None
             materialized, _dispositions = _materialize(landing, evidence, ("accepted",), visibility=visibility)
             intent = _intent(identity, ProjectionIntentKind.DELIVERY_PUBLICATION, _publication_payload(visibility, accepted_ref=materialized.accepted_ref), "1")
             confirmation = publisher.apply_gap_ordered(intent)
-            bronze_before = store.fetchone("SELECT COUNT(*) AS n FROM candidate_frames")["n"]
+            landing_before = store.fetchone("SELECT COUNT(*) AS n FROM candidate_frames")["n"]
             publisher.drop_projection_relations()
-            assert store.fetchone("SELECT COUNT(*) AS n FROM candidate_frames")["n"] == bronze_before
+            assert store.fetchone("SELECT COUNT(*) AS n FROM candidate_frames")["n"] == landing_before
             rebuilt = publisher.rebuild_read_models(ProjectionReplayBatch(
                 intents=(intent,), confirmations=(confirmation,), max_items=16, max_bytes="1000000", bytes_supplied="0",
             ))
             assert rebuilt.projection_revision == "1"
-            assert (visibility.epoch, visibility.kind, visibility.id) in publisher.published_visibility_set(identity, "bronze")
+            assert (visibility.epoch, visibility.kind, visibility.id) in publisher.published_visibility_set(identity, "landing")
             store.execute("UPDATE quarantine_projection SET json = '{not-json}'")
             store.rebuild_quarantine_projection()
             restored = store.fetchone("SELECT json FROM quarantine_projection")
@@ -835,22 +835,22 @@ def test_projection_corruption_rebuilds_while_bronze_partitions_remain() -> None
             store.close()
 
 
-def test_bronze_partition_or_file_loss_requires_restore_without_reprocessing_claim() -> None:
+def test_landing_partition_or_file_loss_requires_restore_without_reprocessing_claim() -> None:
     contract = _managed_contract()
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "bronze.duckdb"
+        path = Path(tmp) / "landing.duckdb"
         store = DuckDBStore(path)
         landing = DuckDBLandingAdapter(store)
         evidence = None
         try:
             evidence, _visibility, _receipt = _prepare(landing, contract, [{"key": "a", "accept": True}])
-            store.drop_relations(BRONZE_RELATIONS)
+            store.drop_relations(LANDING_RELATIONS)
             _expect_error(
-                "bronze_store_restore_required",
+                "landing_store_restore_required",
                 lambda: landing.read_candidate(CandidateReadQuery(
                     evidence=evidence, after_sequence=None, max_frames=8, max_bytes="1000000",
                 )),
-                "bronze partition loss must demand restore",
+                "landing partition loss must demand restore",
             )
         finally:
             store.close()
@@ -859,7 +859,7 @@ def test_bronze_partition_or_file_loss_requires_restore_without_reprocessing_cla
         landing2 = DuckDBLandingAdapter(restored)
         try:
             _expect_error(
-                "bronze_store_restore_required",
+                "landing_store_restore_required",
                 lambda: landing2.read_candidate(CandidateReadQuery(
                     evidence=evidence, after_sequence=None, max_frames=8, max_bytes="1000000",
                 )),
@@ -874,7 +874,7 @@ def test_many_decisions_query_paging_snapshot_restart_and_digest_stability() -> 
     contract = _managed_contract()
     identity = contract.logical_identity
     with tempfile.TemporaryDirectory() as tmp:
-        path = Path(tmp) / "bronze.duckdb"
+        path = Path(tmp) / "landing.duckdb"
         store = DuckDBStore(path)
         landing = DuckDBLandingAdapter(store)
         remediation = DuckDBRemediationRepository(store)
@@ -1008,7 +1008,7 @@ def test_lifecycle_events_and_raw_bytes_stay_out_of_projections() -> None:
                 authorization_context_ref="operator", after_cursor=None, max_items=16, max_bytes="1000000",
             ))
             assert page.items and page.items[0].kind == "attempt"
-            projection_json = dumps(publisher.ledger_rows(identity, "bronze")[0])
+            projection_json = dumps(publisher.ledger_rows(identity, "landing")[0])
             assert "secret-row" not in projection_json
             stream_json = store.fetchone("SELECT json FROM stream_status")["json"]
             assert payload_bytes.decode("utf-8") not in stream_json
@@ -1030,8 +1030,8 @@ TESTS = [
     test_release_ancestry_lookup_scopes_evaluation_identity,
     test_orphan_recovery_and_restart_against_same_file,
     test_snapshot_barrier_pointer_ordering_is_atomic,
-    test_projection_corruption_rebuilds_while_bronze_partitions_remain,
-    test_bronze_partition_or_file_loss_requires_restore_without_reprocessing_claim,
+    test_projection_corruption_rebuilds_while_landing_partitions_remain,
+    test_landing_partition_or_file_loss_requires_restore_without_reprocessing_claim,
     test_many_decisions_query_paging_snapshot_restart_and_digest_stability,
     test_lifecycle_events_and_raw_bytes_stay_out_of_projections,
 ]

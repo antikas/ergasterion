@@ -1,0 +1,92 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "The department each fund sat in, one row per version, effective from a date.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "reference",
+    "major": 1,
+    "name": "fund_department",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "reference.investment_classification_history@1"
+  ],
+  "quality": [
+    {
+      "description": "entity_external_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "effective_from must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "classification_entity_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "fund_external_identity",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_type_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "fund_department_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "department_effective_from",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "classification_record_source",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_load_datetime",
+          "required": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "classification_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "fund_department_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_value_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "classification_type_name",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "reference.fund_department"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

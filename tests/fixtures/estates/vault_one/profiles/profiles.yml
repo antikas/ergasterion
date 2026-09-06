@@ -1,0 +1,7 @@
+vault_one:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/vault_one.duckdb
+      threads: 1

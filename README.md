@@ -1,314 +1,181 @@
 # Ergasterion
 
-*Ergasterion (ἐργαστήριον) is the ancient Greek word for a workshop, a place where
-things are made. This workshop makes data pipelines.*
+A warehouse that reads many source systems usually grows one pipeline per feed. Each
+pipeline receives data, maps fields, keeps history, applies rules, builds tables, and
+publishes tests and contracts. A source change then requires a code change in its own
+pipeline.
 
-## Why Ergasterion exists
+Ergasterion moves those decisions into version-controlled YAML files. People declare what
+the data means, how sources combine, which value wins a disagreement, and what each output
+promises. The engine turns those declarations into the pipeline and its evidence. The same
+inputs create the same files byte for byte.
 
-Data pipeline code is usually maintained by hand. Every new feed requires another set
-of ingestion steps, staging models, field mappings, history logic, tests, contracts, and
-operational controls. When a source adds or removes a field, changes a type, or renames a
-column, developers must trace that change through the pipeline and edit the affected
-code. This work repeats for every feed and every change.
+The name *Ergasterion* comes from the ancient Greek word for a workshop. This workshop
+makes governed data products.
 
-Ergasterion automates the production and maintenance of that code. You describe the
-target warehouse schema and each source in version-controlled metadata and configuration,
-then map the source fields into the warehouse model. Ergasterion reads those definitions
-and generates the pipeline code. It also generates its tests, contracts, product
-metadata, domain maps, and the interfaces needed to receive source data. Onboarding a
-feed or accepting a field change becomes a configuration change followed by regeneration.
+The complete architecture is the
+[Ergasterion architecture guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/README.md).
+This page is the short introduction and command reference.
 
-The mapping matters because source systems rarely match the schema or delivery behaviour
-of the warehouse they feed. A customer may arrive from a storefront, a marketplace, and
-a CRM under different keys and column names. The configuration records how each source
-field maps into the warehouse model. The generator applies those rules consistently to
-casting, validation, history, and identity resolution.
+## What you can watch it do
 
-DuckDB is the executable reference implementation. Ergasterion also generates the same estate
-for Snowflake and BigQuery. The repository checks those projects with dbt, the tool that builds
-them on the target database. The checks cover parsing, dialect rules, deterministic output,
-structure limits, and adapter conformance.
+The account-free demonstration runs the shipped system from declarations to queryable
+results:
 
-The [Ergasterion architecture guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/README.md)
-follows a source from its declaration through the generated warehouse layers and
-verification.
+1. It regenerates all 124 product declarations and reports any drift from the committed
+   output.
+2. It builds both worked domains on DuckDB, including every generated test and all 40
+   known-answer assertions.
+3. It prints three e-commerce results that a person can check: segment revenue, customer
+   resolution, and order reconciliation.
 
-## The warehouse model comes first
+Run `bash demo/run_offline_demo.sh` from a prepared source checkout. A separate
+[landing demonstration](https://github.com/antikas/ergasterion/blob/master/demo/landing-ingestion/README.md)
+shows a clean publication, a rejected snapshot, and a verified backup and restore.
 
-An Ergasterion project is called an **estate**. Its warehouse model describes the data
-the warehouse needs. Source declarations describe how each feed supplies it.
+## Follow one customer through the workshop
 
-The domain file, `domains/<name>.yml`, defines the warehouse model. It names the entities,
-their keys and attributes, the relationships between them, and the history the warehouse
-must retain. It also defines the rules for matching records from different sources,
-choosing which source wins for each attribute, publishing contracts, and describing the
-domain as a graph.
+The first worked domain has three invented source systems. CARTIVO is a storefront,
+MERCARO is a marketplace, and RELATIO is a customer relationship system. All three hold a
+record for Ava Thompson. Their keys and contact details differ.
 
-Each source has its own `declarations/<source>.yml`. A declaration describes the source
-tables and columns, normalises their names and types, and maps them into the entities in
-the domain file. The `projection` block handles the source shape. The `vault_entities`
-block states where those fields belong in the warehouse model. These mappings remain
-reviewable configuration and drive the generation of pipeline code.
+**Receive the records.** Each delivered batch crosses a controlled boundary. The engine
+preserves the payload, parses each row under a written contract, and records the result of
+every quality rule. Accepted rows publish. Rejected rows keep a locator to the raw bytes
+that failed. This first product is a landing product.
 
-Ergasterion generates the integrated, historical source-facing layers. The clean
-canonical tables, dimensions, facts, and measure definitions remain explicit estate
-design. Reference models and AI assistance can be used to develop them.
+**Put them on one schema.** One product per source casts native columns into the names and
+types the domain uses. People can read and change every mapping in the declaration before
+the engine generates any code. This is a derivation product.
 
-### Start from schemas you already have
+**Decide which records describe Ava.** The declaration says that a shared loyalty ID is
+the first identity key. A normalised email is the fallback. A record with neither signal
+stays separate. The same declaration says RELATIO supplies contact details when sources
+disagree. This is an integration product.
 
-A new estate does not require every definition to be typed from a blank file.
+**Join Ava to orders and products.** Other declarations combine order lines from both
+sales channels, then join them to the agreed customer, order, and product records. Coverage
+checks catch a source that disappears from a union. These are consolidation products.
 
-- A warehouse model can start from existing DDL or an industry or enterprise reference
-  model, including the Open Investment Model (OpenIM). It can also be designed directly
-  or drafted with AI assistance. When DDL is imported, primary and foreign keys provide
-  the starting entity and relationship structure.
-- Source-system DDL can seed a source declaration with its columns, types, keys, and
-  mechanical tests.
-- A supplier's Open Data Contract Standard (ODCS) contract can seed the same source
-  declaration from a vendor-neutral schema.
-- The generated files remain normal editable YAML. Semantic mappings, matching rules,
-  survivorship decisions, and contract details can be developed directly or with AI
-  assistance.
+**Publish for a consumer.** The final declarations create stable customer interfaces, an
+order summary, and a dimensional model with measures and metrics. Each output has a data
+contract. Products can read one another only through those contracts. These are serving
+products.
 
-DDL and contracts describe structure. They do not fully define what a field means in
-your warehouse or which source should win when values disagree. Ergasterion keeps those
-decisions explicit in the configuration so they can be reviewed and changed.
+## What you declare
 
-## What the estate produces
+An Ergasterion project is an **estate**: one governed set of inputs, products, rules,
+execution targets, and outputs. People author and review three kinds of document.
 
-One set of domain definitions and source mappings produces the working pipeline and its
-public interfaces:
+**Product declarations**, one per thing the estate publishes, at
+`declarations/products/<domain>/<name>.yml`. Each file states what the product reads, the
+ordered operations it applies, and the form it publishes. The engine calls these inputs
+contracts, the ordered operations a composition of patterns, and the published form a
+shape. The file contains no platform or tool setting.
 
-- **Warehouse models** under `models/`: typed staging, identity resolution, append-only
-  history, golden records, and the project-defined served layer above them.
-- **Estate evolution controls**: additive payload changes are absorbed online, and a
-  declared re-baseline brings new columns into change detection when the estate is ready.
-- **Watermark increments**: a source table can read a bounded window of new and late
-  records while keeping append-only satellite history.
-- **Data contracts** under `contracts/`: one ODCS contract per served table and one Open
-  Data Product Standard (ODPS, Bitol) descriptor per domain.
-- **Domain maps** under `graphs/`: entities and their relationships in relational, graph,
-  and machine-readable forms.
-- **Ingestion interfaces and evidence**: preserved source payloads, typed source-native
-  records, publication state, quarantine records, lineage, and operational status
-  (Bronze).
+**Source declarations**, one per source system, at `declarations/<source>.yml`. These
+describe the tables and columns a feed delivers and how a delivered batch reaches the
+estate. Two importers seed them from what a supplier already has: an Open Data Contract
+Standard contract, or the source system's own `CREATE TABLE` statements.
 
-Identical declarations generate identical bytes. If a generated file is changed directly,
-the next check reports the difference and stops.
+**Estate configuration**, in `estate.yml` and `declarations/targets/`. This is where an
+organisation records its own policy. It names the labels used to group products, the
+allowed operation sequences, and the components that generate each operation. It also
+sets the inline SQL policy and each database target's structural limits.
 
-## Following one customer through the factory
+The people who own the estate set these rules. They can read and change every declaration
+and policy file. The engine applies what those files say and rejects incomplete or
+inconsistent combinations.
 
-The e-commerce example contains three invented systems. CARTIVO is a storefront, MERCARO
-is a marketplace, and RELATIO is a CRM. All three contain records for Ava Thompson, with
-different source keys and slightly different contact details.
+## What the engine produces
 
-**Received.** A delivered file first passes through a controlled ingestion layer
-(Bronze). Ergasterion preserves the payload and its manifest exactly as received, parses
-the rows under a written contract, and records which rows passed or failed each quality
-rule. Accepted rows become available to the generated pipeline. Rejected rows carry a
-locator back to the raw bytes that failed.
+One run of `ergasterion emit-products` writes, deterministically, from those declarations:
 
-**Mapped.** Each source declaration casts its native columns into stable types and names.
-It then maps the customer fields into the customer entity defined by the warehouse model.
-The mapping is visible in the declaration and can be reviewed before generation.
+- **Models** under `models/products/`: a buildable dbt project, one tree per product, with
+  schema documentation and every generated test.
+- **Contracts** under `contracts/products/`: one Open Data Contract Standard document per
+  published relation and one Open Data Product Standard descriptor per product. Both are
+  checked against their published schemas.
+- **The estate graph** under `graphs/products/`: products, their contract edges, and
+  field-level lineage, in JSON and CSV.
+- **Runtime manifests** under `manifests/products/`: what each product publishes and what
+  it needs at run time.
 
-**Recognised.** The domain rules identify the three records as one customer. They use a
-shared loyalty identifier first and a normalised email where no loyalty identifier is
-available. A record with neither signal remains separate.
-
-**Remembered and chosen.** Every source's version of Ava's details is retained with its
-source and date. The estate defines the survivorship rules. In this example the CRM
-supplies contact details, while the storefront supplies marketing preferences and consent.
-The chosen record retains the source used for every field.
-
-**Served and published.** The integrated record feeds the customer tables designed for
-analysis. Ergasterion generates contracts for those tables and includes the customer
-entity in the domain map. The same definitions also generate the history and tests that
-support the served result.
-
-The [demo guide](https://github.com/antikas/ergasterion/blob/master/demo/README.md) runs
-the customer and investment warehouse results on invented data. The separate Bronze
-demonstration covers the received-file boundary.
+Identical declarations produce identical bytes. Every generated file carries a marker
+saying so, and `--check` regenerates without writing and reports any difference.
 
 ## Changing a running estate
 
-Most source changes need one ordinary workflow. Add the field to the source declaration,
-map it for every source that feeds the entity, run `ergasterion emit`, review the change,
-and deploy it. Existing history keeps its identity. New rows can carry the new field.
+Most source changes are one ordinary workflow. Add the field to the source declaration,
+map it in every product that feeds the entity, run `ergasterion emit-products`, review the
+generated change, and deploy it. Existing history keeps its identity.
 
-Ergasterion can do this safely because it commits an **evolution ledger** beside each
-domain. The ledger records the fields stored for each entity and the exact fields and
-expressions used to detect a changed record. It is durable state for a running estate.
-Keep it in version control. If it is lost, restore it from the deployed revision rather
-than generating a new ledger over an existing warehouse.
+Products with the `data_vault` shape need one controlled maintenance operation. A
+satellite stores fingerprints built from an exact set of columns, called its hashdiff
+basis. That basis is frozen after the first stored version.
 
-Changing what an existing field means is different from adding one. A removal, rename,
-type change, changed projection expression, or hashdiff-basis change stops generation
-with an **estate migration requirement**. The error names the affected entity and field
-and points to the re-baseline operation. A re-baseline is planned maintenance: it
-recomputes stored change fingerprints, then keeps the warehouse gate closed while the
-regenerated models are deployed. The operator releases that gate explicitly.
+Changing it takes three steps. `ergasterion vault-rebaseline --stage` records the pending
+basis and stops emission while two definitions exist. `--promote` adopts the pending basis
+and advances its version. The next build stores new fingerprints under that version and
+keeps old fingerprints under their original version. `--abort` abandons a staged change.
 
-Large source tables can opt into bounded staging. Each table declares its natural key,
-lookback, and the effective date that advances when the source redelivers a record. Its
-processing floor is derived only from satellites fed by that table, so another table on
-the same source cannot move it. Records at or above the floor enter staging; replay
-suppression prevents an already stored version from being appended again.
+The [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md) has the
+operator steps.
 
-These controls are optional. A normal estate can start with full source processing and
-add a staging increment only when volume makes it worthwhile. The [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md)
-contains the operator steps and recovery rules.
+## DuckDB and BigQuery
 
-## DuckDB, Snowflake, and BigQuery
+The estate's declarations are independent of the database that executes them. Two adapters
+are declared, and the difference between them is the difference between what is executed
+and what is checked.
 
-The estate's warehouse model and source mappings are independent of the database that
-executes them. DuckDB is the executable reference implementation. Snowflake and BigQuery
-are implemented generation targets whose generated projects pass dbt parsing, dialect
-linting, deterministic generation, structure checks, and adapter conformance tests. The
-adapter architecture separates platform work at two boundaries.
+**DuckDB executes.** It is the reference adapter: the whole estate is generated for it,
+built on it, and asserted on it with known-answer business assertions, locally, with no
+cloud account.
 
-The engine resolves a platform-neutral execution plan, then produces the models and tests
-that dbt runs. Adapter-dispatched macros isolate SQL differences, while target
-declarations record database limits and materialisation constraints. The same estate can
-be generated for each supported dbt adapter.
+**BigQuery is a generation target with offline evidence.** Its project is generated,
+parsed by dbt, dialect-checked, budget-checked and regenerated deterministically. It is
+not executed here, and no query has run in a BigQuery project from this repository.
+Running it needs a runtime binding, and the account owner supplies the credentials,
+permissions and cost controls in the target environment.
 
-The Bronze runtime reaches external systems through nine ports: source connection, raw
-storage, scratch storage, operational state, landing, remediation, projection, lifecycle
-evidence, and key services. A runtime binding selects one adapter for each port. The
-local reference binding uses files, SQLite, and DuckDB.
+Another platform is another adapter package: dialect rules, physical type mapping,
+identifier rules and structural budgets. The declarations, the products, the contracts and
+the business rules do not change for it.
 
-Another platform supplies adapters for its own scheduler, state database, storage,
-warehouse, and policy services. The packaged conformance runner checks those
-implementations against the runtime contract, including failure recovery and
-backup/restore behaviour. Adding a target is a defined adapter task. The domain schema,
-source mappings, product contracts, and business rules remain unchanged.
+## What keeps it honest
 
-## Receiving delivered data with Bronze
+Checks decide whether the output can be trusted. The repository runs them without a
+warehouse account:
 
-The generated warehouse pipeline starts from rows that have already crossed a controlled
-delivery boundary. Bronze provides that boundary.
+- Re-emission reproduces every generated file byte for byte.
+- Dialect checks reject SQL incompatible with a declared adapter.
+- dbt parses the project for DuckDB and for BigQuery.
+- Structural checks enforce each adapter's declared budgets and interface boundaries.
+- Both worked domains build in DuckDB, with generated tests and 40 known-answer assertions
+  passing.
+- Contract, descriptor, graph, scaffold, package and wheel checks cover the published and
+  packaged surfaces.
+- Adapter conformance covers the landing runtime's state, storage, publication, failure
+  recovery, protection and verified backup and restore behaviour.
 
-Each source table has one Bronze Product Contract. It describes the native schema,
-delivery mode, parsing rules, quality rules, publication policy, and retention
-requirements. Delivery modes cover change events, append-only rows, and complete
-snapshots.
+`bash scripts/validate_offline.sh` runs that set. `bash
+scripts/validate_engine_architecture.sh` runs the thirteen architecture acceptance checks
+and prints one line per check.
 
-The runtime applies the contract to every delivery. It preserves the received bytes,
-checks the manifest, parses the payload, evaluates each rule, and publishes or
-quarantines the result. The contract decides the policy in advance. Operators inspect
-evidence and handle exceptions through the command surface.
+## What this is not
 
-The [Bronze architecture guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/bronze-ingestion.md)
-explains the runtime, its five product interfaces, and its adapter ports. The
-[Bronze demonstration](https://github.com/antikas/ergasterion/tree/master/demo/bronze-ingestion)
-runs locally without an external account or network call.
-
-## Contracts, products, and domain maps
-
-ODCS contracts describe the tables Ergasterion publishes. Each contract records the
-schema, identifiers, quality checks, ownership details, and field-level source
-attribution. Ergasterion generates the contracts from the same model and tests that
-produce the tables.
-
-ODPS describes the data product that a group of tables forms. Ergasterion generates one
-descriptor per domain. Its output ports reference the exact ODCS contracts for served
-tables, while its management ports identify the operational and documentation surfaces.
-
-A source may also arrive with an ODCS contract. The `import-odcs` command copies its
-mechanical schema facts into a new source declaration. The remaining semantic mappings
-stay visible in editable configuration and can be developed directly or with AI
-assistance.
-
-### Optional reference-model alignment
-
-An estate can record how its warehouse model aligns with an external industry or
-enterprise reference model. This alignment is optional and remains separate from the
-source-to-warehouse mappings used by every estate.
-
-The included investment example records attribute lineage to the Open Investment Model
-(OpenIM), and the current validation hook checks that model for spelling and schema
-drift. The Banking Industry Architecture Network (BIAN), the Financial Industry Business
-Ontology (FIBO), and internal canonical models occupy the same architectural role when a
-validator is available for their format. A reference model can provide the starting
-structure and vocabulary. The estate configuration records the warehouse model actually
-used and its source mappings.
-
-### Typed domain map
-
-The domain file also carries a relationship vocabulary. It names each relationship,
-states its direction and cardinality, and binds it to the entities and keys that realise
-it. Ergasterion emits both a type-level graph and a binding to the generated relational
-estate.
-
-The [domain-map guide](https://github.com/antikas/ergasterion/blob/master/docs/architecture/ontology-map-lane.md)
-describes the complete relation format and generated graph family.
-
-## Verification
-
-The repository checks the generated estate at several boundaries:
-
-- Re-emission must reproduce every generated file byte for byte.
-- Dialect checks reject SQL that is incompatible with a selected warehouse target.
-- dbt parses the project for DuckDB, Snowflake, and BigQuery.
-- The complete invented estate builds in DuckDB with known-answer business assertions.
-- Structural checks enforce each target's declared limits.
-- Contract, product, graph, scaffold, package, and wheel checks run from the public tree.
-- Adapter conformance covers state, storage, publication, failure recovery, protection,
-  and verified backup/restore behaviour.
-
-The local validator needs no warehouse account. It checks generated Snowflake and BigQuery
-projects through dbt parsing, dialect rules, deterministic output, structure limits, and
-adapter conformance.
-
-## Worked domains
-
-The repository contains two complete domains built by the same engine.
-
-### E-commerce customer view
-
-The e-commerce estate models customers, products, orders, and changing customer
-segments. Three invented feeds exercise source mapping, customer identity resolution,
-attribute survivorship, dated classification, order reconciliation, and revenue
-measures. It uses no external reference model.
-
-The worked result checks that one customer resolves across three sources, order lines
-reconcile to their header, and historical orders retain the customer segment that was
-true when each order was placed.
-
-### Investment data
-
-The investment estate models funds, management firms, portfolio companies, legal
-vehicles, cash flows, valuations, and deal opportunities. Its sources use different
-identifiers and names for the same funds. The example retains every source version,
-resolves identities, applies survivorship rules, and preserves changes in classifications
-and management firms over time.
-
-The deal path records dated stages and review decisions. Uncertain record matches wait for
-review, and an accepted deal can link to the fund it became. The optional OpenIM
-alignment belongs to this domain alone.
-
-The [source-description guide](https://github.com/antikas/ergasterion/blob/master/DEMO.md)
-walks through both domains and the importers.
-
-## Boundaries
-
-- Generation covers the source-facing integration layers. The clean canonical tables,
-  dimensions, facts, and measures remain explicit estate design. Reference models and AI
-  assistance can be used during their development.
-- DDL and ODCS importers create editable starting files. They leave semantic mappings,
-  identity rules, survivorship, and relationship vocabulary as explicit configuration
-  for further development and review.
-- Record matching is deliberately cautious. An uncertain pair waits for review and
-  remains unmerged until the review decision is recorded.
-- External reference models are optional. Each format needs validation support before
-  Ergasterion can check an alignment against it.
-- DuckDB is the executable reference implementation. Snowflake and BigQuery are implemented
-  generation targets checked through dbt parsing, dialect linting, deterministic generation,
-  structure checks, and adapter conformance tests. Another platform needs implementations of
-  the relevant translator and runtime adapter contracts.
-- Adapter conformance establishes compatibility with Ergasterion's interfaces.
-  Production security, resilience, access control, and operation remain responsibilities
-  of the target environment.
+- Ergasterion does not decide business meaning. People record mappings, ownership,
+  tolerances, resolution keys, and source priority in declarations they can review and
+  change.
+- The importers create editable starting files from DDL or an existing contract. A person
+  must fill every business decision that the input did not contain.
+- Identity resolution applies declared keys and thresholds. Records without an approved
+  identity signal stay separate.
+- DuckDB executes. BigQuery is a generation target with offline evidence. Every additional
+  platform needs an adapter package and evidence from that platform.
+- Adapter conformance proves compatibility with Ergasterion's interfaces. The target
+  environment still owns production security, resilience, access control, cost control,
+  and operations.
 
 ## For engineers
 
@@ -331,15 +198,13 @@ The base package is enough for generation and import commands:
 pip install ergasterion-factory
 ```
 
-Install all three warehouse adapters when one environment needs every target:
+Install both declared adapters when one environment needs each of them:
 
 ```bash
 pip install "ergasterion-factory[all]"
 ```
 
-The `duckdb` extra remains an alias of `local-ingestion` for existing installations.
-Snowflake and BigQuery can also be installed separately through the `snowflake` and
-`bigquery` extras.
+The `bigquery` extra installs the deployment adapter's pinned dbt runtime on its own.
 
 For an editable source checkout:
 
@@ -363,93 +228,80 @@ ergasterion init my-estate
 cd my-estate
 ```
 
-The new estate contains empty domain and source directories, a dbt project, target
-profiles, the shared macros, a local runtime binding, and a generated
-`GETTING-STARTED.md`.
+The new estate contains the dbt project, portable profiles, adapter macros, and an
+`estate.yml` with its labels and translator table. It also contains per-adapter structural
+budgets, a local runtime binding, one reference product declaration, empty declaration,
+seed and test directories, and a generated `GETTING-STARTED.md`.
 
-### Seed the model and sources
+### Seed a source declaration
 
-Seed a warehouse model from DDL that carries primary and foreign keys:
-
-```bash
-ergasterion import-ddl warehouse-model.sql --mode model --domain retail
-```
-
-Seed a source declaration from its own DDL:
+Seed one from the source system's own DDL:
 
 ```bash
-ergasterion import-ddl crm-source.sql --mode feed --source crm
+ergasterion import-ddl crm-source.sql --source crm
 ```
 
-Seed a source declaration from an ODCS v3 contract:
+Seed one from a supplier's ODCS v3 contract:
 
 ```bash
 ergasterion import-odcs supplier-contract.yml --source supplier
 ```
 
-Resolve the marked semantic decisions in the generated YAML before generation. AI
-assistance can be used for this work. The importers refuse to overwrite an existing
-destination unless `--force` is supplied.
+Resolve the marked decisions in the generated YAML before declaring products against it.
+The importers refuse to overwrite an existing destination unless `--force` is supplied,
+and `--force` replaces the file without merging.
 
 ### Generate and build
 
 ```bash
-ergasterion emit --estate-root .
+ergasterion emit-products
 dbt deps --profiles-dir profiles
 dbt build --profiles-dir profiles --target duckdb
 ```
 
-Select `snowflake` or `bigquery` when generating or preparing an estate for either target.
-Their account settings and credentials stay in the target environment.
+`ergasterion emit-products --check` regenerates without writing and reports any drift
+between the committed project and the declarations.
 
-### Run the worked repository
+### Run the worked estate
 
-The account-free demonstration builds both worked domains in DuckDB and writes its
+The account-free demonstration regenerates the estate, builds it in DuckDB and writes its
 results beneath `demo/offline-runs/`:
 
 ```bash
 bash demo/run_offline_demo.sh
 ```
 
-The Bronze demonstration exercises received batches, quarantine, publication, recovery,
-and backup/restore through the local reference adapters:
+The landing demonstration exercises received batches, quarantine, publication, recovery,
+and backup and restore through the local reference adapters:
 
 ```bash
-bash demo/bronze-ingestion/run_bronze_demo.sh
+bash demo/landing-ingestion/run_landing_demo.sh
 ```
-
-The Snowflake demonstration script provisions and runs the worked estate in an account
-selected by its owner. Its help can be inspected without opening an account connection:
-
-```bash
-bash demo/run_clean_demo.sh --help
-```
-
-The [runbook](https://github.com/antikas/ergasterion/blob/master/RUNBOOK.md) contains the
-complete setup and operating sequence.
 
 ### Command reference
 
 | Command | Purpose |
 |---|---|
 | `ergasterion init <dir>` | Create an empty estate. |
-| `ergasterion import-ddl` | Seed a domain model or source declaration from DDL. |
+| `ergasterion import-ddl` | Seed a source declaration from DDL. |
 | `ergasterion import-odcs` | Seed a source declaration from an ODCS contract. |
-| `ergasterion emit` | Generate the source-facing warehouse pipeline. |
-| `ergasterion evolve` | Run estate evolution operations, including re-baseline and audit-window. |
-| `ergasterion contracts` | Generate ODCS contracts for served tables. |
-| `ergasterion odps` | Generate one ODPS descriptor per domain. |
-| `ergasterion graph` | Generate the typed domain map. |
-| `ergasterion lint` | Check SQL portability for a warehouse target. |
-| `ergasterion structure` | Check the estate against target limits. |
-| `ergasterion plan` | Resolve and inspect the Bronze execution plan. |
-| `ergasterion contract` | Register and activate a Bronze Product Contract. |
+| `ergasterion validate` | Validate declarations without generating anything. |
+| `ergasterion validate-canonical` | Check a canonical product's declared reference mappings against a reference model checkout. |
+| `ergasterion emit-products` | Generate the estate from its product declarations. |
+| `ergasterion contracts` | Check or regenerate the ODCS contracts. |
+| `ergasterion odps` | Check or regenerate the ODPS product descriptors. |
+| `ergasterion product-graph` | Check or regenerate the estate product graph. |
+| `ergasterion vault-rebaseline` | Stage, promote or abandon a `data_vault` satellite re-baseline. |
+| `ergasterion lint` | Check SQL portability for a declared adapter. |
+| `ergasterion structure` | Check the estate against each adapter's declared budgets. |
+| `ergasterion plan` | Compile and inspect a landing product's execution plan. |
+| `ergasterion contract` | Register and activate a Landing Product Contract. |
 | `ergasterion deployment` | Register and activate a runtime binding. |
-| `ergasterion ingest` | Submit a delivery or process work that is due. |
+| `ergasterion ingest` | Submit a delivery, or process work that is due. |
 | `ergasterion reconcile` | Resume or rebuild a blocked projection. |
-| `ergasterion status` | Read the operational state of a Bronze product. |
+| `ergasterion status` | Read a landing product's operational state. |
 | `ergasterion inspect` | Read delivery and lineage evidence. |
-| `ergasterion quarantine` | List, revalidate, or release quarantined records. |
+| `ergasterion quarantine` | List, revalidate or release quarantined records. |
 | `ergasterion local-backup` | Back up or restore the local reference runtime. |
 
 Run `ergasterion <command> --help` for the exact options.
@@ -458,17 +310,19 @@ Run `ergasterion <command> --help` for the exact options.
 
 | Path | Contents |
 |---|---|
-| `ergasterion/` | Engine, framework, translators, runtime ports, templates, and validators. |
-| `domains/` | Warehouse domain models and relationship vocabularies. |
-| `declarations/` | Source schemas, projections, mappings, and delivery contracts. |
-| `models/` | Generated source-facing layers and project-defined served models. |
-| `macros/` | Shared dbt and cross-database adapter logic. |
+| `ergasterion/` | The engine: framework, profiles, pattern schemas, shapes, translators, adapters, the landing runtime, templates and gates. |
+| `declarations/products/` | Product declarations, one per published product. |
+| `declarations/` | Source schemas and landing configuration. |
+| `declarations/targets/` | Per-adapter structural budgets and interface boundaries. |
+| `estate.yml`, `rules/` | Estate policy and the estate's named-rule signatures. |
+| `models/` | Generated dbt models, one tree per product. |
 | `contracts/` | Generated ODCS contracts and ODPS descriptors. |
-| `graphs/` | Generated domain-map artefacts. |
-| `demo/` | Account-free demonstrations and adapter scripts. |
-| `streamlit/` | Review screen for uncertain matches and deal decisions. |
-| `tests/` | Known-answer, structural, contract, package, and conformance checks. |
+| `graphs/`, `manifests/` | Generated estate graph and per-product runtime manifests. |
+| `macros/` | Named-rule implementations and the adapter-dispatch layer. |
+| `demo/` | Account-free demonstrations. |
+| `tests/` | Known-answer assertions, engine tests, and the architecture acceptance run. |
+| `docs/` | The architecture guide, the landing deep dive, and the specifications. |
 
-All repository examples use invented data. The e-commerce names, people, addresses, and
+All repository examples use invented data. The e-commerce names, people, addresses and
 brands are synthetic, and its email addresses use the reserved `example.com` domain.
 Ergasterion is released under the MIT licence.

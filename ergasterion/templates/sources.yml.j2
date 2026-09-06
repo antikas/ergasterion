@@ -38,8 +38,8 @@ seeds:
             data_tests: {{ column.data_tests }}
 {%- endfor %}
 {%- endif %}
-{%- if table.bronze_source_yaml %}
-{{ table.bronze_source_yaml }}
+{%- if table.landing_source_yaml %}
+{{ table.landing_source_yaml }}
 {%- endif %}
 {%- endfor %}
 {%- endfor %}
@@ -66,12 +66,6 @@ models:
   - name: {{ table.staging_model }}
 {%- if table.description %}
     description: {{ table.description | tojson }}
-{%- endif %}
-{%- if table.staging_increment_unique_key | default([]) %}
-    data_tests:
-      - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns: {{ table.staging_increment_unique_key }}
 {%- endif %}
 {%- if table.model_tests %}
     columns:

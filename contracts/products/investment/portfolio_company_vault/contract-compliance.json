@@ -1,0 +1,12 @@
+{
+  "description": "Every column of each listed relation matches this contract's published schema (name, type and required-ness); the product is not published if it violates its own contract.",
+  "product": "investment.portfolio_company_vault",
+  "relations": [
+    "investment.portfolio_company_vault__hub_portfolio_company",
+    "investment.portfolio_company_vault__sat_portfolio_company_detail",
+    "investment.portfolio_company_vault__sat_portfolio_company_observed",
+    "investment.portfolio_company_vault__golden_portfolio_company",
+    "investment.portfolio_company_vault__pit_portfolio_company"
+  ],
+  "schema": "ergasterion.contract-compliance/v1"
+}

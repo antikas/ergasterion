@@ -1,0 +1,35 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.chrono_fund_extract",
+  "relations": {
+    "auxiliary": [
+      "investment.chrono_fund_extract__checked",
+      "investment.chrono_fund_extract__current",
+      "investment.chrono_fund_extract__quarantine",
+      "investment.chrono_fund_extract__sla"
+    ],
+    "published": [
+      "investment.chrono_fund_extract"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

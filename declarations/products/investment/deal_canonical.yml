@@ -1,0 +1,102 @@
+# A canonical interface over one curated product: one relation per
+# canonical entity, each a view at the declared interface boundary
+# (declarations/targets/interfaces.yml, architecture section 6).
+#
+# Every column it publishes is named as the reference model names it. The
+# reference block on each entity below records which published column
+# carries which reference-model attribute, and validate-canonical proves it
+# against the reference model checkout; this product is where the estate
+# publishes that vocabulary, so a consumer reads the agreed name rather than
+# one source system's spelling.
+#
+# The reference model identifies these entities by their external
+# identifiers, so the identifier the estate resolved the entity on is
+# published under that name.
+product:
+  name: deal_canonical
+  domain: investment
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: investment-domain
+
+sources:
+  - contract: investment.deal_vault@1
+    relation: golden_deal
+    expect:
+      fields:
+        - deal_hk
+        - deal_business_key
+        - deal_name
+        - deal_strategy
+        - deal_structure
+        - deal_channel
+        - deal_originating_team
+        - deal_target_company_external_id
+        - deal_converted_record_type
+        - deal_converted_fund_external_id
+        - deal_external_identity
+        - load_datetime
+        - record_source
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: deal_business_key, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: deal_business_key, to: deal_id, type: string}
+      - {from: deal_name, to: deal_name, type: string}
+      - {from: deal_target_company_external_id, to: target_entity_id, type: string}
+      - {from: deal_strategy, to: strategy, type: string}
+      - {from: deal_originating_team, to: originating_team, type: string}
+      - {from: deal_channel, to: source_channel, type: string}
+      - {from: deal_structure, to: structure, type: string}
+      - {from: deal_converted_record_type, to: converted_record_type, type: string}
+      - {from: deal_converted_fund_external_id, to: converted_record_id, type: string}
+      - {from: deal_hk, drop: true}
+      - {from: deal_external_identity, drop: true}
+      - {from: load_datetime, drop: true}
+      - {from: record_source, drop: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The canonical deal interface, published under the reference model's own attribute names."
+    ownership: investment-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: canonical
+  shape_config:
+    entities:
+      - name: deal
+        key: [deal_id]
+        columns: [deal_id, deal_name, target_entity_id, strategy, originating_team, source_channel, structure, converted_record_type, converted_record_id]
+        description: "The deal as the reference model states one."
+        # Which entity of the reference model this one is the estate's
+        # reading of, and which of its attributes each column carries.
+        # PM-15 Deal.
+        reference:
+          entity: PM-15
+          attributes:
+            deal_id: deal_id
+            deal_name: deal_name
+            target_entity_id: target_entity_id
+            strategy: strategy
+            originating_team: originating_team
+            source_channel: source_channel
+            structure: structure
+            converted_record_type: converted_record_type
+            converted_record_id: converted_record_id
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

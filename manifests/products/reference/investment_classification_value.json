@@ -1,0 +1,35 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "reference.investment_classification_value",
+  "relations": {
+    "auxiliary": [
+      "reference.investment_classification_value__checked",
+      "reference.investment_classification_value__current",
+      "reference.investment_classification_value__quarantine",
+      "reference.investment_classification_value__sla"
+    ],
+    "published": [
+      "reference.investment_classification_value"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "exponential",
+    "max_retries": 3
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[1]:data_validation",
+      "steps[6]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

@@ -1,0 +1,81 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Fund cash flows as VANTORA states them, on the schema the four cash flow feeds share.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "vantora_cash_flow",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.vantora_cash_flow_extract@1"
+  ],
+  "quality": [
+    {
+      "description": "cash_flow_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "cash_flow_date must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "source_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_fund_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_cash_flow_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "source_cash_flow_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_direction",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_amount_usd",
+          "required": false,
+          "type": {
+            "name": "decimal",
+            "precision": 18,
+            "scale": 2
+          }
+        },
+        {
+          "name": "source_currency",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "cash_flow_source_system",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.vantora_cash_flow"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

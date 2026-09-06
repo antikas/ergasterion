@@ -1,0 +1,4 @@
+rec_id,src_sys,cust_ref,nm,pcode,eml,status,pts,eff_dt
+R-01,crm,C-001,Ada Byron,SW1A 1AA,ada@example.com,active,10,2026-01-05
+R-02,billing,C-001,Ada Byron,SW1A 1AA,,active,10,2026-01-05
+R-03,crm,C-002,Grace Hopper,EC1A 1BB,grace@example.com,active,20,2026-02-10

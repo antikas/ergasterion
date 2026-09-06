@@ -1,0 +1,47 @@
+# RED CASE: out_of_order_occurrence. Based on valid/landing.yml, with
+# data_contracts moved before data_validation -- the landing profile's
+# ordering puts validation before the publication phase (data_contracts,
+# lineage_capture, ...). Must fail closed naming the product, the occurrence
+# and the rule "out_of_order_occurrence".
+product:
+  name: crm_customer_landing
+  domain: ecommerce
+  version: "1.0"
+  layer: bronze
+  owner: ecommerce-domain
+
+# A landing product has no upstream contract to consume: its external system
+# is referenced by batch_ingestion's own configuration (scope/cadence/extract
+# mode only -- a connection reference is a runtime binding, outside every
+# product declaration, owner ruling R1), never by a top-level source.
+sources: []
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_contracts
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Landing copy of the CRM customer extract, unchanged."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/lineage_capture.schema.json",
+  "title": "lineage_capture step configuration (architecture section 4)",
+  "description": "Nothing: lineage is derived from the declaration itself, never configured.",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "lineage_capture" }
+  }
+}

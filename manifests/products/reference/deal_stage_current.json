@@ -1,0 +1,40 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "reference.deal_stage_current",
+  "relations": {
+    "auxiliary": [
+      "reference.deal_stage_current__checked",
+      "reference.deal_stage_current__current",
+      "reference.deal_stage_current__filter_log",
+      "reference.deal_stage_current__prefilter",
+      "reference.deal_stage_current__quarantine",
+      "reference.deal_stage_current__sla"
+    ],
+    "published": [
+      "reference.deal_stage_current"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:calculated_fields",
+      "steps[3]:data_filtering",
+      "steps[8]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

@@ -19,8 +19,9 @@ if __package__ in (None, ""):
     import sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion.framework.bronze_contract import BronzeProductContract
-from ergasterion.framework.models import Layer, compute_plan_digest
+from ergasterion.estate import EstateContext
+from ergasterion.framework.landing_contract import LandingProductContract
+from ergasterion.framework.models import compute_plan_digest
 from ergasterion.framework.resolver import resolve
 from ergasterion.ingestion.local_backup import (
     CANONICAL_FILE_MODE,
@@ -38,12 +39,57 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 VECTORS = REPO_ROOT / "tests" / "fixtures" / "source_delivery_vectors.json"
 
 
-def _contract() -> BronzeProductContract:
+def _contract() -> LandingProductContract:
     document = json.loads(VECTORS.read_text(encoding="utf-8"))
     for entry in document["positive"]:
         if entry["case"] == "append_only_managed_opaque_batch":
-            return BronzeProductContract.model_validate(entry["payload"])
+            return LandingProductContract.model_validate(entry["payload"])
     raise AssertionError("append_only_managed_opaque_batch missing")
+
+
+def _write_estate(root: Path, contract: LandingProductContract) -> EstateContext:
+    """This test's own estate, written beside the temp project it backs up.
+
+    Compiling a runtime manifest routes the landing plan through the estate's own
+    translator table, so the test declares the estate it routes against rather than
+    borrowing whichever estate the working directory happens to sit in. The label
+    the route keys on is handed in directly by the caller below: this suite proves
+    backup and restore, and authoring a whole landing declaration to carry one label
+    would prove nothing it does not already.
+    """
+
+    import yaml
+
+    (root / "estate.yml").write_text(
+        yaml.safe_dump(
+            {
+                "estate": {
+                    "namespace": contract.logical_identity.estate_namespace,
+                    "labels": {"bronze": {"profiles": ["landing"]}},
+                    "adapters": {
+                        "duckdb": {"kind": "reference"},
+                        "bigquery": {"kind": "deployment"},
+                    },
+                    "final_target": "bigquery",
+                    "translators": {
+                        "bronze": {
+                            "batch_ingestion": "local-ingestion",
+                            "data_validation": "local-ingestion",
+                            "data_publish": "local-ingestion",
+                            "checkpoint_retries": "local-ingestion",
+                            "data_contracts": "publication",
+                            "schema_publish": "publication",
+                            "metadata_capture": "publication",
+                            "lineage_capture": "publication",
+                        }
+                    },
+                }
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    return EstateContext.resolve(estate_root=root)
 
 
 def _sha(path: Path) -> str:
@@ -78,7 +124,7 @@ def test_paths_overlap_detects_ancestor() -> None:
 
 def test_create_refuses_destination_inside_runtime_root() -> None:
     contract = _contract()
-    plan = resolve(Layer.BRONZE)
+    plan = resolve("landing")
     binding = build_local_binding(
         contract, execution_plan_digest=compute_plan_digest(plan),
         contract_digest=canonical_digest(contract.model_dump(mode="json", by_alias=True)),
@@ -94,7 +140,9 @@ def test_create_refuses_destination_inside_runtime_root() -> None:
                 create_backup(
                     session, layout, layout.runtime_root / "backup-dest",
                     runtime_binding_digest=runtime_binding_digest(binding),
-                    runtime_manifest_digest=compile_runtime_manifest(plan, binding).runtime_manifest_digest,
+                    runtime_manifest_digest=compile_runtime_manifest(
+                        plan, binding, estate=_write_estate(project, contract), label="bronze",
+                    ).runtime_manifest_digest,
                 )
             except BackupError as exc:
                 assert exc.code == "invalid_config"
@@ -106,7 +154,7 @@ def test_create_refuses_destination_inside_runtime_root() -> None:
 
 def test_quiescent_backup_restores_mode_size_digest() -> None:
     contract = _contract()
-    plan = resolve(Layer.BRONZE)
+    plan = resolve("landing")
     binding = build_local_binding(
         contract, execution_plan_digest=compute_plan_digest(plan),
         contract_digest=canonical_digest(contract.model_dump(mode="json", by_alias=True)),
@@ -125,7 +173,9 @@ def test_quiescent_backup_restores_mode_size_digest() -> None:
         cursor = session.runtime.ports.projection_publisher.read_cursor(
             contract.logical_identity, binding.projection_target,
         )
-        manifest = compile_runtime_manifest(plan, binding)
+        manifest = compile_runtime_manifest(
+            plan, binding, estate=_write_estate(project, contract), label="bronze",
+        )
         created = create_backup(
             session, layout, dest,
             runtime_binding_digest=runtime_binding_digest(binding),

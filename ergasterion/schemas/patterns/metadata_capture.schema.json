@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/metadata_capture.schema.json",
+  "title": "metadata_capture step configuration (architecture section 4)",
+  "description": "Descriptions, ownership, classification -- the declaration is the documentation.",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "metadata_capture" },
+    "description": { "type": "string", "minLength": 1 },
+    "ownership": { "type": "string", "minLength": 1 },
+    "classification": { "type": "string", "minLength": 1 }
+  }
+}

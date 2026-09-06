@@ -1,0 +1,63 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "table",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.fund_vault",
+  "relations": {
+    "auxiliary": [
+      "investment.fund_vault__base",
+      "investment.fund_vault__checked_post",
+      "investment.fund_vault__checked_pre",
+      "investment.fund_vault__golden_fund_current",
+      "investment.fund_vault__golden_fund_sla",
+      "investment.fund_vault__hub_fund_current",
+      "investment.fund_vault__hub_fund_sla",
+      "investment.fund_vault__hub_gp_current",
+      "investment.fund_vault__hub_gp_sla",
+      "investment.fund_vault__link_fund_gp_current",
+      "investment.fund_vault__link_fund_gp_sla",
+      "investment.fund_vault__pending_keys",
+      "investment.fund_vault__pit_fund_current",
+      "investment.fund_vault__pit_fund_sla",
+      "investment.fund_vault__quarantine_post",
+      "investment.fund_vault__quarantine_pre",
+      "investment.fund_vault__resolution",
+      "investment.fund_vault__sat_fund_detail_current",
+      "investment.fund_vault__sat_fund_detail_sla",
+      "investment.fund_vault__sat_fund_observed_current",
+      "investment.fund_vault__sat_fund_observed_sla"
+    ],
+    "published": [
+      "investment.fund_vault__hub_fund",
+      "investment.fund_vault__hub_gp",
+      "investment.fund_vault__link_fund_gp",
+      "investment.fund_vault__sat_fund_detail",
+      "investment.fund_vault__sat_fund_observed",
+      "investment.fund_vault__golden_fund",
+      "investment.fund_vault__pit_fund"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": true,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[3]:data_enrichment",
+      "steps[4]:data_curation",
+      "steps[5]:data_validation",
+      "steps[10]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

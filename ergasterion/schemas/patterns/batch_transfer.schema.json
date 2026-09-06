@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/batch_transfer.schema.json",
+  "title": "batch_transfer step configuration (architecture section 4)",
+  "description": "No configuration beyond the pattern name: the upstream contract reference is the product's own top-level 'sources' list, never repeated here.",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "batch_transfer" }
+  }
+}

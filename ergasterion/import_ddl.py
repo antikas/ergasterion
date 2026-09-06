@@ -1,25 +1,13 @@
-"""Create a declaration or domain skeleton from ``CREATE TABLE`` statements.
+"""Create a source declaration skeleton from ``CREATE TABLE`` statements.
 
-The command has two modes and reads only the structure present in the DDL:
+Feed DDL -- one source system's raw CREATE TABLE set -- becomes a
+declarations/<source>.yml stub: the schema projection plus a seed_tests/model_tests
+skeleton, with column types and declared constraints transcribed into projections
+and data tests.
 
-  --mode feed   feed DDL (one source system's raw CREATE TABLE set) -> a
-                declarations/<source>.yml stub: schema projection + seed_tests/model_tests
-                skeleton, with column types and declared constraints transcribed into
-                projections and data tests.
-
-  --mode model  model DDL (a domain's CREATE TABLE set, PRIMARY KEY + FOREIGN KEY
-                declared) -> a domains/<name>.yml stub: entity_configs / hub_configs /
-                link_configs derived from the PK/FK structure by this repo's own
-                golden_<entity>_key / <entity>_hk / <entity>_hashdiff naming convention
-                (a structural convention, not a business-semantics guess). What no DDL carries -- survivorship rules
-                (bv_configs), entity-resolution match-key strategy (res_configs), the
-                map-lane relation vocabulary (relations), the ODCS contract-adapter
-                boundary (odcs) -- is NEVER guessed: left as an explicit TODO comment
-                block for a human to fill in by hand.
-
-The generated file is an editable starting point. Ergasterion never guesses survivorship,
-entity-resolution, relation vocabulary, or contract-boundary semantics. Review and complete
-those fields before emitting a pipeline. Re-running with ``--force`` overwrites the file.
+The generated file is an editable starting point. Ergasterion never guesses the
+facts no DDL carries. Review and complete those fields before declaring a product.
+Re-running with ``--force`` overwrites the file.
 
 The parser covers a well-formed, unadorned ANSI-ish CREATE TABLE surface: column defs
 (name, type incl. one level of parenthesised type args, NOT NULL, PRIMARY KEY, UNIQUE,
@@ -27,21 +15,20 @@ inline REFERENCES), plus table-level PRIMARY KEY(...)/FOREIGN KEY(...) REFERENCE
 ...(...)/UNIQUE(...) constraints, with -- line comments and /* */ block comments
 stripped first. DEFAULT expressions and CHECK constraints are read past, never modeled
 onto the seed (they carry no shape this format needs). Multiple CREATE TABLE statements
-in one input are all seeded together (one declarations/domains file per --mode run).
+in one input are all seeded together (one declarations file per run).
 
-``--mode feed`` additionally takes ``--landing {seed,source}`` (default ``seed``, the
-behaviour above, unchanged). ``--landing source`` emits a ``landing: {kind: source, ...}``
+``--landing {seed,source}`` (default ``seed``, the behaviour above) selects the
+landing discriminator. ``--landing source`` emits a ``landing: {kind: source, ...}``
 + ``delivery: {kind: draft, reason: delivery_contract_required}`` block instead: the
 physical schema alone (source_name/identifier/codec/physical_columns, physical types
-mapped onto Bronze's SimpleLogicalType/decimal/local_datetime vocabulary), with no
+mapped onto Landing's SimpleLogicalType/decimal/local_datetime vocabulary), with no
 raw_model, seed_tests, model_tests or vault_entities -- ``landing.kind: source`` forbids
 raw_model, and product/delivery-mode facts are never guessed. See
-docs/specifications/bronze-product-v1.md.
+docs/specifications/landing-product-v1.md.
 
 Usage:
-    python ergasterion/import_ddl.py <path-to.ddl.sql> --mode feed --source <name>
-    python ergasterion/import_ddl.py <path-to.ddl.sql> --mode feed --source <name> --landing source
-    python ergasterion/import_ddl.py <path-to.ddl.sql> --mode model --domain <name>
+    python ergasterion/import_ddl.py <path-to.ddl.sql> --source <name>
+    python ergasterion/import_ddl.py <path-to.ddl.sql> --source <name> --landing source
 """
 
 from __future__ import annotations
@@ -58,17 +45,17 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 
-from ergasterion import emit
+from ergasterion.translators.dbt import template_env
 from ergasterion.estate import EstateContext
 # SSOT reuse (never duplicated): the logical-type -> dpf_safe_cast expression map, the
-# source/domain-name slugifier, the Bronze physical-type mapper and the source-landing/
+# source/domain-name slugifier, the Landing physical-type mapper and the source-landing/
 # draft-delivery builders already live in import_odcs.py -- this sibling module reads them
 # rather than re-declaring the same mapping under a second name.
 from ergasterion.import_odcs import (
-    BRONZE_CODEC_CHOICES,
+    LANDING_CODEC_CHOICES,
     _cast_expression,
     _slugify,
-    _sql_type_to_bronze_field,
+    _sql_type_to_landing_field,
     build_delivery_draft,
     build_source_landing,
 )
@@ -77,7 +64,6 @@ from ergasterion.import_odcs import (
 _DEFAULT_CTX = EstateContext.default()
 REPO_ROOT = _DEFAULT_CTX.root
 DECLARATION_TEMPLATE = "declaration_seed.yml.j2"
-DOMAIN_TEMPLATE = "domain_seed.yml.j2"
 
 
 class DdlImportError(ValueError):
@@ -337,16 +323,16 @@ def _relative_path(path: Path) -> str:
 def _declaration_header(ddl_path: Path, tables: list[ParsedTable]) -> str:
     table_names = ", ".join(t.name for t in tables)
     return "\n".join([
-        f"# Seeded by ergasterion/import_ddl.py --mode feed from DDL: {_relative_path(ddl_path)}",
+        f"# Seeded by ergasterion/import_ddl.py from DDL: {_relative_path(ddl_path)}",
         f"#   tables={table_names!r}",
         "#",
-        "# This is a STARTING POINT, not regenerated output -- unlike ergasterion/emit.py's and",
+        "# This is a STARTING POINT, not regenerated output -- unlike the product route's",
         "# ergasterion/emit_contracts.py's outputs, this file is meant to be hand-edited. It",
         "# mechanically transcribes the DDL's CREATE TABLE column list (name, type -> cast",
         "# expression, PRIMARY KEY/UNIQUE/NOT NULL -> seed_tests/model_tests) into",
         "# projection stubs plus a seed_tests/model_tests skeleton. What no DDL carries --",
         "# vault_entities mapping, entity_resolution config, survivorship stance -- is left",
-        "# as an explicit TODO below and never guessed. Run ergasterion/emit.py once those",
+        "# as an explicit TODO below and never guessed. Declare the products that read it once those",
         "# TODOs are filled in.",
     ])
 
@@ -364,7 +350,7 @@ def build_declaration_tables(
     names, types -> cast expressions, NOT NULL/PRIMARY KEY/UNIQUE -> seed_tests +
     model_tests. No vault/entity-resolution/survivorship content -- see module docstring.
 
-    ``landing_kind="source"`` instead builds each table's physical schema into a Bronze
+    ``landing_kind="source"`` instead builds each table's physical schema into a Landing
     ``landing``/``delivery`` draft block (see ``ergasterion.import_odcs.build_source_landing``);
     no ``raw_model``, ``seed_tests``, ``model_tests`` or ``projection`` (``landing.kind:
     source`` forbids ``raw_model``, and the rest are production-only facts)."""
@@ -376,14 +362,14 @@ def build_declaration_tables(
             physical_columns = [
                 {
                     "name": _slugify(col.name),
-                    "logical_type": _sql_type_to_bronze_field(col.sql_type),
+                    "logical_type": _sql_type_to_landing_field(col.sql_type),
                     "nullable": col.nullable,
                 }
                 for col in table.columns
             ]
             # The dict key below becomes the declaration's `(source, table)` identity --
             # the same one a later production compile builds `LogicalIdentity.table` from
-            # (Bronze `Identifier`: lowercase only). Slugifying it now, and defaulting
+            # (Landing `Identifier`: lowercase only). Slugifying it now, and defaulting
             # `landing.identifier` to the same slug, means a draft is already conformant:
             # flipping delivery.kind to production later needs no renaming.
             slug_name = _slugify(table.name)
@@ -433,16 +419,16 @@ def build_declaration_tables(
 def _source_landing_header(ddl_path: Path, tables: list[ParsedTable]) -> str:
     table_names = ", ".join(t.name for t in tables)
     return "\n".join([
-        f"# Seeded by ergasterion/import_ddl.py --mode feed --landing source from DDL: {_relative_path(ddl_path)}",
+        f"# Seeded by ergasterion/import_ddl.py --landing source from DDL: {_relative_path(ddl_path)}",
         f"#   tables={table_names!r}",
         "#",
         "# This is a STARTING POINT, not regenerated output -- this file is meant to be",
         "# hand-edited. It mechanically transcribes the DDL's CREATE TABLE column list (name,",
-        "# type -> Bronze physical logical_type, NOT NULL -> nullable) into a Bronze landing",
+        "# type -> Landing physical logical_type, NOT NULL -> nullable) into a Landing landing",
         "# block, with delivery: {kind: draft, reason: delivery_contract_required} until",
         "# product and production semantics are supplied. What no DDL carries -- ownership,",
         "# support, access, retention, schedule, progress, quality rules -- is left as an",
-        "# explicit TODO below and never guessed. See docs/specifications/bronze-product-v1.md.",
+        "# explicit TODO below and never guessed. See docs/specifications/landing-product-v1.md.",
     ])
 
 
@@ -497,201 +483,48 @@ def seed_declaration_from_ddl(
         tables, ddl_path, resolved_source, display_name, priority,
         landing_kind=landing_kind, codec_kind=codec_kind,
     )
-    env = emit.template_env()
+    env = template_env()
     return resolved_source, env.get_template(DECLARATION_TEMPLATE).render(**context)
-
-
-# --- (b) model DDL -> domains/<name>.yml -------------------------------------------------
-
-def _domain_header(ddl_path: Path, tables: list[ParsedTable]) -> str:
-    table_names = ", ".join(t.name for t in tables)
-    return "\n".join([
-        f"# Seeded by ergasterion/import_ddl.py --mode model from DDL: {_relative_path(ddl_path)}",
-        f"#   tables={table_names!r}",
-        "#",
-        "# This is a STARTING POINT, not regenerated output -- unlike ergasterion/emit.py's",
-        "# outputs, this file is meant to be hand-edited. It mechanically derives",
-        "# entity_configs / hub_configs / link_configs from the DDL's PRIMARY KEY / FOREIGN",
-        "# KEY structure, following this repo's own golden_<entity>_key / <entity>_hk /",
-        "# <entity>_hashdiff naming convention (uniform across every domains/*.yml here --",
-        "# structural, not a business-semantics guess; confirm each against the domain's",
-        "# actual natural-key columns before relying on it). What no DDL carries --",
-        "# survivorship rules (bv_configs), entity-resolution match-key strategy",
-        "# (res_configs), the map-lane relation vocabulary (relations), the ODCS",
-        "# contract-adapter boundary (odcs) -- is left as an explicit TODO below and",
-        "# never guessed. Run ergasterion/emit.py once those TODOs are filled in.",
-    ])
-
-
-def _is_pure_junction(table: ParsedTable) -> bool:
-    """A table with >=2 foreign keys whose PRIMARY KEY is exactly the union of its local
-    FK columns -- i.e. it carries no identity of its own beyond the relationships it
-    joins. Mechanical PK/FK-structure test, never a name guess."""
-    if len(table.foreign_keys) < 2:
-        return False
-    fk_local_cols: set[str] = set()
-    for fk in table.foreign_keys:
-        fk_local_cols.update(fk.columns)
-    return bool(table.primary_key) and set(table.primary_key) == fk_local_cols
-
-
-def build_domain_context(tables: list[ParsedTable], ddl_path: Path, domain_name: str) -> dict[str, Any]:
-    table_by_name = {t.name: t for t in tables}
-    entities: list[dict[str, Any]] = []
-    links: list[dict[str, Any]] = []
-
-    for table in tables:
-        if _is_pure_junction(table):
-            key_cols: set[str] = set(table.primary_key)
-            for fk in table.foreign_keys:
-                key_cols.update(fk.columns)
-            extra_cols = [c for c in table.columns if c.name not in key_cols]
-            link_name = table.name
-            fk_hk_pairs = [(fk.ref_table, f"{fk.ref_table}_hk") for fk in table.foreign_keys]
-            links.append({
-                "name": link_name,
-                "path": f"models/raw_vault/links/link_{link_name}.sql",
-                "src_pk": f"{link_name}_lhk",
-                "src_fk": [hk for _, hk in fk_hk_pairs],
-            })
-            if extra_cols:
-                # Link-with-payload (satellite-on-link): register the junction table as
-                # its OWN entity too, exactly domains/ecommerce.yml's order_line pattern.
-                hashed_columns = [
-                    {
-                        "key": hk, "value": f"golden_{ref_table}_key", "is_composite": False,
-                        "external": ref_table not in table_by_name,
-                    }
-                    for ref_table, hk in fk_hk_pairs
-                ]
-                hashed_columns.append({
-                    "key": f"{link_name}_lhk",
-                    "value_list": [f"golden_{ref_table}_key" for ref_table, _ in fk_hk_pairs],
-                    "is_composite": True, "external": False,
-                })
-                entities.append({
-                    "name": link_name,
-                    "src_pk": f"{link_name}_lhk",
-                    "hashdiff": f"{link_name}_hashdiff",
-                    "payload": [c.name for c in table.columns],
-                    "hashed_columns": hashed_columns,
-                    "links": [link_name],
-                    "is_link_entity": True,
-                })
-            continue
-
-        # Plain entity (hub-worthy): every FOREIGN KEY becomes a link to the referenced
-        # entity, mirroring domains/ecommerce.yml's order -> customer (order_customer) shape.
-        src_pk = f"{table.name}_hk"
-        hashed_columns = [
-            {"key": src_pk, "value": f"golden_{table.name}_key", "is_composite": False, "external": False},
-        ]
-        entity_links: list[str] = []
-        for fk in table.foreign_keys:
-            ref_table = fk.ref_table
-            ref_hk = f"{ref_table}_hk"
-            hashed_columns.append({
-                "key": ref_hk, "value": f"golden_{ref_table}_key", "is_composite": False,
-                "external": ref_table not in table_by_name,
-            })
-            link_name = f"{table.name}_{ref_table}"
-            lhk_name = f"{link_name}_lhk"
-            hashed_columns.append({
-                "key": lhk_name,
-                "value_list": [f"golden_{table.name}_key", f"golden_{ref_table}_key"],
-                "is_composite": True, "external": False,
-            })
-            entity_links.append(link_name)
-            links.append({
-                "name": link_name,
-                "path": f"models/raw_vault/links/link_{link_name}.sql",
-                "src_pk": lhk_name,
-                "src_fk": [src_pk, ref_hk],
-            })
-        entities.append({
-            "name": table.name,
-            "src_pk": src_pk,
-            "hashdiff": f"{table.name}_hashdiff",
-            "payload": [c.name for c in table.columns],
-            "hashed_columns": hashed_columns,
-            "links": entity_links,
-            "is_link_entity": False,
-        })
-
-    hub_entities = [e for e in entities if not e["is_link_entity"]]
-    return {
-        "header": _domain_header(ddl_path, tables),
-        "entities": entities,
-        "hub_entities": hub_entities,
-        "links": links,
-    }
-
-
-def seed_domain_from_ddl(ddl_path: Path, domain_name: str | None = None) -> tuple[str, str]:
-    """Pure function: parse the DDL, build the seeded domain YAML text. Returns
-    (domain_name, yaml_text). Does not touch disk -- callers (main(), tests) decide
-    where the text lands."""
-    tables = parse_ddl(ddl_path.read_text(encoding="utf-8"))
-    resolved_domain = domain_name or _slugify(ddl_path.stem)
-    context = build_domain_context(tables, ddl_path, resolved_domain)
-    env = emit.template_env()
-    return resolved_domain, env.get_template(DOMAIN_TEMPLATE).render(**context)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("ddl", type=Path, help="Path to the CREATE TABLE DDL statement set.")
-    parser.add_argument(
-        "--mode", choices=("feed", "model"), required=True,
-        help="feed: seed declarations/<source>.yml from source-system DDL. "
-             "model: seed domains/<name>.yml from PK/FK-carrying model DDL.",
-    )
-    parser.add_argument("--source", default=None, help="[feed mode] Declaration source name. Defaults to a slug of the DDL filename.")
-    parser.add_argument("--display-name", default=None, help="[feed mode] Source display_name. Defaults to SOURCE.upper().")
+    parser.add_argument("--source", default=None, help="Declaration source name. Defaults to a slug of the DDL filename.")
+    parser.add_argument("--display-name", default=None, help="Source display_name. Defaults to SOURCE.upper().")
     parser.add_argument(
         "--priority", type=int, default=100,
-        help="[feed mode] Initial source.priority (default 100). No DDL carries survivorship "
-             "intent -- confirm this against the domain's other sources before relying on it.",
+        help="Initial source.priority (default 100). No DDL carries a priority order -- "
+             "confirm this against the estate's other sources before relying on it.",
     )
-    parser.add_argument("--domain", default=None, help="[model mode] Domain name. Defaults to a slug of the DDL filename.")
-    parser.add_argument("--out", type=Path, default=None, help="Output path. Defaults to declarations/<source>.yml or domains/<domain>.yml.")
+    parser.add_argument("--out", type=Path, default=None, help="Output path. Defaults to declarations/<source>.yml.")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing destination file.")
     parser.add_argument(
         "--landing", choices=("seed", "source"), default="seed",
-        help="[feed mode only] seed (default): the unchanged vault-style declaration seed. "
-             "source: emit a Bronze landing/delivery draft carrying the physical schema "
-             "alone -- no raw_model, seed_tests, model_tests or vault_entities; see "
-             "docs/specifications/bronze-product-v1.md.",
+        help="seed (default): a seed-backed declaration. source: emit a Landing "
+             "landing/delivery draft carrying the physical schema alone -- no raw_model, "
+             "seed_tests or model_tests; see docs/specifications/landing-product-v1.md.",
     )
     parser.add_argument(
-        "--codec", choices=BRONZE_CODEC_CHOICES, default="csv",
-        help="[feed mode, --landing source] The delivered payload codec (default csv).",
+        "--codec", choices=LANDING_CODEC_CHOICES, default="csv",
+        help="[--landing source] The delivered payload codec (default csv).",
     )
-    parser.add_argument("--estate-root", type=Path, default=None, help="Estate root whose declarations/domains receives the seed (resolved from the environment or working directory when omitted).")
+    parser.add_argument("--estate-root", type=Path, default=None, help="Estate root whose declarations/ receives the seed (resolved from the environment or working directory when omitted).")
     args = parser.parse_args()
-
-    if args.mode == "model" and args.landing != "seed":
-        print("FAIL: --landing source applies to --mode feed only (a domain carries no landing).", file=sys.stderr)
-        return 1
 
     ctx = EstateContext.resolve(estate_root=args.estate_root)
 
     try:
-        if args.mode == "feed":
-            name, text = seed_declaration_from_ddl(
-                args.ddl, args.source, args.display_name, args.priority,
-                landing_kind=args.landing, codec_kind=args.codec,
-            )
-            out_path = args.out or (ctx.declarations_dir / f"{name}.yml")
-            next_hint = (
-                "product / delivery / projection (register this (source, table) under a "
-                "domains/<domain>.yml bronze: block, then flip delivery.kind to production)"
-                if args.landing == "source" else "vault_entities / entity_resolution"
-            )
-        else:
-            name, text = seed_domain_from_ddl(args.ddl, args.domain)
-            out_path = args.out or (ctx.domains_dir / f"{name}.yml")
-            next_hint = "bv_configs / res_configs / relations / odcs"
+        name, text = seed_declaration_from_ddl(
+            args.ddl, args.source, args.display_name, args.priority,
+            landing_kind=args.landing, codec_kind=args.codec,
+        )
+        out_path = args.out or (ctx.declarations_dir / f"{name}.yml")
+        next_hint = (
+            "product / delivery / projection (fill in the table's product.domain, then "
+            "flip delivery.kind to production)"
+            if args.landing == "source" else "the products that read this source"
+        )
     except DdlImportError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
@@ -704,12 +537,12 @@ def main() -> int:
     out_path.write_text(text, encoding="utf-8")
     rel = out_path.relative_to(ctx.root).as_posix() if out_path.is_relative_to(ctx.root) else out_path
     print(f"seeded {rel}")
-    if args.mode == "feed" and args.landing == "source":
+    if args.landing == "source":
         print(
-            f"Next: fill in the {next_hint} TODOs -- see docs/specifications/bronze-product-v1.md."
+            f"Next: fill in the {next_hint} TODOs -- see docs/specifications/landing-product-v1.md."
         )
     else:
-        print(f"Next: fill in the {next_hint} TODOs, then run ergasterion/emit.py.")
+        print(f"Next: declare {next_hint} under declarations/products/.")
     return 0
 
 

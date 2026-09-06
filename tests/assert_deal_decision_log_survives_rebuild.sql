@@ -16,9 +16,8 @@
 --       seed, or snapshot that materializes to either log's relation name, this test
 --       fails at compile time. This structural guarantee keeps dbt from owning either
 --       relation's lifecycle. The two logs
---       stay `source`-declared only (models/entity_resolution/_entity_resolution.yml,
---       models/deal_approvals/_deal_approvals.yml), created and fixture-seeded solely
---       by the on-run-start hooks in dbt_project.yml.
+--       stay `source`-declared only (seeds/_decision_logs.yml), created and
+--       fixture-seeded solely by the on-run-start hooks in dbt_project.yml.
 --
 -- The test passes when it returns zero rows.
 --

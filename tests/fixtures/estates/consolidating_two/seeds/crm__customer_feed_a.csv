@@ -1,0 +1,4 @@
+customer_id,email,signed_up_on,lifetime_value,loyalty_tier
+c-1,a1@example.com,2026-01-05,100.00,gold
+c-2,a2@example.com,2026-02-10,250.50,silver
+c-3,a3@example.com,2026-03-15,75.25,bronze

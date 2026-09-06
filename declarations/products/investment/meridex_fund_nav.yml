@@ -1,0 +1,60 @@
+# The administrator's periodic fund net asset value, typed: one row per
+# fund and valuation date, with the capital called and distributed as at
+# that date. It is the relation the served fund performance is built on.
+product:
+  name: meridex_fund_nav
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.meridex_fund_nav_extract@1
+    expect:
+      fields:
+        - nav_id
+        - meridex_fund_id
+        - nav_date
+        - nav_usd
+        - called_capital_usd
+        - distributed_capital_usd
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: nav_id, not_null: true}
+      - {field: nav_date, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: nav_id, to: source_record_id, type: string}
+      - {from: meridex_fund_id, to: source_fund_id, type: string}
+      - {from: nav_date, to: source_valued_on, type: date}
+      - {from: nav_usd, to: source_nav_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: called_capital_usd, to: source_called_capital_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: distributed_capital_usd, to: source_distributed_capital_usd, type: {name: decimal, precision: 18, scale: 2}}
+  - pattern: calculated_fields
+    fields:
+      - {name: nav_source_system, type: string, expression: "'meridex'"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The net asset value of each fund at each delivered valuation date, with capital called and distributed."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

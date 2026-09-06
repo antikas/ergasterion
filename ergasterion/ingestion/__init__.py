@@ -1,4 +1,4 @@
-"""Closed Pydantic projections of the frozen Bronze portable IDL, delivery/state half:
+"""Closed Pydantic projections of the frozen Landing portable IDL, delivery/state half:
 delivery input, raw-receipt, reprocessing/remediation, migrations/state, validation/
 disposition, lifecycle/publication/projection intent and confirmation, attestation,
 backup and evidence records -- plus the deterministic runtime built on top of them:
@@ -6,7 +6,7 @@ the nine port protocols (``ports``), the ``IngestionRuntime`` state machine
 (``runtime``), and the packaged adapter-conformance seam and in-memory reference
 implementation (``conformance``).
 
-This package depends on ``ergasterion.framework`` (``bronze_contract`` for vocabulary
+This package depends on ``ergasterion.framework`` (``landing_contract`` for vocabulary
 and the contract declaration, ``runtime_binding`` for runtime binding and deployment);
 neither of those imports it. See ``ergasterion.ingestion.records`` for the full record
 family, the port declarations, and the schema-bundle/equivalence-report generators.

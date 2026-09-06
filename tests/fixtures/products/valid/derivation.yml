@@ -1,0 +1,48 @@
+# The "derivation" profile, also under the "silver" label. Exercises the
+# named-rule route of calculated_fields (as opposed to integration.yml's
+# inline-expression route).
+product:
+  name: customer_risk_score
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.customer@1
+    expect:
+      fields: [customer_id, is_active]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - name: risk_band
+        type: string
+        rule: risk_band_v2
+        rule_version: 2
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Derived customer risk score."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

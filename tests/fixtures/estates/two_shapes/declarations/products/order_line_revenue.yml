@@ -1,0 +1,70 @@
+# A consumer of one relation of a product that publishes several: the
+# order-line fact of the dimensional product, named on the source as that
+# product's own shape names it (architecture section 7). Nothing else the
+# dimensional product publishes is visible to the composition: the schema
+# it opens with is the named relation's schema, so the tax measure of the
+# sibling fact and the attributes of the two dimensions are not columns
+# here.
+#
+# The enrichment lookup then reads a second relation of the same producer,
+# the type 1 channel dimension, and carries one attribute of it in. A
+# lookup names its relation the same way a source does.
+#
+# Known answers on the seeded feed: five delivered order lines, one row
+# each; the five net amounts total 775.00; multi_unit_line is true for the
+# two lines that ordered more than one unit; and channel_name is the
+# dimension's surviving name per channel, "Web store" for the three CH-WEB
+# lines and "Mobile app" for the two CH-APP lines.
+product:
+  name: order_line_revenue
+  domain: sales
+  version: "1.0"
+  layer: published
+  profile: serving
+  owner: sales-domain
+
+sources:
+  - contract: sales.order_star@1
+    relation: fact_order_line
+    expect:
+      fields: [order_id, line_number, channel_code, quantity, net_amount]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: order_id
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - name: multi_unit_line
+        type: boolean
+        expression: "quantity > 1"
+  - pattern: data_enrichment
+    lookups:
+      - contract: sales.order_star@1
+        relation: dim_channel
+        "on": {channel_code: channel_code}
+        fields: [channel_name]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per delivered order line, with whether the line ordered more than one unit and the channel it was placed through."
+    ownership: sales-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

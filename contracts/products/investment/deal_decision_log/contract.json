@@ -1,0 +1,75 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The delivered investment-authorisation decisions, one row per decision event, published as an upsert on the decision identifier.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "deal_decision_log",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.deal_decision_log_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "decision_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "decision_id must be unique",
+      "dimension": "uniqueness"
+    },
+    {
+      "description": "external_deal_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "decided_at must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "decision_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "external_deal_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "conditions",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "actor",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decided_at",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.deal_decision_log"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

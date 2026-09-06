@@ -1,0 +1,76 @@
+# The marketplace's order lane onto the conformed schema.
+#
+# One source system's lane onto the conformed order schema. Two things
+# happen here that could not happen anywhere else. The value band is a
+# named rule, so how this estate bands an order by value is reviewed and
+# versioned as code rather than restated in every product that reports on
+# it. And the customer business key is read from the same system's own
+# customer lane on the customer identifier that system states, which is
+# the only place the two can be joined exactly: one system's order names
+# one system's customer, and only once that key is carried can an order
+# reach the customer the estate resolved across all three systems.
+product:
+  name: mercaro_order
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.mercaro_order_extract@1
+    expect:
+      fields:
+        - mercaro_record_id
+        - mercaro_order_id
+        - mercaro_customer_id
+        - order_date
+        - order_status
+        - currency
+        - order_total
+        - channel
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: mercaro_record_id, not_null: true}
+      - {field: mercaro_order_id, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: mercaro_record_id, to: source_record_id, type: string}
+      - {from: mercaro_order_id, to: source_order_id, type: string}
+      - {from: mercaro_customer_id, to: source_customer_id, type: string}
+      - {from: order_date, to: order_date, type: date}
+      - {from: order_total, to: order_total, type: {name: decimal, precision: 12, scale: 2}}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_system, type: string, expression: "'mercaro'"}
+      - {name: order_value_band, type: string, rule: order_value_band_v1, rule_version: 1}
+  - pattern: data_enrichment
+    lookups:
+      - contract: ecommerce.mercaro_customer@1
+        "on": {source_customer_id: source_customer_id}
+        fields: [customer_business_key]
+        no_match: null
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Orders as the marketplace states them, on the schema the two order feeds share, carrying the key of the customer that placed them."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

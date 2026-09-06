@@ -5,9 +5,10 @@
   idempotently by dbt on-run-start hooks. They are declared as sources, never as dbt
   seeds or models, so normal builds cannot truncate analyst decisions.
 
-  Both tables use the target's generated raw schema. Snowflake and DuckDB execute the
-  DDL and fixture merge; BigQuery returns a no-op `select 1`. The target configuration
-  below owns the supported target set and timestamp type.
+  Both tables use the target's generated raw schema. DuckDB, the estate's reference
+  adapter, executes the DDL and the fixture merge; every other adapter returns a
+  no-op `select 1`. The target configuration below owns the supported target set and
+  the timestamp type.
 -#}
 
 {% macro dpf_append_only_log_raw_schema() %}
@@ -15,25 +16,23 @@
 {% endmacro %}
 
 {#- One source of truth for the append-only-log target allow-set and timestamp type.
-    Unsupported targets retain timestamp_ltz only as an inert column-list render
-    default: every schema/table/fixture statement is guarded by `supported`, so
-    BigQuery continues to execute `select 1` and never consumes that type token. -#}
+    An unsupported target retains a plain `timestamp` only as an inert column-list
+    render default: every schema/table/fixture statement is guarded by `supported`,
+    so BigQuery continues to execute `select 1` and never consumes that token. -#}
 {% macro dpf_append_only_log_target_config() %}
 {%- set timestamp_type_by_target = {
-    'snowflake': 'timestamp_ltz',
     'duckdb': 'timestamp'
 } -%}
 {{ return({
     'supported': target.type in timestamp_type_by_target,
-    'timestamp_type': timestamp_type_by_target.get(target.type, 'timestamp_ltz')
+    'timestamp_type': timestamp_type_by_target.get(target.type, 'timestamp')
 }) }}
 {% endmacro %}
 
-{#- DuckDB introduced MERGE INTO in 1.4. The append-only fixture path deliberately
-    keeps the same single MERGE used on Snowflake. An INSERT ... WHERE NOT EXISTS
-    anti-join is the documented fallback for older DuckDB engines, but is not carried
-    as a second implementation: fail loud instead, so the append-only contract has one
-    statement shape. Parse major/minor numerically (not lexicographically: 1.10 > 1.4)
+{#- DuckDB introduced MERGE INTO in 1.4. The append-only fixture path keeps one
+    MERGE. An INSERT ... WHERE NOT EXISTS anti-join is the documented fallback for
+    older DuckDB engines, but is not carried as a second implementation: fail loud
+    instead, so the append-only contract has one statement shape. Parse major/minor numerically (not lexicographically: 1.10 > 1.4)
     before any DuckDB DDL or MERGE is returned. -#}
 {% macro dpf_assert_append_only_log_engine_version() %}
 {%- if target.type == 'duckdb' and execute -%}
@@ -80,7 +79,7 @@ select 1
 {% endmacro %}
 
 {#- ---------------------------------------------------------------------------
-    entity_resolution_decisions_log. DuckDB substitutes its native timestamp token.
+    entity_resolution_decisions_log.
     --------------------------------------------------------------------------- -#}
 
 {% macro dpf_ensure_er_decisions_schema() %}
@@ -107,26 +106,16 @@ select 1
 {{- dpf_ensure_append_only_log_table('entity_resolution_decisions_log', dpf_er_decisions_log_columns()) -}}
 {% endmacro %}
 
-{#- Compatible alias for the raw-schema helper. -#}
-{% macro dpf_er_decisions_raw_schema() %}
-{{- dpf_append_only_log_raw_schema() -}}
-{% endmacro %}
-
 {#- ---------------------------------------------------------------------------
-    deal_decision_log: the investment-authorisation shape applied to
-    the deal pipeline's approvals workflow. Same append-only, dbt-unmanaged,
-    on-run-start-created pattern as the ER log above, sharing the SAME ensure-macro
-    (never a copy). Decision values are approve / approve_with_conditions / decline /
-    defer, plus:
+    deal_decision_log: the investment-authorisation shape. Same append-only,
+    dbt-unmanaged, on-run-start-created pattern as the ER log above, sharing the SAME
+    ensure-macro (never a copy). Decision values are approve /
+    approve_with_conditions / decline / defer, plus:
       - decision_id: a business-assigned identifier for the decision EVENT itself --
-        never a load-time or wall-clock artifact, so latest-wins dedup
-        (models/deal_approvals/int_deal_latest_decision.sql) has a deterministic
-        secondary tie-break on ties in decided_at that never falls back to
-        load_datetime.
-      - external_deal_id: the deal's own business key from its single ORIGO source
-        which intra-source resolution never renames, expressed as the business key the log is keyed on (resolved to the
-        golden deal_id downstream, the same design deal_stage_history_seed already
-        uses for its entity_external_id column).
+        never a load-time or wall-clock artifact, so a latest-wins read has a
+        deterministic secondary tie-break on ties in decided_at that never falls back
+        to load_datetime.
+      - external_deal_id: the item's own business key, the key the log is keyed on.
       - decision / conditions: the decision and any attached conditions.
       - actor / decided_at: who decided and when.
     --------------------------------------------------------------------------- -#}
@@ -168,14 +157,13 @@ select 1
                               source column is mapped blank -> null (blank_to_null) then cast
                               to its declared type, so a blank CSV cell lands as a typed null.
 
-    Snowflake and DuckDB execute the same single MERGE; BigQuery remains a no-op
-    (`select 1`). DuckDB is version-gated at >= 1.4 before the MERGE is returned.
+    DuckDB executes the MERGE; every other adapter remains a no-op (`select 1`).
+    DuckDB is version-gated at >= 1.4 before the MERGE is returned.
 
-    ORDERING: the log table is created at on-run-start, which dbt runs BEFORE seeds; this
-    post-hook merges the fixtures during the seed phase; and each consuming model
-    (models/deal_approvals/int_deal_latest_decision.sql) plus the survival test carry a
-    `-- depends_on` edge on the fixture seed, so they run AFTER this merge and see the
-    fixtures on a fresh build -- preserving deal_decision_log read semantics. -#}
+    ORDERING: the log table is created at on-run-start, which dbt runs BEFORE seeds;
+    this post-hook merges the fixtures during the seed phase; and the survival test
+    carries a `-- depends_on` edge on the fixture seed, so it runs AFTER this merge
+    and sees the fixtures on a fresh build. -#}
 {% macro dpf_merge_seed_into_append_only_log(target_table, source_relation, key_column, columns) %}
 {%- set target_config = dpf_append_only_log_target_config() -%}
 {%- if target_config['supported'] -%}

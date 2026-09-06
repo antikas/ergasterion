@@ -1,9 +1,58 @@
 # The target-neutral estate root. `estate.namespace` is the mandatory production
-# qualifier for every Bronze Product Contract's globally qualified identity
+# qualifier for every Landing Product Contract's globally qualified identity
 # (estate_namespace, source.name, tables.<key>). Replace this placeholder with your
 # own reverse-DNS-style namespace before authoring a production contract -- a
 # seed-only estate never reads this file (ergasterion.source_delivery's
 # load_estate_namespace() only matters once a table's landing.kind is 'source').
-# See docs/specifications/bronze-product-v1.md.
+# See docs/specifications/landing-product-v1.md.
+#
+# `labels`, `profiles`, `adapters`, `final_target` and `translators` are this
+# estate's routing policy: for each layer label, the profiles a product may
+# compose under it and the translator that renders each pattern and each shape,
+# on which adapters. Two labels ship. The `reference` label covers exactly the
+# landing composition the shipped reference example uses, so `ergasterion plan`
+# and the other ingestion commands work out of the box. The label below it
+# covers the seeded product declaration under declarations/products/, so
+# `ergasterion emit-products` works out of the box too. A label is a key, never
+# a meaning: rename either, or add your own, and the engine follows the table.
+# `profiles` is optional and absent here -- both labels admit a profile the
+# engine ships; declare your own composition there when none of the five fits.
 estate:
   namespace: com.example.ergasterion
+  # `support` and `team` are the estate's declared ownership: every product contract
+  # this estate publishes carries them, and the engine supplies no default. Replace
+  # both placeholders with your own support channel and owning team.
+  support: replace-with-your-support-channel
+  team: replace-with-your-owning-team
+  labels:
+    reference:
+      profiles: [landing]
+    derived:
+      profiles: [derivation]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    reference:
+      batch_ingestion: local-ingestion
+      data_validation: local-ingestion
+      data_publish: local-ingestion
+      checkpoint_retries: local-ingestion
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    derived:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

@@ -1,0 +1,93 @@
+# One source system's lane onto the schema the fund products share.
+#
+# It keeps nothing of that system's own column names past this point. The
+# delivered value of every identifier stays beside the value the estate
+# resolves on, which is the delivered one with a blank read as nothing, so
+# two funds neither system identifies are never merged on an empty string.
+#
+# This source delivers no snapshot date. The estate reads its extract as
+# standing at the reporting date the dated sources report at, 2025-12-31,
+# declared here once so every product downstream orders one instant
+# against another rather than against nothing.
+#
+# PORTIQ states no domicile either, and states the fund identifier for
+# one fund it does not state a legal entity identifier for.
+product:
+  name: portiq_fund
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.portiq_fund_extract@1
+    expect:
+      fields:
+        - portiq_fund_id
+        - fund_name
+        - gp_name
+        - gp_lei
+        - fund_lei
+        - shared_external_id
+        - asset_class
+        - strategy
+        - vintage_year
+        - currency
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: portiq_fund_id, not_null: true}
+      - {field: fund_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: portiq_fund_id, to: source_fund_id, type: string}
+      - {from: fund_name, to: source_name, type: string}
+      - {from: gp_name, to: source_gp_name, type: string}
+      - {from: gp_lei, to: source_gp_lei, type: string}
+      - {from: fund_lei, to: source_lei, type: string}
+      - {from: shared_external_id, to: source_external_id, type: string}
+      - {from: asset_class, to: source_asset_class, type: string}
+      - {from: strategy, to: source_strategy, type: string}
+      - {from: vintage_year, to: source_vintage_year, type: integer}
+      - {from: currency, to: source_currency, type: string}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_record_id, type: string, expression: "source_fund_id"}
+      - {name: source_family_name, type: string, expression: "null"}
+      - {name: source_vehicle_type, type: string, expression: "null"}
+      - {name: source_gp_id, type: string, expression: "null"}
+      - {name: source_committed_capital_usd, type: {name: decimal, precision: 18, scale: 2}, expression: "null"}
+      - {name: source_domicile, type: string, expression: "null"}
+      - {name: source_status, type: string, expression: "null"}
+      - {name: source_reported_on, type: date, expression: "date '2025-12-31'"}
+      - {name: fund_source_system, type: string, expression: "'portiq'"}
+      - {name: fund_identity_key, type: string, expression: "concat('portiq', ':', source_fund_id)"}
+      - {name: fund_normalised_name, type: string, rule: investment_normalised_name_v1, rule_version: 1}
+      - {name: fund_normalised_gp_name, type: string, rule: investment_normalised_gp_name_v1, rule_version: 1}
+      - {name: fund_lei, type: string, expression: "nullif(trim(source_lei), '')"}
+      - {name: fund_external_id, type: string, expression: "nullif(trim(source_external_id), '')"}
+      - {name: fund_gp_lei, type: string, expression: "nullif(trim(source_gp_lei), '')"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Funds as PORTIQ states them, on the schema the four fund feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

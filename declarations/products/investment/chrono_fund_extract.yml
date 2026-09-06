@@ -1,0 +1,80 @@
+# Landing product: The CHRONO provider fund feed as it was delivered: one row per delivered fund record, no column changed.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: chrono_fund_extract
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_fund_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_chrono_funds
+      fields:
+        - {name: chrono_row_uid, type: string}
+        - {name: chrono_vehicle_code, type: string}
+        - {name: vehicle_display_name, type: string}
+        - {name: vehicle_group_name, type: string}
+        - {name: vehicle_form, type: string}
+        - {name: manager_master_code, type: string}
+        - {name: manager_name_text, type: string}
+        - {name: manager_lei, type: string}
+        - {name: legal_entity_identifier, type: string}
+        - {name: vendor_crosswalk_id, type: string}
+        - {name: private_market_bucket, type: string}
+        - {name: investment_style, type: string}
+        - {name: launch_year, type: string}
+        - {name: commitment_amount_usd, type: string}
+        - {name: reporting_ccy, type: string}
+        - {name: domicile_iso2, type: string}
+        - {name: lifecycle_state, type: string}
+        - {name: snapshot_date, type: string}
+    expect:
+      fields: [chrono_row_uid, chrono_vehicle_code, vehicle_display_name]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: chrono_row_uid, not_null: true}
+      - {field: chrono_row_uid, unique: true}
+      - {field: chrono_vehicle_code, not_null: true}
+      - {field: vehicle_display_name, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The CHRONO provider fund feed as it was delivered: one row per delivered fund record, no column changed."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

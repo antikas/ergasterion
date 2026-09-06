@@ -1,0 +1,80 @@
+# The marketplace's customer lane onto the conformed schema.
+#
+# One source system's lane onto the conformed customer schema. It keeps
+# nothing of that system's own column names past this point and adds the
+# three facts the products downstream resolve customers by: which system
+# the row came from, the address it states normalised for comparison, and
+# the business key that is the loyalty identifier where the system states
+# one and the normalised address otherwise.
+#
+# The marketplace states a buyer segment and almost no contact detail, so the customers it alone covers reach the curated product with their contact columns empty.
+#
+# The columns this system does not state are declared here as empty ones,
+# because a union publishes one schema and every lane onto it carries
+# every column of that schema.
+product:
+  name: mercaro_customer
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.mercaro_customer_extract@1
+    expect:
+      fields:
+        - mercaro_record_id
+        - mercaro_customer_id
+        - loyalty_id
+        - email
+        - full_name
+        - city
+        - buyer_segment
+        - customer_status
+        - as_of_date
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: mercaro_record_id, not_null: true}
+      - {field: email, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: mercaro_record_id, to: source_record_id, type: string}
+      - {from: mercaro_customer_id, to: source_customer_id, type: string}
+      - {from: as_of_date, to: as_of_date, type: date}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_system, type: string, expression: "'mercaro'"}
+      - {name: normalised_email, type: string, expression: "nullif(lower(trim(email)), '')"}
+      - {name: customer_business_key, type: string, expression: "coalesce(nullif(loyalty_id, ''), nullif(lower(trim(email)), ''))"}
+      - {name: customer_email_domain, type: string, rule: customer_email_domain_v1, rule_version: 1}
+      - {name: phone, type: string, expression: "null"}
+      - {name: address_line, type: string, expression: "null"}
+      - {name: postal_code, type: string, expression: "null"}
+      - {name: country, type: string, expression: "null"}
+      - {name: marketing_consent, type: string, expression: "null"}
+      - {name: preferred_channel, type: string, expression: "null"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Customers as the marketplace states them, on the schema the three feeds share."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

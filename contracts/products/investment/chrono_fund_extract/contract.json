@@ -1,0 +1,135 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The CHRONO provider fund feed as it was delivered: one row per delivered fund record, no column changed.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "chrono_fund_extract",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.chrono_fund_extract_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "chrono_row_uid must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "chrono_row_uid must be unique",
+      "dimension": "uniqueness"
+    },
+    {
+      "description": "chrono_vehicle_code must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "vehicle_display_name must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "chrono_row_uid",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "chrono_vehicle_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_display_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_group_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vehicle_form",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "manager_master_code",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "manager_name_text",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "manager_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "legal_entity_identifier",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "vendor_crosswalk_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "private_market_bucket",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "investment_style",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "launch_year",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "commitment_amount_usd",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "reporting_ccy",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "domicile_iso2",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "lifecycle_state",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "snapshot_date",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.chrono_fund_extract"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

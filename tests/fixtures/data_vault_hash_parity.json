@@ -1,0 +1,95 @@
+{
+  "comment": [
+    "Golden-hash parity vectors for the data_vault shape hash construction.",
+    "hash_expression is what macros/data_vault.sql renders dpf_vault_hash as for the duckdb",
+    "adapter, through the shipped dpf_hash_hex duckdb arm and the shipped dpf_type mapping.",
+    "basis is written in declaration order, which is the hash input order: this construction",
+    "does not sort, upper-case or trim, so two relations agree on a key only by naming the",
+    "same columns in the same order. expected_hash pins what DuckDB computes for each vector,",
+    "so a changed sentinel, separator, case rule or dispatch arm moves at least one row and",
+    "fails on execution. Every stored hub, link and satellite row in a live estate is keyed by",
+    "this construction, so a silent change would orphan all of them."
+  ],
+  "adapter": "duckdb",
+  "basis": [
+    "full_name",
+    "postcode",
+    "loyalty_points",
+    "as_of_date"
+  ],
+  "hash_expression": "upper(md5(concat_ws('||', coalesce(cast(full_name as TEXT), '^^'), coalesce(cast(postcode as TEXT), '^^'), coalesce(cast(loyalty_points as TEXT), '^^'), coalesce(cast(as_of_date as TEXT), '^^'))))",
+  "column_types": {
+    "full_name": "VARCHAR",
+    "postcode": "VARCHAR",
+    "loyalty_points": "INTEGER",
+    "as_of_date": "DATE"
+  },
+  "rows": [
+    {
+      "row_id": 1,
+      "full_name": null,
+      "postcode": "SW1A 1AA",
+      "loyalty_points": 10,
+      "as_of_date": "2026-01-05"
+    },
+    {
+      "row_id": 2,
+      "full_name": "",
+      "postcode": "SW1A 1AA",
+      "loyalty_points": 10,
+      "as_of_date": "2026-01-05"
+    },
+    {
+      "row_id": 3,
+      "full_name": "Ada Byron",
+      "postcode": "SW1A 1AA",
+      "loyalty_points": 10,
+      "as_of_date": "2026-01-05"
+    },
+    {
+      "row_id": 4,
+      "full_name": "ADA BYRON",
+      "postcode": "SW1A 1AA",
+      "loyalty_points": 10,
+      "as_of_date": "2026-01-05"
+    },
+    {
+      "row_id": 5,
+      "full_name": "Ada Byron",
+      "postcode": "SW1A 1AA",
+      "loyalty_points": 11,
+      "as_of_date": "2026-01-05"
+    },
+    {
+      "row_id": 6,
+      "full_name": "Ada Byron",
+      "postcode": "SW1A 1AA",
+      "loyalty_points": 10,
+      "as_of_date": "2026-03-15"
+    },
+    {
+      "row_id": 7,
+      "full_name": "Ada Byron",
+      "postcode": null,
+      "loyalty_points": null,
+      "as_of_date": null
+    },
+    {
+      "row_id": 8,
+      "full_name": "Ada|Byron",
+      "postcode": "|SW1A 1AA",
+      "loyalty_points": 10,
+      "as_of_date": "2026-01-05"
+    }
+  ],
+  "expected_hash": {
+    "1": "838C2F52D33C013B23C79D4E4A159296",
+    "2": "3A4035AAC12E082B942D4DF36A616087",
+    "3": "21B6B105C475209BCF27A12831233BBF",
+    "4": "68F8F4683D3F9DEC2A5A389848BF1399",
+    "5": "6AAFB92DFCE7459F332EDCBC39E78B77",
+    "6": "CEB88D9608C3B3D48288F86401F0D2C4",
+    "7": "DB964D7A690F0BC6BFF7368A999174A4",
+    "8": "3EF98D958AE3473060652C3C0712F25A"
+  }
+}

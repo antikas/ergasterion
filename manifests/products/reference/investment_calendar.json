@@ -1,0 +1,38 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "reference.investment_calendar",
+  "relations": {
+    "auxiliary": [
+      "reference.investment_calendar__checked",
+      "reference.investment_calendar__current",
+      "reference.investment_calendar__quarantine",
+      "reference.investment_calendar__sla"
+    ],
+    "published": [
+      "reference.investment_calendar"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[3]:calculated_fields",
+      "steps[8]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

@@ -1,0 +1,7 @@
+consolidating_two:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/consolidating_two.duckdb
+      threads: 1

@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/product-declaration-v1.schema.json",
+  "title": "Ergasterion product declaration v1 (architecture sections 3.1-3.4)",
+  "description": "Structural shape only: types, required-ness, and no stray top-level or per-block key (additionalProperties: false catches a per-product or per-column mode/expression_mode key, since neither is ever a legal property here). Business-format rules that need a precise, testable error identity -- a contract reference's exact shape, the neutral-type system, composition versus profile, ordering, shape sections, the source-kind pairing -- are enforced explicitly in ergasterion/framework/declaration.py, not folded into this schema's pattern/enum vocabulary, so a violation is reported by name (product, occurrence, rule) rather than by a generic JSON Schema path.",
+  "type": "object",
+  "required": ["product", "sources", "steps", "target", "checkpointing"],
+  "additionalProperties": false,
+  "properties": {
+    "product": {
+      "type": "object",
+      "required": ["name", "domain", "version", "layer", "owner"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "layer": { "type": "string", "minLength": 1 },
+        "profile": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["contract"],
+        "additionalProperties": false,
+        "description": "One consumed contract. 'kind' is the source kind: 'contract' (the default) reads the contract from the product that publishes it in this estate; 'fixture' binds the contract to a fixture relation for local proof (architecture section 12's fixture-backed source relations) and carries the fields that relation delivers, since no product in the estate publishes it. 'relation' names which of the producer's published relations this source reads (architecture section 7), as the producer's own shape names it and without the producer's product prefix, since the contract reference already names the product: a producer publishing exactly one relation needs no key, a source naming none of several fails closed, and a name the producer does not publish fails closed.",
+        "properties": {
+          "contract": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["contract", "fixture"] },
+          "relation": { "type": "string", "minLength": 1 },
+          "fixture": {
+            "type": "object",
+            "required": ["relation", "fields"],
+            "additionalProperties": false,
+            "properties": {
+              "relation": { "type": "string", "minLength": 1 },
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["name", "type"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "type": { "type": ["string", "object"] }
+                  }
+                }
+              }
+            }
+          },
+          "conform": {
+            "type": "object",
+            "required": ["mapping"],
+            "additionalProperties": false,
+            "description": "How this source's fields are renamed and cast onto the shape the product's 'combine' block needs, in the same from/to/type form a schema_transform mapping takes. Only a source of a combination carries it; which combinations admit which mapping, and whether a source still cannot conform, are enforced in ergasterion/framework/declaration.py and the contract pipe, so a violation names product, source and field.",
+            "properties": {
+              "mapping": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["from", "to", "type"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "from": { "type": "string", "minLength": 1 },
+                    "to": { "type": "string", "minLength": 1 },
+                    "type": { "type": ["string", "object"] }
+                  }
+                }
+              }
+            }
+          },
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "fields": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "combine": {
+      "type": "object",
+      "required": ["method"],
+      "additionalProperties": false,
+      "description": "How two or more sources combine into the relation this product's composition opens with: 'union' (their rows under one conformed schema) or 'merge' (their columns side by side on the declared keys, keeping the rows the declared 'join' says). A sibling of 'sources' because the combination is a fact about the set of them. The method vocabulary, the keys and join a merge needs, and the conformance every source must reach are enforced in ergasterion/framework/declaration.py and the contract pipe, so a violation names the product, the source and the field rather than a JSON Schema path.",
+      "properties": {
+        "method": { "type": "string", "minLength": 1 },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "join": { "type": "string", "minLength": 1 }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pattern"],
+        "properties": {
+          "pattern": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["shape", "contract"],
+      "additionalProperties": false,
+      "properties": {
+        "shape": { "type": "string", "minLength": 1 },
+        "shape_config": { "type": "object" },
+        "contract": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Architecture section 7's element list, closed: identity, schema, freshness, quality, versioning, lineage, access, support. A stray key here (for example a 'mode' key) fails closed the same way as everywhere else in this schema.",
+          "properties": {
+            "identity": { "type": ["string", "object"] },
+            "schema": { "type": ["string", "object"] },
+            "freshness": { "type": "string", "minLength": 1 },
+            "quality": { "type": ["string", "object"] },
+            "versioning": { "type": ["string", "object"] },
+            "lineage": { "type": ["string", "object"] },
+            "access": { "type": "object" },
+            "support": { "type": ["string", "object"] }
+          }
+        }
+      }
+    },
+    "checkpointing": { "type": "object" }
+  }
+}

@@ -15,7 +15,7 @@ import os
 import shutil
 from pathlib import Path
 
-from ergasterion.framework.bronze_contract import AttemptState
+from ergasterion.framework.landing_contract import AttemptState
 from ergasterion.ingestion.records import BackupEntry, BackupEntryPage, BackupManifest
 from ergasterion.ingestion.runtime import PortError, utc_now_string
 from ergasterion.ingestion.settings import LocalLayout

@@ -1,0 +1,7 @@
+{{ generated_header }}
+{{ model_config }}
+
+select
+    cast({{ publish_timestamp }} as {{ timestamp_type }}) as published_at,
+    cast(count(*) as {{ count_type }}) as row_count
+from {{ source }}

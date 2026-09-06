@@ -1,0 +1,80 @@
+# A self-contained estate that exercises the two shapes of architecture
+# section 6 that impose a modelling of their own: canonical, one relation
+# per entity over a curated product at an interface boundary, and
+# dimensional, facts at a declared grain with type 1 and type 2 dimensions
+# and the semantic layer over them.
+#
+# One delivered feed, sales.order_feed, is the estate's landing declaration.
+# It feeds two products of different shapes without changing: crm.customer,
+# which curates it into one record per customer under the declared shape,
+# and sales.order_star, which models it as a star under the dimensional
+# shape. The canonical product, crm.customer_interface, is the interface
+# over the curated one.
+#
+# Two consumers then read one named relation each of a product that
+# publishes several (architecture section 7): sales.order_line_revenue
+# reads the order-line fact of the star as its source and the channel
+# dimension as an enrichment lookup, and crm.customer_segment_report reads
+# the segmentation entity of the interface.
+#
+# The layer labels "delivered", "conformed" and "published" are names the
+# engine has never seen and never interprets. Each is a key into the tables
+# below.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    delivered:
+      profiles: [serving]
+    conformed:
+      profiles: [integration]
+    published:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    delivered:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    conformed:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_curation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    published:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_enrichment: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      canonical: dbt
+      dimensional: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

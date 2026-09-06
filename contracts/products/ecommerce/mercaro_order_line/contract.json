@@ -1,0 +1,100 @@
+{
+  "access": {
+    "classification": "internal"
+  },
+  "description": "Order lines as the marketplace states them, on the schema the two line feeds share, carrying the code of the article ordered.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "ecommerce",
+    "major": 1,
+    "name": "mercaro_order_line",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "ecommerce.mercaro_order_line_extract@1"
+  ],
+  "quality": [
+    {
+      "description": "mercaro_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "mercaro_order_id must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "order_line_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "order_line_source_product_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "line_number",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "line_quantity",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "line_unit_price",
+          "required": false,
+          "type": {
+            "name": "decimal",
+            "precision": 12,
+            "scale": 2
+          }
+        },
+        {
+          "name": "line_revenue",
+          "required": false,
+          "type": {
+            "name": "decimal",
+            "precision": 12,
+            "scale": 2
+          }
+        },
+        {
+          "name": "line_currency",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "line_order_date",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "order_line_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "product_code",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "ecommerce.mercaro_order_line"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

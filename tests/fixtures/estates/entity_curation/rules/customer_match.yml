@@ -1,0 +1,30 @@
+# This estate's own named-rule catalogue. The engine reference catalogue
+# ships as the default; an estate catalogue may add rules to it and may never
+# redeclare one of its names.
+#
+# The rule scores one candidate pair. Its inputs bind two per compared
+# column, the left side then the right side, in the order the curation
+# occurrence's `compare` list declares them, so a rule whose declared arity
+# does not match that list fails closed rather than binding the wrong value.
+#
+# The implementations manifest names, per declared adapter, the dbt macro
+# that implements the rule. Both adapters name the same macro because the
+# macro name is what a generated model calls; the dialect divergence sits
+# inside the primitives it composes.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: customer_match_score_v1
+    version: 1
+    description: >-
+      Score one candidate pair of customer records on name similarity and
+      postcode agreement.
+    inputs:
+      - {name: full_name_a, type: string}
+      - {name: full_name_b, type: string}
+      - {name: postcode_a, type: string}
+      - {name: postcode_b, type: string}
+    output:
+      type: {name: decimal, precision: 5, scale: 4}
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: customer_match_score_v1}
+      - {translator: dbt, adapter: bigquery, macro: customer_match_score_v1}

@@ -1,0 +1,26 @@
+name: two_shapes
+version: "1.0.0"
+config-version: 2
+
+profile: two_shapes
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The fixture relation the estate's fixture-bound source reads. Its column
+# types are declared here rather than inferred, so the executed build proves
+# the generated casts against the types the declaration states.
+seeds:
+  two_shapes:
+    customer_orders:
+      +column_types:
+        line_no: integer
+        order_dt: date
+        changed_dt: date
+        qty: integer
+        net_amt: "decimal(12,2)"
+        tax_amt: "decimal(12,2)"

@@ -1,24 +1,18 @@
-"""Bronze Product Contract compiler: typed declaration loading, semantic
+"""Landing Product Contract compiler: typed declaration loading, semantic
 validation, the schedule engine, canonicalisation/digests, the compatibility
 classifier and the candidate/active migration state machine.
 
-``load_typed_declarations()`` is the SSOT for typed Bronze delivery intent. It
-reads ``estate.yml``, ``domains/*.yml`` and ``declarations/*.yml`` -- the same
-three authoring surfaces ``ergasterion.emit.load_declarations()`` reads -- and
-resolves every source-backed table into either an explicit draft placeholder or
-a validated ``ergasterion.framework.bronze_contract.BronzeProductContract``.
-``ergasterion.emit.load_declarations()`` stays the deterministic legacy-dict
-projection every current emitter and template consumes: a ``product``/``delivery``
-block this module reads rides through that legacy loader as an ordinary untyped
-dict entry nobody there looks at, and an authored projection column carrying the
-typed ``source`` field gains its legacy ``expression`` there by projection, so
-every current declaration, generated output and legacy consumer keeps its exact
-byte-for-byte behaviour.
+``load_typed_declarations()`` is the SSOT for typed Landing delivery intent. It
+reads ``estate.yml`` and ``declarations/*.yml`` and resolves every source-backed
+table into either an explicit draft placeholder or a validated
+``ergasterion.framework.landing_contract.LandingProductContract``. A production
+table declares its domain in its own ``product:`` block, beside the rest of its
+product facts.
 
-Every wire-shape record (``BronzeProductContract``, ``DeliveryPolicy``,
+Every wire-shape record (``LandingProductContract``, ``DeliveryPolicy``,
 ``LandingContract``, ``ProductFacts``, ``Migration``, ``MigrationKind``, ...) is
 imported from the frozen IDL projections
-``ergasterion.framework.bronze_contract`` and
+``ergasterion.framework.landing_contract`` and
 ``ergasterion.ingestion.records``; this module declares no wire type of its own.
 It owns exactly the compiler concerns those modules reserve for the contract
 compiler: list normalisation, RFC 8785 canonicalisation, the derived-digest
@@ -27,7 +21,7 @@ schedule engine, and the compatibility/migration state machine.
 
 Semantic validation lives here alone. ``ergasterion.structure_gate``'s
 ``normalise_landing`` remains the single structural entry point for the landing
-discriminator, widened only to tolerate the optional Bronze landing fields, and
+discriminator, widened only to tolerate the optional Landing landing fields, and
 no template performs validation of any kind.
 """
 
@@ -49,9 +43,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from ergasterion.estate import EstateContext
-from ergasterion.framework.bronze_contract import (
-    BronzeInterfaces,
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingInterfaces,
+    LandingProductContract,
     ContractActivationState,
     CronSchedule,
     CsvCodec,
@@ -78,7 +72,7 @@ from ergasterion.framework.bronze_contract import (
 
 _DEFAULT_CTX = EstateContext.default()
 
-CONTRACT_SCHEMA = "ergasterion.bronze-product/v1"
+CONTRACT_SCHEMA = "ergasterion.landing-product/v1"
 SOURCE_SCHEMA_SCHEMA = "ergasterion.source-schema/v1"
 PUBLISHED_SCHEMA_SCHEMA = "ergasterion.published-schema/v1"
 RULE_ID_SCHEMA = "ergasterion.rule-id/v1"
@@ -105,15 +99,44 @@ class ContractValidationError(ValueError):
 # ============================================================================ estate.yml
 
 class _EstateBlock(BaseModel):
+    """The ``estate:`` block's wire shape. ``namespace`` is this module's own
+    concern (validated through ``EstateNamespace``, below). ``expression_mode``,
+    ``structured_types``, ``profiles``, ``labels``, ``adapters``,
+    ``final_target`` and ``translators`` are the product-declaration
+    validation and routing layers' estate policy (architecture sections 3.2,
+    3.3, 9, 10, 11; owner rulings R1, R10; plan decisions D29, D35);
+    ``support`` and ``team`` are the product-contract generator's estate
+    policy (architecture section 7).
+    This model only needs to know their names and rough shape
+    so a sibling key under the same ``estate:`` block does not trip
+    ``extra="forbid"`` here. Their real semantic validation (mode enum,
+    label-to-profile admissibility, adapter kind, translator-table entries,
+    non-empty support/team, and so on) lives once, in
+    ``ergasterion.framework.declaration.load_estate_policy``,
+    ``ergasterion.estate.load_estate_adapters`` /
+    ``ergasterion.estate.load_translator_table`` and
+    ``ergasterion.framework.contract.load_estate_ownership``, never
+    duplicated in this loader.
+    """
+
     model_config = ConfigDict(extra="forbid", frozen=True)
     namespace: EstateNamespace
+    expression_mode: str | None = None
+    structured_types: list[str] | None = None
+    profiles: dict[str, dict[str, Any]] | None = None
+    labels: dict[str, dict[str, list[str]]] | None = None
+    adapters: dict[str, dict[str, str]] | None = None
+    final_target: str | None = None
+    translators: dict[str, dict[str, str]] | None = None
+    support: str | None = None
+    team: str | None = None
 
 
 def load_estate_namespace(ctx: EstateContext | None = None) -> str | None:
     """Read ``<root>/estate.yml``'s mandatory ``estate.namespace``.
 
     Returns ``None`` when the file is absent: a seed-only legacy estate may omit
-    it (docs/specifications/bronze-product-v1.md), so absence is a valid state
+    it (docs/specifications/landing-product-v1.md), so absence is a valid state
     and only a malformed present file raises. The namespace grammar is validated
     through the same ``EstateNamespace`` type the wire schema module pins, so
     that grammar has exactly one expression.
@@ -139,14 +162,16 @@ def load_estate_namespace(ctx: EstateContext | None = None) -> str | None:
 #
 # The authoring-side shapes the wire modules do not declare because they never
 # travel as a runtime record: the table `product` block (the wire ``ProductFacts``
-# additionally carries a `domain`, resolved from the separate `bronze:`
-# domain-membership block) and that `bronze:` block itself.
+# additionally carries a `domain`, resolved from the separate `landing:`
+# domain-membership block) and that `landing:` block itself.
 
 class _TableProductFacts(BaseModel):
-    """Table `product:` block. Exactly the eight closed fields; `domain` is
-    absent by design -- it is resolved from `bronze:` domain membership."""
+    """Table `product:` block. Exactly the nine closed fields. `domain` is one of
+    them: a landing product's domain is declared beside its other product facts and
+    never inferred from a file name or a path (architecture section 13)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+    domain: Identifier
     product_version: SemVer
     display_name: StringScalar
     description: StringScalar
@@ -157,59 +182,12 @@ class _TableProductFacts(BaseModel):
     retention_policy_ref: Token
 
 
-class _BronzeDomainMeta(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    name: Identifier
-    display_name: StringScalar
-
-
-class _BronzeProductRef(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    source: Identifier
-    table: Identifier
-
-
-class _BronzeDomainBlock(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    domain: _BronzeDomainMeta
-    products: tuple[_BronzeProductRef, ...]
-
-
 class _DraftDelivery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: Literal["draft"]
     reason: Literal["delivery_contract_required"]
 
 
-def _load_bronze_domain_membership(ctx: EstateContext) -> dict[tuple[str, str], str]:
-    """Resolve every `domains/*.yml` `bronze:` block into `(source, table) ->
-    domain name`. A file with no `bronze:` block contributes no membership, so
-    current seed-only domain files stay byte-stable. A `(source, table)` pair
-    named by more than one block fails loudly, naming both files.
-    """
-    membership: dict[tuple[str, str], str] = {}
-    claimed_by: dict[tuple[str, str], str] = {}
-    for path in sorted(ctx.domains_dir.glob("*.yml")):
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"{path}: expected a YAML mapping")
-        bronze = data.get("bronze")
-        if bronze is None:
-            continue
-        try:
-            block = _BronzeDomainBlock.model_validate(bronze)
-        except ValidationError as exc:
-            raise ValueError(f"{path}:bronze: {exc}") from exc
-        for ref in block.products:
-            key = (ref.source, ref.table)
-            if key in membership:
-                raise ValueError(
-                    f"{path}: bronze product ({ref.source}, {ref.table}) is already a "
-                    f"member of domain {membership[key]!r} (declared in {claimed_by[key]})"
-                )
-            membership[key] = block.domain.name
-            claimed_by[key] = str(path)
-    return membership
 
 
 # ============================================================================ production delivery overlay
@@ -254,12 +232,12 @@ def _token_safe(value: str) -> str:
     return value.replace("_", "-")
 
 
-def derive_interfaces(source: str, table: str) -> BronzeInterfaces:
+def derive_interfaces(source: str, table: str) -> LandingInterfaces:
     """The raw/source-native/published/quarantine/deletion-evidence interface
     names, derived mechanically from logical identity. Lineage carries no
-    authoring surface (docs/specifications/bronze-product-v1.md)."""
-    base = f"bronze-{_token_safe(source)}-{_token_safe(table)}"
-    return BronzeInterfaces(
+    authoring surface (docs/specifications/landing-product-v1.md)."""
+    base = f"landing-{_token_safe(source)}-{_token_safe(table)}"
+    return LandingInterfaces(
         raw=f"{base}-raw",
         source_native=f"{base}-source-native",
         published=f"{base}-published",
@@ -337,10 +315,10 @@ def _normalise_declared_set(items: list[Any], *, where: str) -> list[Any]:
     return [item for _, item in keyed]
 
 
-def canonical_contract_document(contract: BronzeProductContract) -> dict[str, Any]:
+def canonical_contract_document(contract: LandingProductContract) -> dict[str, Any]:
     """The exact envelope ``contract_digest`` hashes:
-    ``{"schema": "ergasterion.bronze-product/v1", "contract": <normalised>}``.
-    The normalised contract re-parses into a ``BronzeProductContract`` equal up
+    ``{"schema": "ergasterion.landing-product/v1", "contract": <normalised>}``.
+    The normalised contract re-parses into a ``LandingProductContract`` equal up
     to the sort this function applies to columns, projections and declared
     sets; authored order in those positions does not survive normalisation."""
     dumped = _canonical_dump(contract)
@@ -387,11 +365,11 @@ def canonical_contract_document(contract: BronzeProductContract) -> dict[str, An
     return {"schema": CONTRACT_SCHEMA, "contract": dumped}
 
 
-def compute_contract_digest(contract: BronzeProductContract) -> str:
+def compute_contract_digest(contract: LandingProductContract) -> str:
     return hashlib.sha256(rfc8785.dumps(canonical_contract_document(contract))).hexdigest()
 
 
-def canonical_source_schema_document(contract: BronzeProductContract) -> dict[str, Any]:
+def canonical_source_schema_document(contract: LandingProductContract) -> dict[str, Any]:
     """The source-native shape a delivery is parsed against: the landing
     coordinates, admitted encodings, codec and physical columns. It excludes
     every product fact and delivery rule, so two contracts that differ only in
@@ -407,11 +385,11 @@ def canonical_source_schema_document(contract: BronzeProductContract) -> dict[st
     return {"schema": SOURCE_SCHEMA_SCHEMA, "source_schema": source_schema}
 
 
-def compute_source_schema_digest(contract: BronzeProductContract) -> str:
+def compute_source_schema_digest(contract: LandingProductContract) -> str:
     return hashlib.sha256(rfc8785.dumps(canonical_source_schema_document(contract))).hexdigest()
 
 
-def canonical_published_schema_document(contract: BronzeProductContract) -> dict[str, Any]:
+def canonical_published_schema_document(contract: LandingProductContract) -> dict[str, Any]:
     """The published shape a consumer binds to: output name, logical type and
     nullability. It excludes each field's `source`, so renaming which physical
     column feeds an unchanged published column leaves this digest equal."""
@@ -423,7 +401,7 @@ def canonical_published_schema_document(contract: BronzeProductContract) -> dict
     return {"schema": PUBLISHED_SCHEMA_SCHEMA, "published_schema": published_schema}
 
 
-def compute_published_schema_digest(contract: BronzeProductContract) -> str:
+def compute_published_schema_digest(contract: LandingProductContract) -> str:
     return hashlib.sha256(rfc8785.dumps(canonical_published_schema_document(contract))).hexdigest()
 
 
@@ -545,7 +523,7 @@ def compute_migration_id(migration: BaseModel | Mapping[str, Any]) -> str:
 #
 # Cross-field rules the wire shapes cannot express by typing alone. This module
 # is the only place they live: no template and no other module validates a
-# Bronze contract.
+# Landing contract.
 
 _ALLOWED_PROGRESS_KIND: dict[DeliveryMode, frozenset[str]] = {
     DeliveryMode.CDC: frozenset({"sequence"}),
@@ -750,7 +728,7 @@ def _validate_codec(codec: Any) -> list[str]:
     return violations
 
 
-def _validate_landing_and_projection(contract: BronzeProductContract) -> list[str]:
+def _validate_landing_and_projection(contract: LandingProductContract) -> list[str]:
     """Every field a contract names resolves to a declared physical column, and
     every published column passes its source column through unchanged."""
     violations: list[str] = []
@@ -849,7 +827,7 @@ def _validate_landing_and_projection(contract: BronzeProductContract) -> list[st
         if logical_type_token(entry.logical_type) != logical_type_token(column.logical_type):
             violations.append(
                 f"projection[{entry.name}] declares {logical_type_token(entry.logical_type)} for "
-                f"{entry.source!r}, a {logical_type_token(column.logical_type)} column; Bronze "
+                f"{entry.source!r}, a {logical_type_token(column.logical_type)} column; Landing "
                 "publishes a source column unchanged"
             )
         if column.nullable and not entry.nullable:
@@ -868,7 +846,7 @@ def _validate_landing_and_projection(contract: BronzeProductContract) -> list[st
     return violations
 
 
-def validate_contract(contract: BronzeProductContract, *, where: str = "contract") -> None:
+def validate_contract(contract: LandingProductContract, *, where: str = "contract") -> None:
     """The whole-contract semantic gate: the delivery policy plus every rule
     that crosses landing, delivery, projection and derived lineage. Raises
     ``ContractValidationError`` naming every violation found."""
@@ -1040,10 +1018,10 @@ def _has_minor_change(prior: dict[str, Any], candidate: dict[str, Any]) -> bool:
 
 
 def classify_contract_change(
-    prior: BronzeProductContract | None, candidate: BronzeProductContract
+    prior: LandingProductContract | None, candidate: LandingProductContract
 ) -> ChangeClass:
     """Classify the SemVer bump a candidate demands, per the migration matrix in
-    docs/specifications/bronze-product-v1.md. It compares canonical documents, so
+    docs/specifications/landing-product-v1.md. It compares canonical documents, so
     YAML formatting, comments, mapping order and declared-set order never
     register as a change."""
     if prior is None:
@@ -1146,7 +1124,7 @@ class CapacityExceededError(MigrationConflictError):
     """Raised when a carry's extended ``visibility_ancestry`` closure would
     exceed ``max_visibility_ancestry_rows`` or ``max_wire_record_bytes``, before
     any state change. Wire error code ``capacity_exceeded``
-    (``ergasterion.framework.bronze_contract.ERROR_CODES``)."""
+    (``ergasterion.framework.landing_contract.ERROR_CODES``)."""
 
 
 @dataclass(frozen=True)
@@ -1218,8 +1196,8 @@ class MigrationPlan:
 
 def plan_migration(
     prior_state: ContractRegistryState,
-    prior_contract: BronzeProductContract | None,
-    candidate: BronzeProductContract,
+    prior_contract: LandingProductContract | None,
+    candidate: LandingProductContract,
 ) -> MigrationPlan:
     """Classify the candidate against ``prior_contract``, check its SemVer bump,
     and resolve the activation kind the change requires. Raises
@@ -1238,7 +1216,7 @@ def plan_migration(
 
 
 def register_candidate(
-    state: ContractRegistryState, candidate: BronzeProductContract, *, expected_revision: int
+    state: ContractRegistryState, candidate: LandingProductContract, *, expected_revision: int
 ) -> ContractRegistryState:
     """Record a candidate contract against the registry. Registering the same
     candidate again is idempotent in effect and still advances the revision; a
@@ -1290,8 +1268,8 @@ def _check_ancestry_capacity(
 
 def activate_contract(
     state: ContractRegistryState,
-    prior_contract: BronzeProductContract | None,
-    candidate: BronzeProductContract,
+    prior_contract: LandingProductContract | None,
+    candidate: LandingProductContract,
     *,
     expected_revision: int,
     activated_at: str | None,
@@ -1645,57 +1623,102 @@ _PROJECTION_WIRE_KEYS = ("source", "name", "logical_type", "nullable")
 _PROJECTION_LEGACY_KEYS = frozenset({"expression"})
 
 
-class _StagingIncrement(BaseModel):
-    """The staging increment block, as this loader accepts it.
+def validate_declared_layer(table: Any, where: str) -> str | None:
+    """One table's declared estate layer label, validated as a closed scalar.
 
-    The block is a consumer-side processing policy of the warehouse estate: the
-    lookback the delta window opens on, plus the acknowledgment that the table's
-    effective column advances on redelivery. It reaches no Bronze Product Contract and
-    no contract digest, so declaring it moves no digest and changes no wire shape.
-    ``ergasterion.emit`` owns the emit-time gates that consume it for generation.
+    Owner ruling R1: a product declares the layer label it sits in and the estate
+    maps that label to its translators. The landing runtime route reads this value
+    and looks it up in the estate's translator table; it never infers a label from
+    the profile a plan resolved, which is ambiguous the moment an estate declares
+    two labels admitting the same profile.
+
+    The key is optional here and required by ``load_typed_declarations`` for a
+    production delivery, so a draft table can be authored before its estate
+    configuration exists.
     """
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    lookback_minutes: int
-    effective_advances_on_redelivery: Literal[True]
-
-
-def validate_staging_increment(table: Any, where: str) -> _StagingIncrement | None:
-    """Validate one table's optional staging increment block as a closed model.
-
-    Returns the parsed block, or ``None`` when the table declares none. The block never
-    enters the contract this loader builds, so a table that declares it and one that
-    does not compile to byte-identical contract documents and equal digests.
-    """
     if not isinstance(table, dict):
+        raise ValueError(f"{where}: expected a mapping")
+    if "layer" not in table:
         return None
-    block = table.get("staging_increment")
-    if block is None:
-        return None
-    try:
-        parsed = _StagingIncrement.model_validate(block)
-    except ValidationError as exc:
-        raise ValueError(f"{where}.staging_increment: {exc}") from exc
-    if parsed.lookback_minutes < 1:
+    layer = table["layer"]
+    if not isinstance(layer, str) or not re.fullmatch(r"[a-z_][a-z0-9_]*", layer):
         raise ValueError(
-            f"{where}.staging_increment.lookback_minutes: the lookback is a positive "
-            f"integer number of minutes, got {parsed.lookback_minutes!r}"
+            f"{where}.layer: expected an estate layer label (a lower-case identifier), got {layer!r}"
         )
-    return parsed
+    return layer
+
+
+# The declaration keys no route serves any more. Named once each, so the
+# refusals below and any reader looking for them read the same strings.
+STAGING_INCREMENT_KEY = "staging_increment"
+CANONICAL_MAPPINGS_KEY = "canonical_mappings"
+
+
+def refuse_staging_increment(table: Any, where: str) -> None:
+    """Refuse a table that declares a staging increment block.
+
+    The block used to configure the delta window of a staging model, and the
+    route that rendered those models is gone. Accepting the key and doing
+    nothing with it is worse than refusing it: an operator who declares a
+    lookback would be told nothing and would get no window. The key is
+    therefore not part of the declaration vocabulary any more, and a
+    declaration carrying it fails closed naming the file and the table.
+    """
+    if not isinstance(table, dict) or STAGING_INCREMENT_KEY not in table:
+        return
+    raise ValueError(
+        f"{where}.{STAGING_INCREMENT_KEY}: no route consumes this block. It configured "
+        "the delta window of a staging model, and no route renders one; remove the key."
+    )
+
+
+def refuse_canonical_mappings(document: Any, where: str) -> None:
+    """Refuse a source declaration that maps its attributes onto a reference
+    model.
+
+    The block used to be checked against a reference model checkout by the
+    route that read these declarations, and that route is gone. A canonical
+    product now declares which entity of the reference model each of its own
+    entities reads, in its own declaration, and
+    ``ergasterion.validate_canonical`` proves that against a checkout. A
+    source declaration carrying the old block would be read by nothing and
+    proved by nothing, so it fails closed naming the file.
+
+    The key is a fact about the whole file rather than about one table, so
+    the message names it as ``<path>: <key>``, the shape this loader already
+    uses for a file-level fault, rather than the ``<path>:<table>.<key>``
+    shape it uses for a key on one table.
+    """
+    if not isinstance(document, dict) or CANONICAL_MAPPINGS_KEY not in document:
+        return
+    raise ValueError(
+        f"{where}: {CANONICAL_MAPPINGS_KEY}: no route consumes this block. A canonical "
+        "product declares which entity of the reference model each of its entities reads, "
+        "under declarations/products/, and 'ergasterion validate-canonical' proves it; "
+        "remove the key."
+    )
 
 
 @dataclass(frozen=True)
 class TypedTable:
-    """One table's resolved typed Bronze intent: either an explicit draft
+    """One table's resolved typed Landing intent: either an explicit draft
     placeholder (``contract`` is ``None``) or a validated
-    ``BronzeProductContract`` with its three canonical digests."""
+    ``LandingProductContract`` with its three canonical digests.
+
+    ``layer`` is the estate layer label this landing product declares (owner
+    ruling R1: ownership is declared, never inferred). The runtime route looks
+    that label up in the estate's translator table as a key. It is estate
+    routing configuration, not a Landing contract fact: it reaches no
+    ``LandingProductContract``, no canonical digest and no wire record."""
 
     source_name: str
     table_name: str
     kind: Literal["draft", "production"]
     domain: str | None
+    layer: str | None
     draft_reason: str | None
-    contract: BronzeProductContract | None
+    contract: LandingProductContract | None
     contract_digest: str | None
     source_schema_digest: str | None
     published_schema_digest: str | None
@@ -1711,7 +1734,7 @@ class TypedDeclarations:
     estate_namespace: str | None
     tables: dict[tuple[str, str], TypedTable] = field(default_factory=dict)
 
-    def production_contracts(self) -> list[BronzeProductContract]:
+    def production_contracts(self) -> list[LandingProductContract]:
         return [table.contract for table in self.tables.values() if table.contract is not None]
 
     def drafts(self) -> list[TypedTable]:
@@ -1721,8 +1744,8 @@ class TypedDeclarations:
 def _projection_field(entry: Any, where: str) -> ProjectionField:
     """Project one authored projection column onto the wire ``ProjectionField``.
 
-    An authored column may carry the legacy ``expression`` alongside the typed
-    fields; ``ergasterion.emit.load_declarations()`` reads that key and this
+    An authored column may carry an ``expression`` alongside the typed fields;
+    the dbt translator reads that key when it renders the projection and this
     loader ignores it, so one authored list serves both consumers.
     """
     if not isinstance(entry, dict):
@@ -1737,36 +1760,35 @@ def _projection_field(entry: Any, where: str) -> ProjectionField:
 
 
 def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclarations:
-    """The SSOT typed loader. It reads ``estate.yml``, every ``domains/*.yml``
-    ``bronze:`` membership block and every ``declarations/*.yml``, then resolves
-    each ``landing.kind: source`` table into a draft placeholder or a validated,
-    digested ``BronzeProductContract``. A ``landing.kind: seed`` table carries no
-    Bronze contract in v1, so seed fixture meaning stays owned by the landing
-    discriminator alone.
+    """The SSOT typed loader. It reads ``estate.yml`` and every
+    ``declarations/*.yml``, then resolves each ``landing.kind: source`` table into a
+    draft placeholder or a validated, digested ``LandingProductContract``. A
+    ``landing.kind: seed`` table carries no Landing contract in v1, so seed fixture
+    meaning stays owned by the landing discriminator alone.
 
     It raises ``ValueError`` or ``ContractValidationError`` naming the file and
-    table on any missing required fact, mode-matrix violation or domain
-    membership problem. It never reads through or mutates
-    ``ergasterion.emit.load_declarations()``: the two loaders read the same files
-    independently and neither feeds the other.
+    table on any missing required fact or mode-matrix violation.
     """
     ctx = ctx or EstateContext.default()
     namespace = load_estate_namespace(ctx)
-    membership = _load_bronze_domain_membership(ctx)
     tables: dict[tuple[str, str], TypedTable] = {}
 
     for path in sorted(ctx.declarations_dir.glob("*.yml")):
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
         if not isinstance(data, dict):
             raise ValueError(f"{path}: expected a YAML mapping")
+        refuse_canonical_mappings(data, str(path))
         source_block = data.get("source") or {}
         source_name = source_block.get("name")
         source_defaults = source_block.get("delivery")
 
         for table_name, table in (data.get("tables") or {}).items():
-            # The staging increment block is valid on both landing kinds, so it is
-            # validated before the landing filter and kept out of everything below it.
-            validate_staging_increment(table, f"{path}:{table_name}")
+            # The declared layer label is valid on both landing kinds, so it is
+            # read before the landing filter and kept out of everything below
+            # it. The retired staging increment key is refused there too, so a
+            # declaration carrying it fails closed whichever landing it names.
+            refuse_staging_increment(table, f"{path}:{table_name}")
+            declared_layer = validate_declared_layer(table, f"{path}:{table_name}")
             landing = table.get("landing") or {"kind": "seed"}
             if not isinstance(landing, dict) or landing.get("kind") != "source":
                 continue
@@ -1776,7 +1798,7 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
             if delivery_raw is None:
                 raise ValueError(
                     f"{where}: a source landing needs an explicit table delivery block "
-                    "(draft or production) -- see docs/specifications/bronze-product-v1.md"
+                    "(draft or production) -- see docs/specifications/landing-product-v1.md"
                 )
             key = (source_name, table_name)
             delivery_kind = delivery_raw.get("kind") if isinstance(delivery_raw, dict) else None
@@ -1790,7 +1812,8 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
                     source_name=source_name,
                     table_name=table_name,
                     kind="draft",
-                    domain=membership.get(key),
+                    domain=None,
+                    layer=declared_layer,
                     draft_reason=draft.reason,
                     contract=None,
                     contract_digest=None,
@@ -1806,12 +1829,6 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
                 )
             if namespace is None:
                 raise ValueError(f"{where}: production delivery needs estate.yml's estate.namespace")
-            domain = membership.get(key)
-            if domain is None:
-                raise ValueError(
-                    f"{where}: no domains/*.yml bronze: block names ({source_name}, {table_name}); "
-                    "production generation needs exactly one explicit domain membership"
-                )
             product_raw = table.get("product")
             if product_raw is None:
                 raise ValueError(f"{where}: production delivery needs a table 'product' block")
@@ -1819,6 +1836,13 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
                 product_facts = _TableProductFacts.model_validate(product_raw)
             except ValidationError as exc:
                 raise ValueError(f"{where}.product: {exc}") from exc
+            domain = product_facts.domain
+            if declared_layer is None:
+                raise ValueError(
+                    f"{where}: production delivery needs a table 'layer' naming the estate "
+                    "layer label this product sits in; the runtime route looks that label up "
+                    "in estate.yml's translator table (owner ruling R1)"
+                )
 
             projection = tuple(
                 _projection_field(entry, f"{where}.projection[{index}]")
@@ -1826,12 +1850,12 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
             )
             merged_delivery = _overlay_production_delivery(source_defaults, delivery_raw)
             try:
-                contract = BronzeProductContract(
+                contract = LandingProductContract(
                     schema=CONTRACT_SCHEMA,
                     logical_identity=LogicalIdentity(
                         estate_namespace=namespace, source=source_name, table=table_name
                     ),
-                    product=ProductFacts(domain=domain, **product_facts.model_dump()),
+                    product=ProductFacts(**product_facts.model_dump()),
                     landing=LandingContract.model_validate(landing),
                     delivery=DeliveryPolicy.model_validate(merged_delivery),
                     projection=projection,
@@ -1848,6 +1872,7 @@ def load_typed_declarations(ctx: EstateContext | None = None) -> TypedDeclaratio
                 table_name=table_name,
                 kind="production",
                 domain=domain,
+                layer=declared_layer,
                 draft_reason=None,
                 contract=contract,
                 contract_digest=compute_contract_digest(contract),

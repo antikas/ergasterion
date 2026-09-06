@@ -1,0 +1,103 @@
+# The dimensional model over the delivered feed: two facts at the same
+# declared grain, one conformed customer dimension both of them are
+# analysed by, and a channel dimension the order-line fact is analysed by.
+#
+# The customer dimension is type 2: a version starts when an attribute
+# changes and its effective range runs to the instant the next version
+# starts. The channel dimension is type 1: one row per channel, the
+# version the change column ranks last.
+#
+# Known answers on the seeded feed:
+#   * dim_customer carries three rows -- C-001 standard from 2026-01-05 to
+#     2026-03-10, C-001 premium from 2026-03-10 with no end, and C-002
+#     premium from 2026-02-01 with no end;
+#   * dim_channel carries two rows -- CH-WEB as "Web store", the later
+#     name, and CH-APP as "Mobile app";
+#   * both facts carry five rows, one per delivered order line, and both
+#     read the same conformed customer dimension.
+product:
+  name: order_star
+  domain: sales
+  version: "1.0"
+  layer: published
+  profile: serving
+  owner: sales-domain
+
+sources:
+  - contract: sales.order_feed@1
+    expect:
+      fields: [order_id, line_number, customer_id, channel_code, order_date, changed_at]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: order_id
+        not_null: true
+      - field: customer_id
+        not_null: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The order star: two fact relations at order-line grain over one conformed customer dimension."
+    ownership: sales-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: dimensional
+  shape_config:
+    dimensions:
+      - name: customer
+        type: 2
+        key: [customer_id]
+        attributes: [customer_name, customer_segment]
+        change_column: changed_at
+        description: "The customer as at each version of its attributes."
+      - name: channel
+        type: 1
+        key: [channel_code]
+        attributes: [channel_name]
+        change_column: changed_at
+        description: "The channel an order line was placed through."
+    facts:
+      - name: order_line
+        grain: [order_id, line_number]
+        dimensions: [customer, channel]
+        time_dimension: order_date
+        measures:
+          - {name: quantity, aggregation: sum, description: "Units ordered."}
+          - {name: net_amount, aggregation: sum, description: "Net amount ordered."}
+        description: "One row per delivered order line."
+      - name: order_line_tax
+        grain: [order_id, line_number]
+        dimensions: [customer]
+        time_dimension: order_date
+        measures:
+          - {name: tax_amount, aggregation: sum, description: "Tax charged on the line."}
+        description: "The tax measure group at order-line grain."
+    time_spine:
+      from: "2026-01-01"
+      to: "2026-04-30"
+    metrics:
+      - name: total_net_amount
+        type: simple
+        measure: net_amount
+        label: "Total net amount"
+        description: "Net amount ordered across the query grain."
+      - name: total_tax_amount
+        type: simple
+        measure: tax_amount
+        label: "Total tax amount"
+        description: "Tax charged across the query grain."
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

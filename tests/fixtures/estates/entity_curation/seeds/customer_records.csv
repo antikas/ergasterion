@@ -1,0 +1,12 @@
+rec_id,src_sys,cust_ref,nm,pcode,eml,eff_dt
+r-01,crm,C-100,Alice Brown,SW1A 1AA,,2026-01-05
+r-02,billing,C-100,Alice B Brown,SW1A 1AA,alice.b@example.com,2026-03-11
+r-03,crm,C-200,Robert Green,E1 6AN,rob@example.com,2026-02-02
+r-04,billing,C-201,Rob Greene,E1 6AN,r.greene@example.com,2026-02-09
+r-05,crm,C-300,Carol White,M1 2AB,carol@example.com,2026-01-20
+r-06,billing,,Dan Black,N1 9GU,dan@example.com,2026-02-15
+r-07,crm,C-400,Zoe Nakamura,E1 6AN,zoe@example.com,2026-03-01
+r-08,billing,C-500,,E1 6AN,zed@example.com,2026-03-05
+r-09,crm,C-600,Priya Sharma,LS1 4DY,priya@example.com,2026-01-11
+r-10,billing,C-601,Priya Sharma,LS1 4DY,priya.s@example.com,2026-02-14
+r-11,crm,C-700,Alice Brown,SW1A 1AA,alice.b@example.com,2026-02-01

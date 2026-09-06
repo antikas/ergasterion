@@ -1,0 +1,49 @@
+# An estate that declares no Data Vault product anywhere: two products, both
+# on the `declared` shape, one delivered feed and one integrated product on
+# top of its contract (architecture check 2). Nothing here names the
+# data_vault shape, and no translator entry registers it, so an estate that
+# never wanted a vault emits, gates and executes without one.
+#
+# The layer labels "delivered" and "integrated" are names the engine has
+# never seen and never interprets. Each is a key into the tables below.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  structured_types:
+    - array
+  labels:
+    delivered:
+      profiles: [serving]
+    integrated:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    delivered:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    integrated:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

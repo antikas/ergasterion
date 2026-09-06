@@ -1,0 +1,76 @@
+# One source system's lane onto the schema the portfolio company products
+# share, with the fund each system holds the company under.
+#
+# This source delivers no snapshot date. The estate reads its extract as
+# standing at the reporting date the dated sources report at, 2025-12-31,
+# declared here once so every product downstream orders one instant
+# against another rather than against nothing.
+#
+# PORTIQ states no sub sector and no holding status.
+product:
+  name: portiq_portfolio_company
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.portiq_portfolio_company_extract@1
+    expect:
+      fields:
+        - portiq_company_id
+        - portiq_fund_id
+        - company_name
+        - company_lei
+        - shared_external_id
+        - sector
+        - country
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: portiq_company_id, not_null: true}
+      - {field: company_name, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: portiq_company_id, to: source_company_id, type: string}
+      - {from: portiq_fund_id, to: source_fund_id, type: string}
+      - {from: company_name, to: source_name, type: string}
+      - {from: company_lei, to: source_lei, type: string}
+      - {from: shared_external_id, to: source_external_id, type: string}
+      - {from: sector, to: source_sector, type: string}
+      - {from: country, to: source_country, type: string}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_record_id, type: string, expression: "source_company_id"}
+      - {name: source_sub_sector, type: string, expression: "null"}
+      - {name: source_status, type: string, expression: "null"}
+      - {name: source_reported_on, type: date, expression: "date '2025-12-31'"}
+      - {name: company_source_system, type: string, expression: "'portiq'"}
+      - {name: company_identity_key, type: string, expression: "concat('portiq', ':', source_company_id)"}
+      - {name: company_normalised_name, type: string, rule: investment_normalised_name_v1, rule_version: 1}
+      - {name: company_lei, type: string, expression: "nullif(trim(source_lei), '')"}
+      - {name: company_external_id, type: string, expression: "nullif(trim(source_external_id), '')"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Portfolio companies as PORTIQ states them, on the schema the four company feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

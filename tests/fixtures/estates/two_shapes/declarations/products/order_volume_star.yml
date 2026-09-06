@@ -1,0 +1,87 @@
+# The estate's second star. It exists to prove that one estate serves more
+# than one dimensional product: a dbt project carries one time spine per
+# granularity, so the spine is the estate's shared relation and each star
+# declares only the window its own metrics are aggregated over.
+#
+# It reads the same delivered feed as sales.order_star and models a
+# different measure group over it: how many lines were ordered, analysed by
+# the channel the line was placed through. Its measure and metric names are
+# its own, because a dbt project's semantic layer names a measure once.
+#
+# Its declared window runs from May to June and the other star's from
+# January to April, so the shared spine covers January to June: the union of
+# what the estate declared, not one product's window imposed on the rest.
+#
+# Known answers on the seeded feed: five delivered order lines, so the fact
+# carries five rows and the line count sums to five; two channels, so the
+# dimension carries two rows.
+product:
+  name: order_volume_star
+  domain: sales
+  version: "1.0"
+  layer: published
+  profile: serving
+  owner: sales-domain
+
+sources:
+  - contract: sales.order_feed@1
+    expect:
+      fields: [order_id, line_number, channel_code, order_date]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: order_id
+        not_null: true
+  - pattern: calculated_fields
+    fields:
+      - name: line_count
+        type: integer
+        expression: "1"
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The order-volume measure group at order-line grain, analysed by channel."
+    ownership: sales-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: dimensional
+  shape_config:
+    dimensions:
+      - name: order_channel
+        type: 1
+        key: [channel_code]
+        attributes: [channel_name]
+        change_column: changed_at
+        description: "The channel an order line was placed through, as this star reads it."
+    facts:
+      - name: order_line_volume
+        grain: [order_id, line_number]
+        dimensions: [order_channel]
+        time_dimension: order_date
+        measures:
+          - {name: line_count, aggregation: sum, description: "One per delivered order line."}
+        description: "One row per delivered order line, carrying its unit contribution."
+    time_spine:
+      from: "2026-05-01"
+      to: "2026-06-30"
+    metrics:
+      - name: total_line_count
+        type: simple
+        measure: line_count
+        label: "Total order lines"
+        description: "Order lines delivered across the query grain."
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

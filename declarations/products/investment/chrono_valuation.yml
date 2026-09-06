@@ -1,0 +1,64 @@
+# One source system's lane onto the schema the holding valuation products
+# share: one row per delivered mark, against the fund and the company the
+# system states the mark for.
+product:
+  name: chrono_valuation
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.chrono_valuation_extract@1
+    expect:
+      fields:
+        - mark_uid
+        - vehicle_code
+        - asset_uid
+        - mark_date
+        - usd_fair_value
+        - mark_method
+        - fair_value_bucket
+        - extraction_confidence
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: mark_uid, not_null: true}
+      - {field: mark_date, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: mark_uid, to: source_record_id, type: string}
+      - {from: vehicle_code, to: source_fund_id, type: string}
+      - {from: asset_uid, to: source_company_id, type: string}
+      - {from: mark_date, to: source_valued_on, type: date}
+      - {from: usd_fair_value, to: source_value_usd, type: {name: decimal, precision: 18, scale: 2}}
+      - {from: mark_method, to: source_method, type: string}
+      - {from: fair_value_bucket, to: source_valuation_level, type: string}
+      - {from: extraction_confidence, to: source_confidence_score, type: {name: decimal, precision: 5, scale: 4}}
+  - pattern: calculated_fields
+    fields:
+      - {name: valuation_source_system, type: string, expression: "'chrono'"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Holding valuations as CHRONO states them, on the schema both valuation feeds share."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

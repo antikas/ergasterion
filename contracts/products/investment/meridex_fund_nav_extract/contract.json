@@ -1,0 +1,75 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "The MERIDEX administrator periodic net asset value feed as it was delivered, one row per delivered valuation date.",
+  "freshness": "daily by 05:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "meridex_fund_nav_extract",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.meridex_fund_nav_extract_delivery@1"
+  ],
+  "quality": [
+    {
+      "description": "nav_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "nav_id must be unique",
+      "dimension": "uniqueness"
+    },
+    {
+      "description": "meridex_fund_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "nav_date must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "nav_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "meridex_fund_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "nav_date",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "nav_usd",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "called_capital_usd",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "distributed_capital_usd",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.meridex_fund_nav_extract"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

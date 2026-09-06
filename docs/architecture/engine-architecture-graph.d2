@@ -1,0 +1,91 @@
+# docs/architecture/engine-architecture-graph.d2
+#
+# One real path through the e-commerce product graph. Products are nodes and
+# published contracts are the only edges. The dashed bands are estate labels;
+# the engine uses each one only as a lookup key. Rendered with:
+#   d2 --layout elk docs/architecture/engine-architecture-graph.d2 docs/architecture/engine-architecture-graph.svg
+# The committed SVG is generated from this source with the command above.
+
+canvas: {
+  label: ""
+  style.fill: "#0d1117"
+  style.stroke: "#0d1117"
+  direction: right
+
+  landed: "estate label: landed  (profile: landing)" {
+    class: label
+    cartivo_extract: "cartivo_customer_extract\nprofile landing | shape declared" {
+      class: product
+    }
+    mercaro_extract: "mercaro_customer_extract\nprofile landing | shape declared" {
+      class: product
+    }
+    relatio_extract: "relatio_customer_extract\nprofile landing | shape declared" {
+      class: product
+    }
+  }
+
+  silver: "estate label: silver  (profiles: derivation | integration)" {
+    class: label
+    cartivo: "cartivo_customer\nprofile derivation | shape declared" {
+      class: product
+    }
+    mercaro: "mercaro_customer\nprofile derivation | shape declared" {
+      class: product
+    }
+    relatio: "relatio_customer\nprofile derivation | shape declared" {
+      class: product
+    }
+    customer: "customer\nprofile integration | shape declared" {
+      class: product
+    }
+  }
+
+  gold: "estate label: gold  (profile: serving)" {
+    class: label
+    customer_interface: "customer_interface\nprofile serving | shape canonical\ncustomer + customer_contact" {
+      class: product
+    }
+  }
+
+  landed.cartivo_extract -> silver.cartivo: {
+    class: pipe
+  }
+  landed.mercaro_extract -> silver.mercaro: {
+    class: pipe
+  }
+  landed.relatio_extract -> silver.relatio: {
+    class: pipe
+  }
+  silver.cartivo -> silver.customer: {
+    class: pipe
+  }
+  silver.mercaro -> silver.customer: {
+    class: pipe
+  }
+  silver.relatio -> silver.customer: {
+    class: pipe
+  }
+  silver.customer -> gold.customer_interface: {
+    class: pipe
+  }
+}
+
+classes: {
+  label: {
+    style.fill: "#0d1117"
+    style.stroke: "#6e7681"
+    style.font-color: "#8b949e"
+    style.stroke-dash: 4
+  }
+  product: {
+    style.fill: "#161b22"
+    style.stroke: "#388bfd"
+    style.font-color: "#c9d1d9"
+    style.border-radius: 6
+  }
+  pipe: {
+    style.stroke: "#3fb950"
+    style.font-color: "#7ee787"
+  }
+}

@@ -1,0 +1,87 @@
+# Landing product: The delivered investment-authorisation decisions, one row per decision event.
+#
+# Delivery is append only: a decision event is inserted and never updated or
+# deleted, so re-deciding an item appends a new event under a new decision
+# identifier rather than overwriting the one before it. The publication
+# declares that shape -- incremental, keyed on the decision event's own
+# identifier -- so a rebuild of unchanged input changes nothing.
+#
+# Boundary: the publication is an upsert on that identifier, not an
+# insert-if-absent. It loses no row and a rebuild of unchanged input
+# changes nothing, but a decision event re-delivered with different
+# content under the same identifier would be rewritten rather than
+# rejected. A true insert-if-absent publication mode is not something a
+# product declaration can state today.
+#
+# The append-only log the analysts write to is provisioned by the adapter and
+# is not a relation this route generates (plan decision D17). This product
+# lands the delivered decision events the estate ships beside it, and the two
+# standing assertions on the provisioned log are unchanged.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the lane
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: deal_decision_log
+  domain: investment
+  version: "1.0"
+  layer: landed
+  owner: investment-domain
+
+sources:
+  - contract: investment.deal_decision_log_delivery@1
+    kind: fixture
+    fixture:
+      relation: deal_decision_log_fixtures
+      fields:
+        - {name: decision_id, type: string}
+        - {name: external_deal_id, type: string}
+        - {name: decision, type: string}
+        - {name: conditions, type: string}
+        - {name: actor, type: string}
+        - {name: decided_at, type: string}
+    expect:
+      fields: [decision_id, external_deal_id, decision]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: decision_id, not_null: true}
+      - {field: decision_id, unique: true}
+      - {field: external_deal_id, not_null: true}
+      - {field: decided_at, not_null: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The delivered investment-authorisation decisions, one row per decision event, published as an upsert on the decision identifier."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [decision_id]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

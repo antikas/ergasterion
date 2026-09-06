@@ -1,0 +1,48 @@
+# A consumer of one relation of the vault, named on the source as the
+# vault's own shape names it (architecture section 7, owner ruling R4).
+# The vault publishes seven relations; this product reads the surviving
+# record, so the columns of the hubs, the link, the satellites and the
+# point-in-time relation are not columns here.
+#
+# Known answers on the seeded feeds: two surviving customers, so two rows.
+product:
+  name: customer_directory
+  domain: crm
+  version: "1.0"
+  layer: published
+  profile: serving
+  owner: crm-domain
+
+sources:
+  - contract: crm.customer_vault@1
+    relation: golden_customer
+    expect:
+      fields: [customer_hk, customer_ref, full_name, email]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: customer_hk
+        not_null: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The surviving customer record, read from the vault's business-vault relation."
+    ownership: crm-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

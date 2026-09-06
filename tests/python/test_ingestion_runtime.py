@@ -1,7 +1,7 @@
 """Assert-script tests for ergasterion/ingestion/ports.py, runtime.py and
 conformance.py (repo convention: no pytest).
 
-Each test function proves one property of the Bronze runtime-ports service:
+Each test function proves one property of the Landing runtime-ports service:
 
 Ports and conformance seam
   - The nine port protocols (``ergasterion.ingestion.ports``) are structurally
@@ -76,8 +76,8 @@ if __package__ in (None, ""):
     import os as _os, sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     DeliveryMode,
     PublicationPolicy,
     ReadinessResult,
@@ -147,26 +147,26 @@ from ergasterion.source_delivery import next_boundary_after
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 INGESTION_DIR = REPO_ROOT / "ergasterion" / "ingestion"
-SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "bronze_schema_vectors.json"
+SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "landing_schema_vectors.json"
 
-PLAN_DIGEST = canonical_digest({"plan": "bronze-runtime-test"})
-MANIFEST_DIGEST = canonical_digest({"manifest": "bronze-runtime-test"})
+PLAN_DIGEST = canonical_digest({"plan": "landing-runtime-test"})
+MANIFEST_DIGEST = canonical_digest({"manifest": "landing-runtime-test"})
 IMPLEMENTATION_VERSION = "1.0.0"
 
 
 # --------------------------------------------------------------------------- fixtures / helpers
 
-def _sample_contract() -> BronzeProductContract:
+def _sample_contract() -> LandingProductContract:
     document = json.loads(SCHEMA_VECTORS_PATH.read_text(encoding="utf-8"))
     for vector in document["positive"]:
-        if vector["record"] == "BronzeProductContract":
-            return BronzeProductContract.model_validate(vector["payload"])
-    raise AssertionError("no BronzeProductContract positive vector found in the schema fixture")
+        if vector["record"] == "LandingProductContract":
+            return LandingProductContract.model_validate(vector["payload"])
+    raise AssertionError("no LandingProductContract positive vector found in the schema fixture")
 
 
 def _managed_contract(
     publication_mode: PublicationPolicy | None = None, delivery_mode: DeliveryMode | None = None,
-) -> BronzeProductContract:
+) -> LandingProductContract:
     return contract_variant(
         _sample_contract(), integration_kind="managed", publication_mode=publication_mode,
         delivery_mode=delivery_mode,
@@ -180,7 +180,7 @@ def _b64url_json(rows: list) -> str:
     return base64.urlsafe_b64encode(_json.dumps(rows).encode("utf-8")).decode("ascii").rstrip("=")
 
 
-def _manifest(contract: BronzeProductContract, delivery_id: str, rows: list) -> DeliveryManifest:
+def _manifest(contract: LandingProductContract, delivery_id: str, rows: list) -> DeliveryManifest:
     progress_claim = (
         {"kind": "opaque_batch"} if contract.delivery.progress.kind == "opaque_batch"
         else {"kind": "sequence", "high_watermark": str(len(rows)), "event_count": str(len(rows))}
@@ -227,7 +227,7 @@ def _deliver(runtime, ports, contract, state, handle: str, delivery_id: str, row
     return result, ports.state_store.status_query(contract.logical_identity).state
 
 
-def _committed_attempt(contract: BronzeProductContract) -> Attempt:
+def _committed_attempt(contract: LandingProductContract) -> Attempt:
     digest = canonical_digest(contract.model_dump(mode="json", by_alias=True))
     return Attempt(
         run_id=digest, attempt_id=digest, logical_identity=contract.logical_identity, claim_digest=digest,
@@ -237,7 +237,7 @@ def _committed_attempt(contract: BronzeProductContract) -> Attempt:
     )
 
 
-def _evaluation(contract: BronzeProductContract, name: str) -> RemediationEvaluation:
+def _evaluation(contract: LandingProductContract, name: str) -> RemediationEvaluation:
     digest = canonical_digest(contract.model_dump(mode="json", by_alias=True))
     return RemediationEvaluation(
         schema="ergasterion.remediation-evaluation/v1", original_claim_digest=digest, raw_receipt_digest=digest,
@@ -447,7 +447,7 @@ def test_claim_replay_is_idempotent_and_conflict_is_rejected() -> None:
                   "expected the same delivery_id under a different claim digest to conflict")
 
 
-def _reprocessing_claim(contract: BronzeProductContract, original_claim_digest: str, name: str) -> ReprocessingClaim:
+def _reprocessing_claim(contract: LandingProductContract, original_claim_digest: str, name: str) -> ReprocessingClaim:
     digest = canonical_digest(contract.model_dump(mode="json", by_alias=True))
     return ReprocessingClaim(
         schema="ergasterion.reprocessing-claim/v1", original_claim_digest=original_claim_digest,
@@ -643,7 +643,7 @@ def _stage_heartbeat(store, contract, state, revision: str, now: str):
     payload_digest = canonical_digest(payload.model_dump(mode="json", by_alias=True))
     intent = ProjectionIntent(
         schema="ergasterion.projection-intent/v1", logical_identity=contract.logical_identity,
-        contract_digest=contract_digest, projection_target="bronze", projection_revision=revision,
+        contract_digest=contract_digest, projection_target="landing", projection_revision=revision,
         originating_state_revision=state.state_revision, kind=ProjectionIntentKind.HEARTBEAT,
         execution_plan_digest=PLAN_DIGEST, runtime_manifest_digest=MANIFEST_DIGEST, payload=payload,
         payload_digest=payload_digest,
@@ -847,7 +847,7 @@ def test_resume_release_without_a_recorded_decision_is_refused() -> None:
 
 # --------------------------------------------------------------------------- scheduled occurrences
 
-def _occurrence_window(contract: BronzeProductContract, minimum: int = 3):
+def _occurrence_window(contract: LandingProductContract, minimum: int = 3):
     """The first boundary a never-evaluated stream sees, plus a later instant at
     which at least ``minimum`` further mandatory occurrences are due."""
 
@@ -1006,7 +1006,7 @@ def test_projection_publisher_rejects_a_revision_gap() -> None:
     payload_digest = canonical_digest(payload)
     intent = ProjectionIntent(
         schema="ergasterion.projection-intent/v1", logical_identity=contract.logical_identity, contract_digest=digest,
-        projection_target="bronze", projection_revision="5",  # the cursor is at 0 and expects 1
+        projection_target="landing", projection_revision="5",  # the cursor is at 0 and expects 1
         originating_state_revision=stream_state.state_revision, kind="heartbeat",
         execution_plan_digest=digest, runtime_manifest_digest=digest, payload=payload,
         payload_digest=payload_digest, projection_intent_digest=canonical_digest({"payload": payload_digest, "rev": "5"}),
@@ -1047,7 +1047,7 @@ def test_contract_lifecycle_cas_and_candidate_activation() -> None:
     ports, stream_state = build_memory_ports(contract.logical_identity)
     digest = canonical_digest(contract.model_dump(mode="json", by_alias=True))
 
-    def request(action: str, expected_revision: str, subject: BronzeProductContract = contract):
+    def request(action: str, expected_revision: str, subject: LandingProductContract = contract):
         return ContractLifecycleRequest(
             schema="ergasterion.contract-lifecycle-request/v1", action=action,
             expected_state_revision=expected_revision, expected_deployment_revision=None,
@@ -1086,7 +1086,7 @@ def test_deployment_lifecycle_cas_candidate_activation_and_retirement() -> None:
             expected_state_revision=expected_revision, expected_deployment_revision=expected_deployment_revision,
             deployment=build_deployment(contract, candidate, candidate_manifest_digest=candidate),
             readiness=build_readiness(contract, candidate),
-            catchup_cursor=ProjectionCursor(logical_identity=contract.logical_identity, projection_target="bronze",
+            catchup_cursor=ProjectionCursor(logical_identity=contract.logical_identity, projection_target="landing",
                                              projection_revision="0", projection_intent_digest=None),
             permit_pre_intent_fence=False,
         )
@@ -1119,7 +1119,7 @@ def test_unready_deployment_is_refused() -> None:
         expected_state_revision=state.state_revision, expected_deployment_revision="0",
         deployment=build_deployment(contract, MANIFEST_DIGEST, candidate_manifest_digest=MANIFEST_DIGEST),
         readiness=build_readiness(contract, MANIFEST_DIGEST, result=ReadinessResult.REJECTED),
-        catchup_cursor=ProjectionCursor(logical_identity=contract.logical_identity, projection_target="bronze",
+        catchup_cursor=ProjectionCursor(logical_identity=contract.logical_identity, projection_target="landing",
                                          projection_revision="0", projection_intent_digest=None),
         permit_pre_intent_fence=False,
     )

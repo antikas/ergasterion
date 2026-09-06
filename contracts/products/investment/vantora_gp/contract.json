@@ -1,0 +1,102 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "General partners as VANTORA states them, on the schema the four manager feeds share.",
+  "freshness": "daily by 06:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "vantora_gp",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.vantora_gp_extract@1"
+  ],
+  "quality": [
+    {
+      "description": "vantora_gp_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "gp_name must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "source_gp_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_external_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_domicile",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_relationship_start_date",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "source_record_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_reported_on",
+          "required": false,
+          "type": "date"
+        },
+        {
+          "name": "gp_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_identity_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_normalised_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_lei",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_external_id",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.vantora_gp"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

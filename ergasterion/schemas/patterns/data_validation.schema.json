@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/data_validation.schema.json",
+  "title": "data_validation step configuration (architecture section 4)",
+  "description": "Rules by type, an optional stage (a profile may compose this pattern more than once, for example pre- and post-transform), threshold and on-failure policy. A rule takes exactly one of two forms, never both and never neither: a field rule, which names the field it constrains, or a reconciliation rule, which proves coverage against the upstream contracts a consolidated product consumes (architecture section 8, 'a consolidated product proves its coverage with a Data Validation occurrence whose rules reference its upstream contracts'). A reconciliation rule names at least two upstream contracts; that they are contracts this product actually consumes is enforced in ergasterion/framework/graph.py, where the estate's whole source set is known.",
+  "type": "object",
+  "required": ["pattern", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "data_validation" },
+    "stage": { "type": "string", "enum": ["pre", "post"] },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": { "type": "string", "minLength": 1 },
+          "completeness": { "type": "number", "minimum": 0, "maximum": 1 },
+          "unique": { "type": "boolean" },
+          "not_null": { "type": "boolean" },
+          "min": {},
+          "max": {},
+          "allowed_values": { "type": "array", "minItems": 1 },
+          "regex": { "type": "string", "minLength": 1 },
+          "reconcile": {
+            "type": "object",
+            "required": ["metric", "contracts"],
+            "additionalProperties": false,
+            "properties": {
+              "metric": { "type": "string", "minLength": 1 },
+              "contracts": {
+                "type": "array",
+                "minItems": 2,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "oneOf": [
+          { "required": ["field"], "not": { "required": ["reconcile"] } },
+          { "required": ["reconcile"], "not": { "required": ["field"] } }
+        ]
+      }
+    },
+    "on_failure": { "type": "string", "enum": ["quarantine", "abort", "warn"] },
+    "error_threshold": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

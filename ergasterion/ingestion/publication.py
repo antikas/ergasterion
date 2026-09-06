@@ -1,7 +1,7 @@
 """Publication barrier, projection intent/confirmation, remediation-release
 admission and whole-delivery reprocessing admission.
 
-A publication intent cannot exist until the Bronze graph, interface readiness
+A publication intent cannot exist until the Landing graph, interface readiness
 and validation decision all pass. Confirmation references that immutable
 intent; final run lineage is a later observer. Product version, contract
 digest and both schema digests bind every lineage and publication record.
@@ -12,8 +12,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     DeliveryMode,
     DispositionStatus,
     ExecutionPlan,
@@ -66,10 +66,10 @@ def require_publication_barrier(
     plan: ExecutionPlan,
     readiness: InterfaceReadiness,
     validation: ValidationResult,
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     runtime_manifest_digest: Digest,
 ) -> None:
-    """``bronze.schema`` accepts only a success with null ``revoked_at`` for the
+    """``landing.schema`` accepts only a success with null ``revoked_at`` for the
     exact target/manifest before a publication intent can exist. The graph must
     be whole. A rejected delivery never crosses the barrier."""
 
@@ -80,7 +80,7 @@ def require_publication_barrier(
     if plan.source_schema_digest != source_schema_digest or plan.published_schema_digest != published_schema_digest:
         raise PortError("schema_invalid", "execution plan schema digests do not bind the contract")
     if readiness.result is not ReadinessResult.READY or readiness.revoked_at is not None:
-        raise PortError("schema_invalid", "bronze.schema requires ready interface readiness with null revoked_at")
+        raise PortError("schema_invalid", "landing.schema requires ready interface readiness with null revoked_at")
     if readiness.contract_digest != contract_digest:
         raise PortError("capability_mismatch", "interface readiness was verified against a different contract")
     if readiness.runtime_manifest_digest != runtime_manifest_digest:
@@ -100,7 +100,7 @@ def require_publication_barrier(
         raise PortError("invalid_config", "partial publication decision is prohibited for this delivery mode")
 
 
-def lineage_digest_for(contract: BronzeProductContract, execution_plan_digest: Digest) -> Digest:
+def lineage_digest_for(contract: LandingProductContract, execution_plan_digest: Digest) -> Digest:
     return build_lineage_descriptor(contract, execution_plan_digest).lineage_digest
 
 
@@ -155,7 +155,7 @@ def build_projection_intent(
 
 def build_delivery_publication_payload(
     *,
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     attempt_id: Digest,
     visibility: VisibilityIdentity,
     readiness_digest: Digest,
@@ -163,7 +163,7 @@ def build_delivery_publication_payload(
     transport_payload_digest: Digest,
     raw_receipt_ref: str,
     raw_receipt_digest: Digest,
-    bronze_partition_ref: str,
+    landing_partition_ref: str,
     accepted_content_digest: Digest,
     ruleset_digest: Digest,
     validation_result_digest: Digest,
@@ -190,7 +190,7 @@ def build_delivery_publication_payload(
         transport_payload_digest=transport_payload_digest,
         raw_receipt_ref=raw_receipt_ref,
         raw_receipt_digest=raw_receipt_digest,
-        bronze_partition_ref=bronze_partition_ref,
+        landing_partition_ref=landing_partition_ref,
         accepted_content_digest=accepted_content_digest,
         ruleset_digest=ruleset_digest,
         validation_result_digest=validation_result_digest,
@@ -270,7 +270,7 @@ def published_ledger_row(
         transport_payload_digest=payload.transport_payload_digest,
         raw_receipt_ref=payload.raw_receipt_ref,
         raw_receipt_digest=payload.raw_receipt_digest,
-        bronze_partition_ref=payload.bronze_partition_ref,
+        landing_partition_ref=payload.landing_partition_ref,
         accepted_content_digest=payload.accepted_content_digest,
         ruleset_digest=payload.ruleset_digest,
         validation_result_digest=payload.validation_result_digest,
@@ -328,7 +328,7 @@ def release_id_for(
 
 def admit_selected_locator_release(
     *,
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     prior_decision: PublicationDecision,
     visibility_epoch: str,
     active_root_epoch: str,
@@ -431,7 +431,7 @@ def admit_whole_delivery_reprocessing(
 
 
 def records_bind_contract_and_schemas(
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     records: Sequence[Any],
 ) -> None:
     """Every lineage and publication record must carry the product version,

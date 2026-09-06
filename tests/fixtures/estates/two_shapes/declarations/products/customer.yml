@@ -1,0 +1,79 @@
+# The curated customer entity: one record per customer, resolved from the
+# delivered feed on the customer identifier and survived by recency. The
+# canonical product downstream is the interface over this one, which is why
+# this product carries the data_curation occurrence the canonical shape
+# requires of its upstream.
+#
+# Known answers: the five delivered order lines carry two customers, so
+# this product publishes two records, each with the attribute values of the
+# most recently changed line (C-001 is premium, its later segment).
+product:
+  name: customer
+  domain: crm
+  version: "1.0"
+  layer: conformed
+  profile: integration
+  owner: crm-domain
+
+sources:
+  - contract: sales.order_feed@1
+    expect:
+      fields: [record_id, source_system, customer_id, customer_name, customer_segment, changed_at]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: order_id, drop: true}
+      - {from: line_number, drop: true}
+      - {from: order_date, drop: true}
+      - {from: channel_code, drop: true}
+      - {from: channel_name, drop: true}
+      - {from: quantity, drop: true}
+      - {from: net_amount, drop: true}
+      - {from: tax_amount, drop: true}
+  - pattern: data_curation
+    entity: customer
+    resolution:
+      strategy: deterministic
+      keys: [customer_id]
+      record_key: record_id
+      merge_iterations: 2
+    survivorship:
+      record_id: most_recent
+      source_system: most_recent
+      customer_id: first_non_null
+      customer_name: most_recent
+      customer_segment: most_recent
+      changed_at: most_recent
+    precedence:
+      source_column: source_system
+      recency_column: changed_at
+      source_priority: [crm, orders]
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per resolved customer, with the surviving value of every attribute."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 07:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

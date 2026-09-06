@@ -1,0 +1,82 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Every manager succession event, against the manager the estate resolved as the successor.",
+  "freshness": "daily by 07:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "gp_succession",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.vantora_gp_succession@1"
+  ],
+  "quality": [
+    {
+      "description": "source_record_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "source_effective_on must not be null",
+      "dimension": "completeness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "source_record_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "source_predecessor_gp_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_successor_gp_id",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_event_type",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "source_effective_on",
+          "required": true,
+          "type": "date"
+        },
+        {
+          "name": "succession_source_system",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "succession_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_business_key",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "gp_normalised_name",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.gp_succession"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

@@ -26,8 +26,8 @@ if __package__ in (None, ""):
     import sys as _sys
     _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))))
 
-from ergasterion.framework.bronze_contract import (
-    BronzeProductContract,
+from ergasterion.framework.landing_contract import (
+    LandingProductContract,
     ContentEncoding,
     CsvCodec,
     DecimalType,
@@ -85,16 +85,16 @@ from ergasterion.ingestion.runtime import PortError, canonical_digest, digest_to
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "bronze_file_source"
 INVENTORY_PATH = FIXTURES / "inventory.json"
-SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "bronze_schema_vectors.json"
+SCHEMA_VECTORS_PATH = REPO_ROOT / "tests" / "fixtures" / "landing_schema_vectors.json"
 THROUGHPUT: dict[str, float] = {}
 
 
-def _sample_contract() -> BronzeProductContract:
+def _sample_contract() -> LandingProductContract:
     document = json.loads(SCHEMA_VECTORS_PATH.read_text(encoding="utf-8"))
     for vector in document["positive"]:
-        if vector["record"] == "BronzeProductContract":
-            return BronzeProductContract.model_validate(vector["payload"])
-    raise AssertionError("no BronzeProductContract positive vector found")
+        if vector["record"] == "LandingProductContract":
+            return LandingProductContract.model_validate(vector["payload"])
+    raise AssertionError("no LandingProductContract positive vector found")
 
 
 def _inventory() -> dict:

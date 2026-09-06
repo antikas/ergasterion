@@ -1,27 +1,28 @@
 # Ergasterion runbook
 
-Ergasterion turns source and domain declarations into a tested data-product estate. It
-generates models for dbt, the tool that builds them on the target database. The repository
-includes two complete examples: e-commerce and investment.
+Use this guide to install Ergasterion, run both worked domains, generate an estate of your
+own, receive a source delivery, and operate a Data Vault re-baseline. The
+[architecture guide](docs/architecture/README.md) explains what the engine is and why it
+is built this way; this document is the sequence of commands.
 
-DuckDB is the executable reference implementation and runs locally as an embedded database
-stored in one file. It needs no cloud account. Ergasterion also generates projects for
-Snowflake and BigQuery. The repository checks those projects through dbt parsing, dialect
-linting, deterministic generation, structure checks, and adapter conformance tests.
+Two adapters are declared. DuckDB executes: it runs locally as an embedded database held
+in one file and needs no cloud account. BigQuery is a generation target with offline
+evidence: its project is generated, parsed, dialect-checked, budget-checked and
+regenerated deterministically, but nothing here runs a query in a BigQuery project.
 
 ## 1. Install
 
-You need Python 3.11 or 3.12, Git, and Bash. Windows users can use Git Bash.
+You need Python 3.11 or newer, Git and Bash. On Windows, Git Bash works.
 
 ### Install the released package
 
-For local DuckDB use:
+For the complete local path:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install "ergasterion-factory[local-ingestion]==0.5.0"
+python -m pip install "ergasterion-factory[local-ingestion]"
 ```
 
 In Windows Git Bash, activate the environment with:
@@ -30,21 +31,17 @@ In Windows Git Bash, activate the environment with:
 source .venv/Scripts/activate
 ```
 
-Install a different adapter only when you need it:
+Install the deployment adapter's runtime, or both, when you need them:
 
 ```bash
-python -m pip install "ergasterion-factory[snowflake]==0.5.0"
-python -m pip install "ergasterion-factory[bigquery]==0.5.0"
-python -m pip install "ergasterion-factory[all]==0.5.0"
+python -m pip install "ergasterion-factory[bigquery]"
+python -m pip install "ergasterion-factory[all]"
 ```
 
-The base package contains the declaration engine. Adapter extras install the pinned dbt
-runtime for their target. The `duckdb` extra remains as an alias of `local-ingestion` for
-existing installations.
+The base package contains the declaration engine. Each adapter extra installs the pinned
+dbt runtime for that adapter.
 
 ### Work from the source repository
-
-Clone the public repository, create the same environment, and install all adapters:
 
 ```bash
 git clone https://github.com/antikas/ergasterion.git
@@ -63,10 +60,10 @@ dbt --version
 ergasterion --help
 ```
 
-The supported release stack is dbt Core 1.11.12 with dbt-duckdb 1.11.0,
-dbt-snowflake 1.11.6, and dbt-bigquery 1.11.3.
+The supported release stack is dbt Core 1.11.12 with dbt-duckdb 1.11.0 and dbt-bigquery
+1.11.3.
 
-## 2. Run the complete local estate
+## 2. Run the worked domains
 
 From the source repository:
 
@@ -74,51 +71,90 @@ From the source repository:
 bash demo/run_offline_demo.sh
 ```
 
-The command performs a complete dbt build against DuckDB, then runs the three
-headline queries in this order:
+The script regenerates all 124 product declarations and reports any drift. It resets a
+local DuckDB file beneath `target/`, then builds both domains with every generated test and
+all 40 known-answer assertions. It prints three e-commerce results: revenue by conformed
+segment, one resolved customer, and order lines reconciled to each source total.
 
-1. e-commerce revenue and order metrics;
-2. deterministic customer resolution and survivorship;
-3. investment fund performance and hurdle metrics.
+The transcript and three text and CSV result pairs are written beneath
+`demo/offline-runs/<UTC timestamp>/`. Both that directory and `target/` are ignored by
+Git.
 
-The database is written beneath `target/`. The transcript and three text/CSV result
-pairs are written beneath `demo/offline-runs/<UTC timestamp>/`. Both locations are
-ignored by Git.
+The command resets the selected local DuckDB file before each run. Anything written only
+to that database is therefore deleted. Tracked fixture rows are rebuilt; untracked
+decisions are not.
 
-The command resets the selected local DuckDB file before each run. Any decisions
-written only to that database are therefore deleted. Tracked fixture rows are rebuilt;
-untracked decisions are not.
-
-For the repository's full local validation, including all three adapter parses,
-dialect checks, contract and graph validation, and the complete DuckDB build, run:
+For the repository's full local validation, including both adapter parses, dialect checks,
+structural budgets, contract and graph validation, the complete DuckDB build and the wheel
+arm:
 
 ```bash
 bash scripts/validate_offline.sh
 ```
 
-Neither command reads Snowflake credentials or opens a Snowflake connection.
+For the thirteen architecture acceptance checks, one line printed per check:
 
-## 3. Bronze: receive and check a source delivery
+```bash
+bash scripts/validate_engine_architecture.sh
+```
 
-Bronze is the layer that receives a source's delivered batch, checks it against a
-written contract, and publishes the accepted rows or quarantines the rejected ones.
-[`docs/architecture/bronze-ingestion.md`](docs/architecture/bronze-ingestion.md) is the
-full mechanism. This section is the operator's command sequence against the local
-reference platform: SQLite for state, DuckDB for the projection, both stored beneath
-an estate's own `runtime/data/`. No warehouse account or network call is needed.
+Neither command reads a cloud credential or opens a warehouse connection.
 
-Every Bronze command shares the same required arguments:
+## 3. Generate and gate an estate
+
+These are the commands that operate on an estate's declarations. Run them from the estate
+root, or pass `--estate-root PATH`.
+
+```bash
+ergasterion validate                # validate the declarations, generate nothing
+ergasterion emit-products           # generate every artefact from the declarations
+ergasterion emit-products --check   # regenerate in memory and report drift, write nothing
+ergasterion contracts --check       # ODCS contracts: schema-valid and drift-free
+ergasterion odps --check            # ODPS descriptors: schema-valid and drift-free
+ergasterion product-graph --check   # the estate graph: drift-free
+ergasterion lint --target duckdb    # per-adapter dialect rules over the generated SQL
+ergasterion structure               # per-adapter structural budgets and boundaries
+```
+
+`emit-products` prints one line per product naming its label, profile, shape, owning
+translator, declared adapters and artefact count, then the structural-budget result over
+every declared adapter. It writes nothing outside `models/`, `contracts/`, `graphs/` and
+`manifests/`.
+
+Then build the generated project:
+
+```bash
+dbt deps --profiles-dir profiles
+dbt parse --profiles-dir profiles --no-partial-parse -t duckdb
+dbt parse --profiles-dir profiles --no-partial-parse -t bigquery
+dbt build --profiles-dir profiles -t duckdb
+```
+
+Generated files are outputs. Do not edit one: change the declaration that produced it and
+regenerate. `emit-products --check` is what reports a hand edit, and it names the file.
+
+## 4. Landing: receive and check a source delivery
+
+The landing profile is the boundary that receives a source's delivered batch, checks it
+against a written contract, and publishes the accepted rows or quarantines the rejected
+ones. [`docs/architecture/bronze-ingestion.md`](docs/architecture/bronze-ingestion.md) is
+the full mechanism. This section is the operator's command sequence against the local
+reference platform: SQLite for operational state, DuckDB for the projection, both stored
+beneath an estate's own `runtime/data/`. No warehouse account and no network call is
+needed.
+
+Every landing command shares the same required arguments:
 
 ```bash
 ergasterion <command> --project-dir PATH --source NAME --table KEY --binding PATH --environment NAME
 ```
 
-`--binding` names a runtime binding YAML file (relative to `--project-dir` or
-absolute), declaring which local adapter implements each of Bronze's nine ports and
-which target relations the projection writes to.
+`--binding` names a runtime binding YAML file, relative to `--project-dir` or absolute. It
+declares which local adapter implements each of the runtime's nine ports and which target
+relations the projection writes to.
 
-Compile and check the Bronze execution graph and runtime manifest for one product
-(read-only):
+Compile and check the execution plan and runtime manifest for one product. This is
+read-only:
 
 ```bash
 ergasterion plan --project-dir . --source SOURCE --table TABLE --binding runtime/TABLE.yml --environment local
@@ -136,10 +172,10 @@ ergasterion deployment activate --project-dir . --source SOURCE --table TABLE --
   --manifest-digest MANIFEST_DIGEST
 ```
 
-A Bronze carry migration keeps a product's visibility progress across the activation.
-A Bronze reset migration authorises a new baseline. Both digests are read from the JSON
-a prior command already printed (`--json` on any command prints one machine-readable
-envelope with every digest it produced).
+A carry migration keeps a product's visibility progress across the activation. A reset
+migration authorises a new baseline. Both digests are read from the JSON a prior command
+already printed: `--json` on any command prints one machine-readable envelope with every
+digest it produced.
 
 Submit a delivery, its payload and sidecar manifest together:
 
@@ -148,8 +184,8 @@ ergasterion ingest file --project-dir . --source SOURCE --table TABLE --binding 
   --manifest path/to/delivery.manifest.json --payload path/to/delivery.csv
 ```
 
-Replaying the same manifest and payload is idempotent: the second call reports
-`noop`, which prevents accepted rows from being duplicated.
+Replaying the same manifest and payload is idempotent: the second call reports `noop`,
+which prevents accepted rows from being duplicated.
 
 Read a product's operational status, its evidence, and its quarantined rows:
 
@@ -181,12 +217,12 @@ ergasterion local-backup --project-dir . --source SOURCE --table TABLE --binding
   --action restore --manifest /path/to/backup/backup-manifest.json
 ```
 
-`bash demo/bronze-ingestion/run_bronze_demo.sh` runs this whole sequence end to end,
-against three worked scenarios (a normal publication, a source-complete but
-acceptance-incomplete snapshot, and a backup/restore cycle), account-free and
+`bash demo/landing-ingestion/run_landing_demo.sh` runs this whole sequence end to end
+against three worked scenarios: a normal publication, a source-complete but
+acceptance-incomplete snapshot, and a backup and restore cycle. It is account-free and
 network-free.
 
-## 4. Create your own estate
+## 5. Create your own estate
 
 After installing the package:
 
@@ -195,33 +231,20 @@ ergasterion init my-data-products
 cd my-data-products
 ```
 
-The new directory contains an empty dbt estate with:
+The new directory contains:
 
-- `declarations/` for source-system tables and projections;
-- `domains/` for entities, vault structures, survivorship, resolution, and products;
-- `seeds/` for local or test source data;
-- `tests/` for business assertions;
-- `profiles/` for DuckDB, Snowflake, and BigQuery targets;
-- `macros/` for the adapter translation layer.
+- `estate.yml` with the layer labels, the declared adapters and the translator table;
+- `declarations/` for source declarations, `declarations/products/` for product
+  declarations, and `declarations/targets/` for each adapter's structural budgets and
+  interface boundaries;
+- `profiles/` for the DuckDB and BigQuery dbt targets;
+- `macros/` for the named-rule implementations and the adapter-dispatch layer;
+- `runtime/local.yml`, one worked runtime binding for the local reference platform;
+- `seeds/` and `tests/`, empty.
 
-Read `GETTING-STARTED.md` in the new estate before adding the first source. The
-declaration files are authored inputs. Generated models, contracts, descriptors, and
-graphs are outputs and should not be edited by hand.
-
-Useful commands inside an estate are:
-
-```bash
-ergasterion emit
-ergasterion emit --check
-ergasterion contracts
-ergasterion odps
-ergasterion graph
-ergasterion lint --target duckdb
-ergasterion structure
-```
-
-`emit --check` reports drift without writing. The other `--check` modes follow the
-same pattern where available.
+Read `GETTING-STARTED.md` in the new estate before adding the first source. Declaration
+files are authored inputs. Generated models, contracts, descriptors, graphs and manifests
+are outputs and are never edited by hand.
 
 ### Start from an existing schema
 
@@ -231,235 +254,89 @@ Create a source declaration from an ODCS v3 contract:
 ergasterion import-odcs supplier-contract.yml --source supplier_name
 ```
 
-Create a source or domain skeleton from SQL DDL:
+Create a source declaration from the source system's own DDL:
 
 ```bash
-ergasterion import-ddl source-tables.sql --mode feed --source supplier_name
-ergasterion import-ddl model-tables.sql --mode model --domain domain_name
+ergasterion import-ddl source-tables.sql --source supplier_name
 ```
 
-These import commands transcribe structure only. They leave business decisions such
-as survivorship, identity resolution, and relationship meaning for a human to complete.
+Both transcribe structure only. They leave every decision their input does not state --
+ownership, scheduling, what counts as a passing row, which layer label the table sits in,
+how its records resolve against other sources -- as an explicit note for a person to
+answer. [`DEMO.md`](DEMO.md) works both through end to end.
 
-## 5. Generated architecture
+## 6. Operate a data_vault re-baseline
 
-The emitted dbt project follows a stable sequence:
+A product whose target names the `data_vault` shape stores versions of an entity's payload
+in satellites, keyed by a fingerprint of that payload. The **hashdiff basis** is the exact
+column set a satellite's stored fingerprints were computed over. It is frozen once versions
+are stored under it, so a declared change to it does not take effect silently: emission
+fails closed and names the satellite, the columns and this operation.
 
-```text
-source seeds or external tables
-  -> staging layer
-  -> raw vault hubs, links, and satellites
-  -> entity resolution
-  -> business-vault survivorship
-  -> canonical models and marts
-  -> ODCS contracts, ODPS descriptors, and property-graph projections
-```
+Moving the basis has three declared steps. Pause scheduled builds before starting, and keep
+them paused until the last one succeeds.
 
-The staging layer is the first transformation layer in the running product.
-
-The generator uses declarations as the source of truth. A source-system change is
-made in its declaration and regenerated through the same path. Hand-authored business
-logic remains in the domain configuration, canonical models, marts, and singular tests.
-
-## 6. Operate estate evolution
-
-Estate evolution is the warehouse control for payload changes after history already
-exists. A payload column is a descriptive field stored in a satellite. A satellite is an
-append-only history table in the raw vault.
-
-For an extension, add the new column to the source declaration and map it into every
-sibling source that feeds the same entity. Use the source expression where the source has
-the field. Use `null` where a sibling source lacks it. Then run `ergasterion emit`, review
-the generated change, and deploy it through the estate's normal path.
-
-The emitted evolution ledger records the entity payload roster, hashdiff basis,
-projection-expression fingerprints, and basis version. The hashdiff basis is the exact
-column set used to compute stored hashdiffs. During an extension the basis stays frozen,
-so existing satellite rows keep matching replay suppression. Treat the ledger as durable
-state for a running estate. Commit it, deploy it with the generated models, and restore it
-from the deployed revision if it is lost. Do not bootstrap a replacement over existing
-warehouse history.
-
-Run a re-baseline when an added column must become part of change detection. This is a
-maintenance operation. Pause scheduled dbt jobs before starting and keep them paused
-until the last step succeeds.
-
-1. Run `ergasterion evolve rebaseline <domain> <entity> --begin` to record the pending
-   basis and close the generated-stage gate.
-2. Run `ergasterion evolve rebaseline <domain> <entity> --complete` to rewrite stored
-   hashdiffs, verify the spot check, and promote the basis. The gate remains closed.
-3. Run `ergasterion emit`, review the generated change, and deploy the regenerated models.
-4. Run `ergasterion evolve rebaseline <domain> <entity> --clear` to release the warehouse
-   gate, then resume scheduled jobs.
-
-Do not clear the gate before the regenerated models are deployed. The built-in gate runs
-in generated stage models. Keeping scheduled jobs paused also covers manual selections
-that bypass those models during the maintenance window.
-
-A re-baseline rewrites every satellite row for the entity. Size the maintenance window
-from the row count of all satellites that store that entity. Before promotion, use
-`ergasterion evolve rebaseline <domain> <entity> --abort` to rewrite any changed rows
-back to the active basis and remove the pending state. After promotion, deploy the
-regenerated models and use `--clear`.
-
-An estate migration requirement is the named fail-closed error for a non-additive
-change. It names the entity, column, change class, and remedy. Removals, renames, type
-changes, projection-expression changes, and hashdiff-basis conflicts use this path.
-
-## 7. Operate watermark increments
-
-A staging increment block is a per-table declaration for bounded processing. It carries
-`lookback_minutes` and `effective_advances_on_redelivery`. The table also declares
-`natural_key`. The generated staging key is the natural key plus the effective column.
-
-The effective column is the one staging output column the bridge maps to
-`effective_from`. Declare a staging increment block only when that column advances when
-the source redelivers a changed record. A static effective date creates silent update
-loss: the redelivered row can sit below the lookback floor and never reach staging.
-
-Choose the lookback from the source's real late-arrival pattern, then add operational
-margin. The delta window starts at the consumption watermark minus that lookback. The
-filter includes the floor with `>=`, so a row exactly at the floor is processed once.
-
-The consumption watermark is held back by the slowest satellite fed by that table. If
-one rarely changing satellite sits 30 days behind a daily changing satellite, the table's
-logical input window includes about 30 extra days. Independent tables on the same source
-have independent floors. Split satellites by change rate where the wider window grows
-beyond the estate's normal batch budget.
-
-Incremental staging stores one row per key and effective time. That roughly doubles the
-stored source history beside the satellites for a table that declares the block.
-
-Each run logs the table, its floor, `relation_rows_total`, and
-`relation_rows_in_window`. Both row counts describe the staging relation after the run.
-They are not a count of rows written by that invocation. The window predicate is a
-correctness boundary; actual storage pruning depends on the target warehouse and its
-physical design.
-
-Run `ergasterion evolve audit-window <source> <table>` as a periodic audit. The command
-scans the full source table and reports business keys whose rows all sit outside the
-delta window. For a new business key outside the lookback, use one named remedy: widen
-the lookback for one run, or run a bounded backfill over the reported key.
-
-## 8. Snowflake
-
-The Snowflake target includes generated dbt models, Snowflake-specific macros, account setup,
-a demonstration script, and console deployment files. Repository checks cover dbt parsing,
-dialect linting, deterministic generation, structure, and adapter conformance. The account
-owner supplies credentials and selects the operating controls.
-
-### Prerequisites
-
-Install the Snowflake CLI and the Snowflake package extra:
+**Step 1: stage.** Record the currently declared basis as the satellite's pending one.
+Emission then stops on the pending-basis gate, so no build can land versions while the
+estate carries two answers to what change detection means.
 
 ```bash
-python -m pip install "ergasterion-factory[snowflake]==0.5.0"
-snow --version
+ergasterion vault-rebaseline --product PRODUCT --satellite SATELLITE --stage
 ```
 
-Create a Snow CLI connection with key-pair authentication. Keep the private key and
-passphrase outside the repository. Test the connection before continuing:
+**Step 2: promote.** Adopt the pending basis. The recorded basis becomes the declared one
+and the basis version advances.
 
 ```bash
-snow connection test -c dpf
+ergasterion vault-rebaseline --product PRODUCT --satellite SATELLITE --promote
 ```
 
-The dbt profile reads these environment variables:
-
-```text
-DPF_SF_ACCOUNT
-DPF_SF_USER
-DPF_SF_KEY_PATH
-DPF_SF_KEY_PASSPHRASE
-DPF_SF_ROLE       default DPF_BUILDER
-DPF_SF_DB         default ERGASTERION
-DPF_SF_WH         default DPF_WH
-DPF_SF_SCHEMA     default DEV
-```
-
-`DPF_SF_KEY_PATH` must be an absolute path. Do not put any of these values in a
-tracked file.
-
-### One-time account setup
-
-Review `snowflake/setup.sql`, then run it through a connection whose user can assume
-`ACCOUNTADMIN`:
+**Step 3: regenerate and deploy.** The next build stores exactly one version per entity
+under the new basis version and leaves every version stored under the old one exactly as
+it was.
 
 ```bash
-snow sql -c dpf -f snowflake/setup.sql
+ergasterion emit-products
+dbt build --profiles-dir profiles -t duckdb
 ```
 
-The script creates the `ERGASTERION` database, the auto-suspending `DPF_WH`
-warehouse, and the `DPF_BUILDER` role. It does not create a user or store a secret.
-Grant the role to the user used by your connection, replacing the placeholder:
-
-```sql
-GRANT ROLE DPF_BUILDER TO USER YOUR_SNOWFLAKE_USER;
-```
-
-Set the connection's active role to `DPF_BUILDER` for account-owned runs.
-
-### Inspect the demonstration script
-
-From the source repository:
+To abandon a staged re-baseline before promoting it:
 
 ```bash
-bash demo/run_clean_demo.sh --help
+ergasterion vault-rebaseline --product PRODUCT --satellite SATELLITE --abort
 ```
 
-The help output names the script options. Running the script opens a real account
-connection, creates database objects, and consumes warehouse credits. Review the selected
-role, database, schema, and warehouse before starting it.
+The recorded basis is unchanged, so the declared change that prompted the re-baseline fails
+closed again on the next emission and the estate converges back to where it was.
 
-The `--skip-setup-sql` option is available after the one-time setup if the active
-connection no longer has the administrator role:
+Nothing in this operation rewrites a stored fingerprint. A fingerprint is a fact about the
+basis it was computed under; every stored row carries its basis version beside it, and a
+satellite's change detection is scoped to its own basis version. History keeps the meaning
+it had under the basis that produced it.
+
+The evolution ledger beside the product records each satellite's payload roster, its
+hashdiff basis, its declared types and its basis version. It is durable state for a running
+estate. Commit it and deploy it with the generated models. If it is lost, restore it from
+the deployed revision. A fresh ledger cannot describe existing history.
+
+## 7. BigQuery
+
+Install the deployment adapter's runtime and point dbt at a project and dataset:
 
 ```bash
-bash demo/run_clean_demo.sh --connection dpf --skip-setup-sql
-```
-
-The script runs in the foreground when an account owner invokes it. Stop if Snowflake
-reports an unexpected role, database, schema, or warehouse.
-
-### Deploy the management console
-
-The Streamlit application provides the investment entity-resolution review queue,
-deal approvals, and the deal pipeline browser:
-
-```bash
-snow streamlit deploy --project streamlit -c dpf --replace
-```
-
-The console runs inside the selected Snowflake account. It writes approved or rejected
-decisions to append-only decision tables.
-
-### Remove the example infrastructure
-
-Removing the database destroys all model output and any decisions that were not
-exported elsewhere. Run these statements only when that is the intended outcome:
-
-```sql
-USE ROLE ACCOUNTADMIN;
-DROP DATABASE IF EXISTS ERGASTERION;
-DROP WAREHOUSE IF EXISTS DPF_WH;
-DROP ROLE IF EXISTS DPF_BUILDER;
-```
-
-## 9. BigQuery validation
-
-Install the BigQuery extra and set a project and dataset:
-
-```bash
-python -m pip install "ergasterion-factory[bigquery]==0.5.0"
+python -m pip install "ergasterion-factory[bigquery]"
 export DPF_BQ_PROJECT="your-project"
 export DPF_BQ_DATASET="ergasterion_dev"
 dbt parse --profiles-dir profiles -t bigquery --no-partial-parse
 ```
 
-This checks the generated project with dbt-bigquery. The account owner supplies credentials,
-permissions, cost controls, and deployment settings in the target environment.
+This is what the repository's own offline lane runs, and it is exactly what it
+establishes: the generated project parses under dbt-bigquery, passes the adapter's dialect
+rules and its declared structural budgets, and regenerates deterministically. Building or
+querying in a real project is the account owner's step, and the credentials, permissions,
+cost controls and deployment settings live in that environment.
 
-## 10. Troubleshooting
+## 8. Troubleshooting
 
 ### A command resolves outside `.venv`
 
@@ -484,34 +361,40 @@ dbt deps --profiles-dir profiles
 
 ### Generated files drift
 
-Run the check first, then regenerate from declarations:
+Run the check first, then regenerate from the declarations:
 
 ```bash
-ergasterion emit --check
-ergasterion emit
+ergasterion emit-products --check
+ergasterion emit-products
 ```
 
-Do not patch generated SQL directly. Change the declaration, template, or the
-hand-authored model that owns the behavior.
+Do not patch a generated file directly. Change the declaration, the estate configuration
+or the named-rule implementation that owns the behaviour.
 
 ### DuckDB cannot open the database
 
-Close any process holding the file, then rerun the local demo. The default database is
-`target/ergasterion.duckdb`. If `DPF_DUCKDB_PATH` is set, keep it beneath the repository
-`target/` directory when using the demo reset command.
+Close any process holding the file, then rerun the demonstration. The default database is
+`target/ergasterion.duckdb`. If `DPF_DUCKDB_PATH` is set, keep it beneath the repository's
+`target/` directory when using the demonstration's reset step.
 
-### Snowflake authentication fails
+### Emission fails closed and names a rule, a label or a pair
 
-Test the named Snow CLI connection first. Then verify the absolute key path, the active
-role, and the account identifier. Do not print private-key contents or passphrases while
-diagnosing the connection.
+That is the engine refusing to guess. Three failures are common when an estate is young:
 
-## 11. Security boundary
+- a layer label with no translator-table entry for a pattern its profile carries. Add the
+  entry to `estate.yml`;
+- a named rule with no implementation for a declared translator and adapter pair. Add the
+  implementation, or remove the adapter from the estate's declared set;
+- a source contract whose current version is incompatible with what a consumer expects.
+  Re-declare the consumer's expectation against the published contract.
+
+## 9. Security boundary
 
 - The local DuckDB path needs no cloud credentials.
-- Snowflake and BigQuery credentials are supplied at runtime and remain outside Git.
-- Example people, companies, funds, orders, and deals are synthetic.
-- Generated run directories, database files, logs, caches, and package build outputs are
+- Deployment credentials are supplied at run time in the target environment and stay
+  outside Git.
+- Example people, companies, orders and products are synthetic.
+- Generated run directories, database files, logs, caches and package build outputs are
   ignored and are not part of the source distribution.
-- The repository's MIT licence and third-party schema notices are included in source and
-  Python package archives.
+- The repository's MIT licence and third-party schema notices are included in the source
+  and Python package archives.

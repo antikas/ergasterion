@@ -1,0 +1,68 @@
+# A self-contained estate whose point is the consolidating generation
+# (architecture section 8): two feeds of one entity, from two source
+# systems, brought together into one product, plus a second product that
+# puts two products' columns side by side on a key.
+#
+# Three labels, none of which the engine has ever seen. "landed" is where
+# data enters: each of its three products lands one feed, and the table
+# gives every occurrence of that label, and the shape itself, to the
+# ingestion runtime translator. dbt therefore renders nothing for them --
+# their relations are landed outside the dbt project, and in this estate a
+# seed of the same name stands in for each -- while their contracts still
+# resolve, so the products that consume them are emitted normally and the
+# emit summary still names each landing product with its owner.
+#
+# "shaped" carries the products that read the landing contracts and the two
+# that consolidate them. "served" carries the consumer of the union, which
+# is where the union's published contract is read back: it sees the
+# conformed schema and nothing of either feed's own column names.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  labels:
+    landed:
+      profiles: [landing]
+    shaped:
+      profiles: [derivation, consolidation]
+    served:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    landed:
+      batch_ingestion: local-ingestion
+      data_validation: local-ingestion
+      data_publish: local-ingestion
+      checkpoint_retries: local-ingestion
+      declared: local-ingestion
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    shaped:
+      batch_transfer: dbt
+      data_validation: dbt
+      calculated_fields: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    served:
+      batch_transfer: dbt
+      data_validation: dbt
+      schema_transform: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      metadata_capture: publication
+      lineage_capture: publication

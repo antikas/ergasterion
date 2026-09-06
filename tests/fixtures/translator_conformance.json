@@ -1,126 +1,126 @@
 {
   "schema": "ergasterion.translator-conformance-vectors/v1",
-  "description": "Data-only vectors for ergasterion/framework/translator_conformance.py. Each vector names a set of translator declarations and the router error code, or null for the positive case, that routing against the resolved Bronze plan must produce. See docs/architecture/bronze-ingestion.md and tests/python/test_framework_core.py.",
+  "description": "Data-only vectors for ergasterion/framework/translator_conformance.py. Each vector names a set of translator declarations and the router error code, or null for the positive case, that routing against the resolved Landing plan must produce. The seven occurrence-ownership vectors below carry no label/translator_table/adapters and exercise TranslationRouter's original routing mode unchanged; the three table_* vectors carry all three and exercise the two-axis capability router (architecture sections 9, 11; owner ruling R1; plan decision D29). See docs/architecture/landing-ingestion.md and tests/python/test_framework_core.py.",
   "vectors": [
     {
       "id": "valid_single_owner",
-      "description": "One translator owns all eight Bronze occurrences in a dependency-respecting execution order and pins no digest. The router routes cleanly with one assignment per occurrence.",
+      "description": "One translator owns all eight Landing occurrences in a dependency-respecting execution order and pins no digest. The router routes cleanly with one assignment per occurrence.",
       "expected_error_code": null,
       "translators": [
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ]
         }
       ]
     },
     {
       "id": "missing_execution_owner",
-      "description": "The lone translator drops bronze.metadata from its owned set: the occurrence requires an execution owner and gets none.",
+      "description": "The lone translator drops landing.metadata from its owned set: the occurrence requires an execution owner and gets none.",
       "expected_error_code": "missing_execution_owner",
       "translators": [
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage"
           ]
         }
       ]
     },
     {
       "id": "duplicate_execution_owner",
-      "description": "Two translators both claim bronze.publish as execution owner.",
+      "description": "Two translators both claim landing.publish as execution owner.",
       "expected_error_code": "duplicate_execution_owner",
       "translators": [
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ]
         },
         {
           "target_name": "rival_publisher",
-          "owned_occurrences": ["bronze.publish"],
-          "execution_order": ["bronze.publish"]
+          "owned_occurrences": ["landing.publish"],
+          "execution_order": ["landing.publish"]
         }
       ]
     },
     {
       "id": "reordered_ownership",
-      "description": "The translator's execution_order places bronze.publish before bronze.validate, bronze.contract and bronze.schema, violating their barrier edges into bronze.publish.",
+      "description": "The translator's execution_order places landing.publish before landing.validate, landing.contract and landing.schema, violating their barrier edges into landing.publish.",
       "expected_error_code": "reordered_ownership",
       "translators": [
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.publish",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.publish",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.lineage",
+            "landing.metadata"
           ]
         }
       ]
@@ -133,24 +133,24 @@
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "plan_digest": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
         }
@@ -158,68 +158,205 @@
     },
     {
       "id": "observe_only_translator",
-      "description": "A second translator observes bronze.publish without owning any occurrence. The router still calls its translate() and carries its artefacts in the routing result, alongside the owning translator's.",
+      "description": "A second translator observes landing.publish without owning any occurrence. The router still calls its translate() and carries its artefacts in the routing result, alongside the owning translator's.",
       "expected_error_code": null,
       "translators": [
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ]
         },
         {
           "target_name": "docs_projection",
           "owned_occurrences": [],
-          "observed_occurrences": ["bronze.publish"],
+          "observed_occurrences": ["landing.publish"],
           "execution_order": []
         }
       ]
     },
     {
       "id": "bad_handoff",
-      "description": "The translator owns bronze.publish but rejects the ergasterion.validation-result/v1 handoff schema carried on the bronze.validate -> bronze.publish barrier edge.",
+      "description": "The translator owns landing.publish but rejects the ergasterion.validation-result/v1 handoff schema carried on the landing.validate -> landing.publish barrier edge.",
       "expected_error_code": "bad_handoff",
       "translators": [
         {
           "target_name": "local_ingestion",
           "owned_occurrences": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
           "execution_order": [
-            "bronze.checkpoint",
-            "bronze.ingest",
-            "bronze.validate",
-            "bronze.contract",
-            "bronze.schema",
-            "bronze.publish",
-            "bronze.lineage",
-            "bronze.metadata"
+            "landing.checkpoint",
+            "landing.ingest",
+            "landing.validate",
+            "landing.contract",
+            "landing.schema",
+            "landing.publish",
+            "landing.lineage",
+            "landing.metadata"
           ],
-          "rejected_handoffs": [["bronze.validate", "bronze.publish"]]
+          "rejected_handoffs": [["landing.validate", "landing.publish"]]
+        }
+      ]
+    },
+    {
+      "id": "table_valid_two_translators_two_adapters",
+      "description": "The real landing split as estate.yml's translator table declares it: local-ingestion owns the four runtime patterns and the publication translator owns the four publication-shaped patterns, all declared for both adapters. The router resolves all eight occurrences cleanly, two RouteAssignment rows each (one per adapter).",
+      "expected_error_code": null,
+      "label": "landing",
+      "adapters": ["duckdb", "bigquery"],
+      "translator_table": {
+        "landing": {
+          "batch_ingestion": "local-ingestion",
+          "data_validation": "local-ingestion",
+          "data_publish": "local-ingestion",
+          "checkpoint_retries": "local-ingestion",
+          "data_contracts": "publication",
+          "schema_publish": "publication",
+          "metadata_capture": "publication",
+          "lineage_capture": "publication"
+        }
+      },
+      "translators": [
+        {
+          "target_name": "local-ingestion",
+          "capabilities": [
+            ["batch_ingestion", "local-ingestion", "duckdb"],
+            ["batch_ingestion", "local-ingestion", "bigquery"],
+            ["data_validation", "local-ingestion", "duckdb"],
+            ["data_validation", "local-ingestion", "bigquery"],
+            ["data_publish", "local-ingestion", "duckdb"],
+            ["data_publish", "local-ingestion", "bigquery"],
+            ["checkpoint_retries", "local-ingestion", "duckdb"],
+            ["checkpoint_retries", "local-ingestion", "bigquery"]
+          ]
+        },
+        {
+          "target_name": "publication",
+          "capabilities": [
+            ["data_contracts", "publication", "duckdb"],
+            ["data_contracts", "publication", "bigquery"],
+            ["schema_publish", "publication", "duckdb"],
+            ["schema_publish", "publication", "bigquery"],
+            ["metadata_capture", "publication", "duckdb"],
+            ["metadata_capture", "publication", "bigquery"],
+            ["lineage_capture", "publication", "duckdb"],
+            ["lineage_capture", "publication", "bigquery"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "table_missing_translator_table_entry",
+      "description": "The landing table is missing its data_publish entry: the label admits the pattern in its profile, but no owner is declared for it. The router fails closed naming the label, the pattern and the estate's declared adapters, before ever checking a capability.",
+      "expected_error_code": "missing_translator_table_entry",
+      "label": "landing",
+      "adapters": ["duckdb", "bigquery"],
+      "translator_table": {
+        "landing": {
+          "batch_ingestion": "local-ingestion",
+          "data_validation": "local-ingestion",
+          "checkpoint_retries": "local-ingestion",
+          "data_contracts": "publication",
+          "schema_publish": "publication",
+          "metadata_capture": "publication",
+          "lineage_capture": "publication"
+        }
+      },
+      "translators": [
+        {
+          "target_name": "local-ingestion",
+          "capabilities": [
+            ["batch_ingestion", "local-ingestion", "duckdb"],
+            ["batch_ingestion", "local-ingestion", "bigquery"],
+            ["data_validation", "local-ingestion", "duckdb"],
+            ["data_validation", "local-ingestion", "bigquery"],
+            ["checkpoint_retries", "local-ingestion", "duckdb"],
+            ["checkpoint_retries", "local-ingestion", "bigquery"]
+          ]
+        },
+        {
+          "target_name": "publication",
+          "capabilities": [
+            ["data_contracts", "publication", "duckdb"],
+            ["data_contracts", "publication", "bigquery"],
+            ["schema_publish", "publication", "duckdb"],
+            ["schema_publish", "publication", "bigquery"],
+            ["metadata_capture", "publication", "duckdb"],
+            ["metadata_capture", "publication", "bigquery"],
+            ["lineage_capture", "publication", "duckdb"],
+            ["lineage_capture", "publication", "bigquery"]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "table_missing_capability",
+      "description": "The table names the publication translator for data_contracts, but publication never registered the capability for the bigquery adapter (only duckdb). The router fails closed naming the label, the pattern, the translator and the specific missing adapter.",
+      "expected_error_code": "missing_capability",
+      "label": "landing",
+      "adapters": ["duckdb", "bigquery"],
+      "translator_table": {
+        "landing": {
+          "batch_ingestion": "local-ingestion",
+          "data_validation": "local-ingestion",
+          "data_publish": "local-ingestion",
+          "checkpoint_retries": "local-ingestion",
+          "data_contracts": "publication",
+          "schema_publish": "publication",
+          "metadata_capture": "publication",
+          "lineage_capture": "publication"
+        }
+      },
+      "translators": [
+        {
+          "target_name": "local-ingestion",
+          "capabilities": [
+            ["batch_ingestion", "local-ingestion", "duckdb"],
+            ["batch_ingestion", "local-ingestion", "bigquery"],
+            ["data_validation", "local-ingestion", "duckdb"],
+            ["data_validation", "local-ingestion", "bigquery"],
+            ["data_publish", "local-ingestion", "duckdb"],
+            ["data_publish", "local-ingestion", "bigquery"],
+            ["checkpoint_retries", "local-ingestion", "duckdb"],
+            ["checkpoint_retries", "local-ingestion", "bigquery"]
+          ]
+        },
+        {
+          "target_name": "publication",
+          "capabilities": [
+            ["data_contracts", "publication", "duckdb"],
+            ["schema_publish", "publication", "duckdb"],
+            ["schema_publish", "publication", "bigquery"],
+            ["metadata_capture", "publication", "duckdb"],
+            ["metadata_capture", "publication", "bigquery"],
+            ["lineage_capture", "publication", "duckdb"],
+            ["lineage_capture", "publication", "bigquery"]
+          ]
         }
       ]
     }

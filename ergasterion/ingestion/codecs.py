@@ -4,7 +4,7 @@ Landing (a later adapter) and this package's file connector share the same
 parse/type rules: delimiter/quote/escape/newline/null-token handling for CSV,
 object-per-line JSON Lines with duplicate-key rejection and exact-decimal
 numbers, and the eight v1 logical types. Nothing here writes a receipt, a
-state row or a typed Bronze partition -- it only turns bounded bytes into
+state row or a typed Landing partition -- it only turns bounded bytes into
 frames, findings and fingerprints.
 """
 
@@ -19,7 +19,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Iterator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     Codec,
     CsvCodec,
     DiagnosticCode,

@@ -1,0 +1,67 @@
+# The storefront's article lane onto the conformed schema.
+#
+# One source system's lane onto the conformed article schema. The shared
+# product code is the code both catalogues state for the same article, and
+# it is what the curated article resolves on; the price becomes a decimal
+# here, because a delivered extract states it as text and every product
+# downstream reports on it as money.
+product:
+  name: cartivo_product
+  domain: ecommerce
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.cartivo_product_extract@1
+    expect:
+      fields:
+        - cartivo_record_id
+        - cartivo_product_id
+        - shared_product_code
+        - product_name
+        - brand
+        - category
+        - list_price
+        - currency
+        - product_status
+        - as_of_date
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: cartivo_record_id, not_null: true}
+      - {field: shared_product_code, not_null: true}
+  - pattern: schema_transform
+    mapping:
+      - {from: cartivo_record_id, to: source_record_id, type: string}
+      - {from: cartivo_product_id, to: source_product_id, type: string}
+      - {from: shared_product_code, to: product_code, type: string}
+      - {from: list_price, to: list_price, type: {name: decimal, precision: 12, scale: 2}}
+      - {from: as_of_date, to: as_of_date, type: date}
+  - pattern: calculated_fields
+    fields:
+      - {name: source_system, type: string, expression: "'cartivo'"}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Articles as the storefront states them, on the schema the two catalogues share."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

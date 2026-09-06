@@ -1,0 +1,7 @@
+named_only:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/named_only.duckdb
+      threads: 1

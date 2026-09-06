@@ -1,0 +1,7 @@
+two_shapes:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/two_shapes.duckdb
+      threads: 1

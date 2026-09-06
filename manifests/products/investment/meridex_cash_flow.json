@@ -1,0 +1,38 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "undeclared",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "investment.meridex_cash_flow",
+  "relations": {
+    "auxiliary": [
+      "investment.meridex_cash_flow__checked",
+      "investment.meridex_cash_flow__current",
+      "investment.meridex_cash_flow__quarantine",
+      "investment.meridex_cash_flow__sla"
+    ],
+    "published": [
+      "investment.meridex_cash_flow"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": false,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[3]:calculated_fields",
+      "steps[8]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

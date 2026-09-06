@@ -1,0 +1,17 @@
+# Structural budget declaration for the duckdb target.
+adapter: duckdb
+kind: reference
+budgets:
+  # Consecutive view levels a single statement expands. Every relation the
+  # vault publishes is a table or an insert-only store, so this ceiling
+  # binds the private relations the translator renders under a product's
+  # namespace: the resolution relation a data_curation occurrence reads
+  # sits under the checked relation of the data_validation occurrence above
+  # it, two views deep.
+  max_view_chain_depth: 2
+  max_statement_bytes: 262144
+  max_relation_identifier_chars: 255
+  max_column_identifier_chars: 255
+  max_description_bytes: 1024
+  max_seed_rows: 10000
+  max_seed_bytes: 10485760

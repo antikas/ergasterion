@@ -1,9 +1,6 @@
--- Named test: ER-decisions-log regression. After refactoring
--- macros/entity_resolution_decisions.sql's hardcoded single-purpose form into the
--- shared parameterised ensure-macro (dpf_ensure_append_only_log_table), the ER
--- surface's on-run-start create statement and its 10-column shape must be
--- byte-unchanged on Snowflake; DuckDB has the same shape with its native TIMESTAMP
--- token. This compares the ACTUAL macro-rendered DDL text
+-- Named test: ER-decisions-log regression. The ER surface's on-run-start create
+-- statement and its 10-column shape must stay byte-unchanged on the reference
+-- adapter that executes it. This compares the ACTUAL macro-rendered DDL text
 -- (dpf_ensure_er_decisions_table(), the exact same macro call
 -- dbt_project.yml's on-run-start hook invokes) against the pinned EXPECTED DDL text
 -- that documents the pre-refactor shape -- a compile-time Jinja string comparison
@@ -30,21 +27,6 @@ create table if not exists {{ target.database }}.{{ dpf_append_only_log_raw_sche
     matched_entity_key string,
     reviewed_by string,
     reviewed_at timestamp,
-    notes string
-)
-{%- endset %}
-{% elif target.type == 'snowflake' %}
-{% set expected_ddl_raw -%}
-create table if not exists {{ target.database }}.{{ dpf_append_only_log_raw_schema() }}.entity_resolution_decisions_log (
-    entity_type string,
-    source_system_a string,
-    source_id_a string,
-    source_system_b string,
-    source_id_b string,
-    decision string,
-    matched_entity_key string,
-    reviewed_by string,
-    reviewed_at timestamp_ltz,
     notes string
 )
 {%- endset %}

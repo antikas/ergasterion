@@ -1,0 +1,142 @@
+# The served dimensional model over the order line detail: the order line
+# fact at its declared grain, the three dimensions it is analysed by, and
+# the semantic layer of measures and metrics over them (architecture
+# section 6, owner ruling R6).
+#
+# The composition does three things before the shape cuts the star out of
+# it. It computes the two figures the report wants that no source system
+# states. It says which lines a served fact reports on at all, by a named
+# predicate whose exclusions are counted and logged, so a line of an order
+# that was never fulfilled is excluded on the record rather than quietly
+# counted. And it reads two things about the customer: the attributes the
+# customer dimension is cut from, and the segment that customer sat in on
+# the day the line was ordered, as of that day, from the published segment
+# history. A customer whose segment changed in May and ordered in July is
+# analysed under the segment of July, which is what an as-of read is for.
+#
+# The customer dimension is type 1, one row per customer with the values of
+# their latest order, because the curated customer already carries one
+# surviving value per attribute. The segment dimension is type 2, one row
+# per version of a customer's segment with a half-open effective range,
+# because the segment is the attribute that moves. The article dimension is
+# type 1 for the same reason as the customer's.
+product:
+  name: order_star
+  domain: ecommerce
+  version: "1.0"
+  layer: gold
+  profile: serving
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.order_line_detail@1
+    expect:
+      fields:
+        - order_id
+        - line_number
+        - line_quantity
+        - line_unit_price
+        - line_revenue
+        - line_order_date
+        - product_code
+        - product_name
+        - product_brand
+        - product_category
+        - product_list_price
+        - order_status
+        - order_total
+        - order_value_band
+        - order_channel
+        - customer_business_key
+        - customer_external_id
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: customer_business_key, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: line_is_multi_unit, type: boolean, expression: "line_quantity > 1"}
+      - {name: line_list_value, type: {name: decimal, precision: 12, scale: 2}, expression: "line_quantity * product_list_price"}
+  - pattern: data_filtering
+    predicates:
+      - name: fulfilled_lines_only
+        expression: "order_status = 'fulfilled'"
+  - pattern: data_enrichment
+    lookups:
+      - contract: ecommerce.customer@1
+        "on": {customer_business_key: customer_business_key}
+        fields: [customer_name, customer_email_domain, customer_city, customer_country]
+        no_match: null
+      - contract: reference.customer_segment@1
+        "on": {customer_external_id: customer_external_id}
+        fields: [segment_name]
+        no_match: null
+        temporal:
+          as_of: line_order_date
+          effective: segment_effective_from
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The order star: one fact at order line grain, analysed by the customer, the segment in force and the article."
+    ownership: ecommerce-domain
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: dimensional
+  shape_config:
+    dimensions:
+      - name: customer
+        type: 1
+        key: [customer_business_key]
+        attributes: [customer_external_id, customer_name, customer_email_domain, customer_city, customer_country]
+        change_column: line_order_date
+        description: "The customer an order line belongs to."
+      - name: customer_segment
+        type: 2
+        key: [customer_business_key]
+        attributes: [segment_name]
+        change_column: line_order_date
+        description: "The segment a customer was in when they ordered, one row per version."
+      - name: product
+        type: 1
+        key: [product_code]
+        attributes: [product_name, product_brand, product_category, product_list_price]
+        change_column: line_order_date
+        description: "The article an order line ordered."
+    facts:
+      - name: order_line
+        grain: [order_id, line_number]
+        dimensions: [customer, customer_segment, product]
+        time_dimension: line_order_date
+        measures:
+          - {name: line_quantity, aggregation: sum, description: "Units ordered on the line."}
+          - {name: line_revenue, aggregation: sum, description: "Revenue the line took."}
+          - {name: line_list_value, aggregation: sum, description: "What the line would have taken at the list price."}
+        description: "One row per order line either channel took."
+    time_spine:
+      from: "2025-01-01"
+      to: "2025-12-31"
+    metrics:
+      - name: total_line_revenue
+        type: simple
+        measure: line_revenue
+        label: "Total line revenue"
+        description: "Revenue taken across the query grain."
+      - name: total_units_ordered
+        type: simple
+        measure: line_quantity
+        label: "Total units ordered"
+        description: "Units ordered across the query grain."
+  contract:
+    freshness: "daily by 09:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

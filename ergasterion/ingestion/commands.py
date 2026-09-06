@@ -1,4 +1,4 @@
-"""Closed Bronze operator commands for the local-ingestion runtime.
+"""Closed Landing operator commands for the local-ingestion runtime.
 
 Human and ``--json`` views read public lifecycle and query ports. Plan compiles
 a deterministic manifest; execution is a later ingest/reconcile step. Existing
@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from ergasterion.estate import EstateContext
-from ergasterion.framework.bronze_contract import (
+from ergasterion.framework.landing_contract import (
     BackupAction,
-    BronzeProductContract,
+    LandingProductContract,
     CommandStatus,
     ContractActivationState,
     ContractLifecycleAction,
@@ -34,7 +34,7 @@ from ergasterion.framework.bronze_contract import (
     SnapshotReconciliationStatus,
     TimelinessState,
 )
-from ergasterion.framework.models import Layer, compute_plan_digest
+from ergasterion.framework.models import compute_plan_digest
 from ergasterion.framework.resolver import resolve
 from ergasterion.framework.runtime_binding import (
     DeploymentLifecycleRequest,
@@ -43,9 +43,8 @@ from ergasterion.framework.runtime_binding import (
     RuntimeDeployment,
     RuntimeManifest,
 )
-from ergasterion.framework.translator_conformance import check_translator_conformance
 from ergasterion.ingestion.lifecycle import (
-    bronze_execution_plan,
+    landing_execution_plan,
     build_lineage_descriptor,
     build_product_metadata,
     build_run_lineage,
@@ -127,10 +126,9 @@ from ergasterion.ingestion.settings import (
 )
 from ergasterion.ingestion.validation import validate_frames
 from ergasterion.source_delivery import TypedDeclarations, compute_migration_id, load_typed_declarations
-from ergasterion.translators.dbt import DbtTranslator
 from ergasterion.translators.local_ingestion import (
-    LocalIngestionTranslator,
     compile_runtime_manifest,
+    route_landing,
     runtime_binding_digest,
 )
 
@@ -142,8 +140,8 @@ SHARED_HELP = (
     "ergasterion.command-result/v1 envelope to stdout; diagnostics stay on stderr."
 )
 
-BRONZE_INTRO = (
-    "Bronze is the source-aligned product layer: an immutable received-batch "
+LANDING_INTRO = (
+    "Landing is the source-aligned product layer: an immutable received-batch "
     "receipt, typed source-native records with validation disposition, an accepted "
     "downstream projection, quarantine/remediation, and lineage/metadata. This "
     "command surface operates on a local file connector that consumes a sidecar "
@@ -160,7 +158,7 @@ def _parser() -> argparse.ArgumentParser:
         prog="ergasterion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
-            f"{BRONZE_INTRO}\n\n{SHARED_HELP}\n\n"
+            f"{LANDING_INTRO}\n\n{SHARED_HELP}\n\n"
             "Read-only commands: plan, status, inspect, quarantine --action list, "
             "ingest due --dry-run. Mutating commands: contract, deployment, ingest file, "
             "ingest due, reconcile, quarantine revalidate/release, local-backup."
@@ -176,9 +174,9 @@ def _parser() -> argparse.ArgumentParser:
 
     plan = sub.add_parser(
         "plan",
-        help="Compile the Bronze graph, routes and runtime manifest (read-only).",
+        help="Compile the Landing graph, routes and runtime manifest (read-only).",
         description=(
-            f"{BRONZE_INTRO} {READ_ONLY} {SHARED_HELP}\n\n"
+            f"{LANDING_INTRO} {READ_ONLY} {SHARED_HELP}\n\n"
             "Safe next action: contract register."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -187,8 +185,8 @@ def _parser() -> argparse.ArgumentParser:
 
     contract = sub.add_parser(
         "contract",
-        help="Register or activate a Bronze product contract (mutating).",
-        description=f"{BRONZE_INTRO} {MUTATING} {SHARED_HELP}",
+        help="Register or activate a Landing product contract (mutating).",
+        description=f"{LANDING_INTRO} {MUTATING} {SHARED_HELP}",
     )
     csub = contract.add_subparsers(dest="contract_action", required=True)
     register_c = csub.add_parser(
@@ -209,7 +207,7 @@ def _parser() -> argparse.ArgumentParser:
     deployment = sub.add_parser(
         "deployment",
         help="Register or activate a binding-only runtime deployment (mutating).",
-        description=f"{BRONZE_INTRO} {MUTATING} {SHARED_HELP} Binding-only relocation cannot move durable stores.",
+        description=f"{LANDING_INTRO} {MUTATING} {SHARED_HELP} Binding-only relocation cannot move durable stores.",
     )
     dsub = deployment.add_subparsers(dest="deployment_action", required=True)
     register_d = dsub.add_parser(
@@ -230,7 +228,7 @@ def _parser() -> argparse.ArgumentParser:
         "ingest",
         help="Ingest a received file or evaluate due transitions.",
         description=(
-            f"{BRONZE_INTRO} {MUTATING} {SHARED_HELP} "
+            f"{LANDING_INTRO} {MUTATING} {SHARED_HELP} "
             "ingest file writes a receipt from a sidecar manifest plus payload. "
             "ingest due writes trusted-clock due transitions; --at is only valid with --dry-run."
         ),
@@ -293,7 +291,7 @@ def _parser() -> argparse.ArgumentParser:
         "quarantine",
         help="List (read-only) or revalidate/release quarantined rows.",
         description=(
-            f"{BRONZE_INTRO} list is read-only; revalidate and release mutate remediation "
+            f"{LANDING_INTRO} list is read-only; revalidate and release mutate remediation "
             f"state. Row-level mode is invalid and exits 2. {SHARED_HELP}"
         ),
     )
@@ -335,7 +333,7 @@ def _error(code: str, message: str, *, field_path: str | None = None, safe_ref: 
         "claim_conflict", "stale_revision", "decision_conflict", "intent_conflict",
     }:
         category = ErrorCategory.CONFLICT
-    elif code in {"integrity_error", "bronze_store_restore_required"}:
+    elif code in {"integrity_error", "landing_store_restore_required"}:
         category = ErrorCategory.INTEGRITY
     elif retryable:
         category = ErrorCategory.RETRYABLE
@@ -485,9 +483,9 @@ class _Context:
         if table is None or table.contract is None:
             raise SettingsError(
                 "invalid_config",
-                f"no production Bronze contract for source {args.source!r} table {args.table!r}",
+                f"no production Landing contract for source {args.source!r} table {args.table!r}",
             )
-        self.contract: BronzeProductContract = table.contract
+        self.contract: LandingProductContract = table.contract
         self.layout: LocalLayout = resolve_layout(
             project_dir=self.project_dir,
             binding_path=Path(args.binding),
@@ -502,30 +500,24 @@ class _Context:
             or product.retention_policy_ref != SYNTHETIC_RETENTION_POLICY
         ):
             raise SettingsError("production_policy_adapter_required", "local commands admit only the synthetic-local policy tuple")
-        self.graph = resolve(Layer.BRONZE)
+        self.graph = resolve("landing")
         self.plan_digest = compute_plan_digest(self.graph)
         self.contract_digest = runtime_contract_digest(self.contract)
-        self.wire_plan = bronze_execution_plan(self.contract, execution_plan_digest=self.plan_digest)
-        self.manifest: RuntimeManifest = compile_runtime_manifest(self.graph, self.layout.binding)
+        self.wire_plan = landing_execution_plan(self.contract, execution_plan_digest=self.plan_digest)
+        self.manifest: RuntimeManifest = compile_runtime_manifest(self.graph, self.layout.binding, estate=self.estate)
         self.binding_digest = runtime_binding_digest(self.layout.binding)
 
     def session(self) -> LocalRuntimeSession:
         return open_session(self.layout, self.contract)
 
-    def translators(self) -> tuple[LocalIngestionTranslator, DbtTranslator]:
-        return (
-            LocalIngestionTranslator(binding=self.layout.binding, plan_digest=self.plan_digest),
-            DbtTranslator(
-                typed=self.typed,
-                bound={(self.args.source, self.args.table): self.layout.binding},
-                plan_digest=self.plan_digest,
-            ),
-        )
-
 
 def _cmd_plan(ctx: _Context) -> CommandEnvelope:
-    local, dbt = ctx.translators()
-    check_translator_conformance(ctx.graph, [local, dbt])
+    # Proves, before compiling anything, that the landing plan's eight
+    # occurrences still resolve through the estate's translator table to
+    # their real owners (architecture sections 9, 11; owner ruling R1):
+    # route_landing raises the matching RoutingError, naming the label, the
+    # pattern and the adapter, on any table gap or capability mismatch.
+    route_landing(ctx.graph, ctx.estate, identity=ctx.contract.logical_identity)
     findings = tuple()
     return _envelope(
         "plan",
@@ -876,8 +868,8 @@ def _cmd_ingest_file(ctx: _Context) -> CommandEnvelope:
         state = session.runtime.ports.state_store.status_query(ctx.contract.logical_identity).state
         ordinal = state.state_revision
         _emit_event(
-            session, ctx, LifecycleEventType.BRONZE_RECEIPT,
-            ReceiptLifecyclePayload(kind="bronze.receipt", receipt=receipt),
+            session, ctx, LifecycleEventType.LANDING_RECEIPT,
+            ReceiptLifecyclePayload(kind="landing.receipt", receipt=receipt),
             ordinal=ordinal, attempt_id=attempt.attempt_id,
         )
         handoff = quality_handoff(
@@ -893,8 +885,8 @@ def _cmd_ingest_file(ctx: _Context) -> CommandEnvelope:
             publication_decision=validation.publication_decision,
         )
         _emit_event(
-            session, ctx, LifecycleEventType.BRONZE_QUALITY,
-            QualityLifecyclePayload(kind="bronze.quality", validation=handoff),
+            session, ctx, LifecycleEventType.LANDING_QUALITY,
+            QualityLifecyclePayload(kind="landing.quality", validation=handoff),
             ordinal=ordinal, attempt_id=attempt.attempt_id,
         )
         lineage = build_lineage_descriptor(ctx.contract, ctx.plan_digest)
@@ -912,17 +904,17 @@ def _cmd_ingest_file(ctx: _Context) -> CommandEnvelope:
             committed_at=ingested.projection_confirmation.committed_at if ingested.projection_confirmation else None,
         )
         _emit_event(
-            session, ctx, LifecycleEventType.BRONZE_LINEAGE,
-            LineageLifecyclePayload(kind="bronze.lineage", lineage=lineage, run_lineage=run_lineage),
+            session, ctx, LifecycleEventType.LANDING_LINEAGE,
+            LineageLifecyclePayload(kind="landing.lineage", lineage=lineage, run_lineage=run_lineage),
             ordinal=ordinal, attempt_id=attempt.attempt_id,
         )
         metadata = build_product_metadata(
-            ctx.contract, latest_stream_status_ref="bronze.stream_status",
+            ctx.contract, latest_stream_status_ref="landing.stream_status",
             latest_publication_ref=ingested.projection_confirmation.projection_intent_digest if ingested.projection_confirmation else None,
         )
         _emit_event(
-            session, ctx, LifecycleEventType.BRONZE_METADATA,
-            MetadataLifecyclePayload(kind="bronze.metadata", metadata=metadata),
+            session, ctx, LifecycleEventType.LANDING_METADATA,
+            MetadataLifecyclePayload(kind="landing.metadata", metadata=metadata),
             ordinal=ordinal, attempt_id=attempt.attempt_id,
         )
         status_out = CommandStatus.RETRYABLE if ingested.retry_directive and not ingested.retry_directive.exhausted else CommandStatus.OK
@@ -1203,7 +1195,7 @@ def _cmd_inspect(ctx: _Context) -> CommandEnvelope:
             item.attempt_id for item in attempts if delivery_id is None or item.delivery_id == delivery_id
         }
         metadata = build_product_metadata(
-            ctx.contract, latest_stream_status_ref="bronze.stream_status", latest_publication_ref=None,
+            ctx.contract, latest_stream_status_ref="landing.stream_status", latest_publication_ref=None,
         )
         items = [
             ContractEvidenceItem(kind="contract", contract=ctx.contract),

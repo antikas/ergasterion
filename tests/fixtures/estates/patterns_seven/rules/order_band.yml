@@ -1,0 +1,22 @@
+# This estate's own named-rule catalogue. The engine reference catalogue
+# ships as the default; an estate catalogue may add rules to it and may never
+# redeclare one of its names.
+#
+# The implementations manifest names, per declared adapter, the dbt macro
+# that implements the rule. Both adapters name the same macro because the
+# macro name is what a generated model calls; its body dispatches per adapter
+# inside macros/ if it ever needs to.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: order_band_v1
+    version: 1
+    description: >-
+      Band an order by its total value into the estate's declared value
+      bands.
+    inputs:
+      - {name: order_total, type: {name: decimal, precision: 12, scale: 2}}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: order_band_v1}
+      - {translator: dbt, adapter: bigquery, macro: order_band_v1}

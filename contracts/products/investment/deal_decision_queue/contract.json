@@ -1,0 +1,92 @@
+{
+  "access": {
+    "classification": "confidential"
+  },
+  "description": "Every decision in force, beside the deal it decided and the desk that originated it.",
+  "freshness": "daily by 09:00 UTC",
+  "identity": {
+    "domain": "investment",
+    "major": 1,
+    "name": "deal_decision_queue",
+    "namespace": "io.antikas.ergasterion"
+  },
+  "lineage": [
+    "investment.deal_decision_current@1"
+  ],
+  "quality": [
+    {
+      "description": "decision_id must not be null",
+      "dimension": "completeness"
+    },
+    {
+      "description": "decision_id must be unique",
+      "dimension": "uniqueness"
+    }
+  ],
+  "relations": [
+    {
+      "fields": [
+        {
+          "name": "decision_id",
+          "required": true,
+          "type": "string"
+        },
+        {
+          "name": "deal_external_identity",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision_outcome",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision_conditions",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision_actor",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "decision_decided_at",
+          "required": false,
+          "type": "timestamp"
+        },
+        {
+          "name": "decision_rank",
+          "required": false,
+          "type": "integer"
+        },
+        {
+          "name": "decision_is_final",
+          "required": false,
+          "type": "boolean"
+        },
+        {
+          "name": "deal_name",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_strategy",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "name": "deal_originating_team",
+          "required": false,
+          "type": "string"
+        }
+      ],
+      "name": "investment.deal_decision_queue"
+    }
+  ],
+  "schema": "ergasterion.product-contract/v1",
+  "support": "platform-support",
+  "team": "data-product-factory",
+  "versioningPolicy": "additive nullable fields are minor and non-breaking; removals, renames, type changes and new required fields are major and breaking"
+}

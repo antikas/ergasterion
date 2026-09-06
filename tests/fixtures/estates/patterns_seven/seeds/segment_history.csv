@@ -1,0 +1,5 @@
+segment_code,segment_name,effective_from
+seg-a,starter,2025-01-01
+seg-a,growth,2026-02-01
+seg-b,starter,2025-01-01
+seg-c,retired,2027-01-01

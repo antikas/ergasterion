@@ -1,0 +1,75 @@
+# An aggregate at a declared grain, with the late-arrival policy that makes
+# a row arriving for an earlier period rewrite that period rather than land
+# beside it. The policy only lands as declared when the product publishes
+# incrementally keyed by the grain itself, so the two are declared together
+# and the translator holds them to each other.
+#
+# Its source is bound to a fixture relation for local proof (architecture
+# section 12).
+product:
+  name: customer_activity
+  domain: crm
+  version: "1.0"
+  layer: computed
+  owner: crm-domain
+
+sources:
+  - contract: crm.activity_events@1
+    kind: fixture
+    fixture:
+      relation: activity_events
+      fields:
+        - {name: activity_id, type: string}
+        - {name: customer_ref, type: string}
+        - {name: activity_month, type: date}
+        - {name: amount, type: {name: decimal, precision: 12, scale: 2}}
+    expect:
+      fields: [activity_id, customer_ref, activity_month, amount]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: activity_id
+        not_null: true
+      - field: amount
+        min: -1000
+        max: 100000
+  - pattern: calculated_fields
+    fields:
+      - name: amount_abs
+        type: {name: decimal, precision: 12, scale: 2}
+        expression: "abs(amount)"
+  - pattern: data_aggregation
+    grain: [customer_ref, activity_month]
+    aggregates:
+      - {name: activity_count, expression: "count(*)", type: integer}
+      - name: total_amount
+        expression: "sum(amount)"
+        type: {name: decimal, precision: 12, scale: 2}
+      - name: total_abs_amount
+        expression: "sum(amount_abs)"
+        type: {name: decimal, precision: 12, scale: 2}
+    late_arrival_policy: recompute_period
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per customer and month, with the count and value of the activity in it."
+    ownership: crm-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [customer_ref, activity_month]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: composition
+  max_retries: 2
+  backoff: fixed

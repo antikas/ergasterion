@@ -1,0 +1,48 @@
+# RED CASE: unknown_pattern_key. Based on valid/landing.yml, with an extra
+# key added to the data_contracts step -- that pattern's own schema is
+# "nothing beyond the target contract block" (architecture section 4).
+# Must fail closed naming the product, the occurrence and the rule
+# "unknown_pattern_key".
+product:
+  name: crm_customer_landing
+  domain: ecommerce
+  version: "1.0"
+  layer: bronze
+  owner: ecommerce-domain
+
+# A landing product has no upstream contract to consume: its external system
+# is referenced by batch_ingestion's own configuration (scope/cadence/extract
+# mode only -- a connection reference is a runtime binding, outside every
+# product declaration, owner ruling R1), never by a top-level source.
+sources: []
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    rules:
+      - field: customer_id
+        not_null: true
+  - pattern: data_contracts
+    unexpected_key: not_part_of_this_pattern_s_schema
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Landing copy of the CRM customer extract, unchanged."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

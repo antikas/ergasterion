@@ -31,11 +31,11 @@ package and reproduced here by licence family. The full text of every family in 
 `LICENSES/`.
 
 - pydantic 2.13.4 -- MIT. `LICENSES/MIT.txt`.
-- duckdb 1.5.5 (the `local-ingestion` and `duckdb` extras) -- MIT. `LICENSES/MIT.txt`.
+- duckdb 1.5.5 (the `local-ingestion` extra) -- MIT. `LICENSES/MIT.txt`.
 - rfc8785 0.1.4 -- Apache License 2.0. `LICENSES/Apache-2.0.txt`.
 - tzdata 2026.2 -- Apache License 2.0. `LICENSES/Apache-2.0.txt`.
-- dbt-core 1.11.12, dbt-duckdb 1.11.0, dbt-snowflake 1.11.6, dbt-bigquery 1.11.3 -- Apache
-  License 2.0. `LICENSES/Apache-2.0.txt`.
+- dbt-core 1.11.12, dbt-duckdb 1.11.0, dbt-bigquery 1.11.3 -- Apache License 2.0.
+  `LICENSES/Apache-2.0.txt`.
 - cryptography 49.0.0 -- dual-licensed Apache License 2.0 OR BSD 3-Clause; recorded here under
   the BSD 3-Clause option. `LICENSES/BSD-3-Clause.txt`.
 

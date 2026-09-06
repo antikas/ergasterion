@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/patterns/batch_ingestion.schema.json",
+  "title": "batch_ingestion step configuration (architecture section 4)",
+  "description": "Scope, cadence and extract mode only. No connection reference: a source's physical connection is a runtime binding, outside every product declaration (architecture section 2, owner ruling R1).",
+  "type": "object",
+  "required": ["pattern"],
+  "additionalProperties": false,
+  "properties": {
+    "pattern": { "const": "batch_ingestion" },
+    "scope": { "type": "string", "minLength": 1 },
+    "cadence": { "type": "string", "minLength": 1 },
+    "extract_mode": { "type": "string", "enum": ["full", "incremental"] }
+  }
+}

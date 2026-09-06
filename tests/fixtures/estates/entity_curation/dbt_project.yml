@@ -1,0 +1,25 @@
+name: entity_curation
+version: "1.0.0"
+config-version: 2
+
+profile: entity_curation
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The fixture relations the estate's fixture-bound sources read. Their column
+# types are declared here rather than inferred, so the executed build proves
+# the generated casts against the types the declarations state.
+seeds:
+  entity_curation:
+    customer_records:
+      +column_types:
+        eff_dt: date
+    activity_events:
+      +column_types:
+        activity_month: date
+        amount: "decimal(12,2)"

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ergasterion.dev/schemas/named-rule-catalogue-v1.schema.json",
+  "title": "Ergasterion named-rule catalogue v1 (architecture section 3.2)",
+  "description": "The estate's named-rule catalogue: one neutral signature per rule -- its name, its version, its input types, its output type -- declared once (architecture section 3.2). This schema validates the catalogue document's own shape only. Resolving a declaration's rule reference against a populated catalogue, and the completeness gate that checks every (translator, adapter) pair implements it, are ergasterion/framework/rules.py's job (architecture section 3.4). A rule entry may optionally carry 'implementations': this does not weaken 'implementations are code, never in a declaration' (section 3.2) -- it is a lightweight manifest naming, per (translator, adapter), the dispatch macro that implements the rule, so the completeness gate can resolve an ESTATE-declared rule (one the engine reference catalogue does not ship) the same way it resolves the engine's own REFERENCE_IMPLEMENTATIONS registry. An estate that needs no implementations entry (every rule it references is one the reference catalogue already ships and implements) omits it.",
+  "type": "object",
+  "required": [
+    "schema",
+    "rules"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "ergasterion.rule-catalogue/v1"
+    },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "inputs",
+          "output"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "description": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "name",
+                "type"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "type": {
+                  "type": [
+                    "string",
+                    "object"
+                  ]
+                }
+              }
+            }
+          },
+          "output": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "type": [
+                  "string",
+                  "object"
+                ]
+              }
+            }
+          },
+          "implementations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "translator",
+                "macro"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "translator": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "adapter": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "One declared adapter this implementation covers, or null/absent for every declared adapter (the macro has no adapter divergence)."
+                },
+                "macro": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

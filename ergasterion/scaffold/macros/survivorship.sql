@@ -1,5 +1,5 @@
 {#-
-  Business-vault survivorship uses SQL accepted by Snowflake, BigQuery, and DuckDB:
+  Survivorship uses SQL accepted by every declared adapter:
     * per-source "latest row" uses QUALIFY row_number() rather than BigQuery's
       `select * except (...)`;
     * the most_recent strategy picks the winning candidate via a `mr_<attribute>`
@@ -7,9 +7,9 @@
       source_name/priority_rank) reduced to one row per hub key with QUALIFY
       row_number() -- and the winner is brought into the final row via a plain LEFT
       JOIN on the hub key. A scalar correlated subquery in the SELECT list (the
-      previous approach) is rejected by Snowflake when the enclosing model is a VIEW
-      (002031: "Unsupported subquery type cannot be evaluated inside VIEW object"); a
-      JOIN + window function has no such restriction and runs on all three adapters.
+      previous approach) is rejected by some adapters when the enclosing model is a
+      view; a JOIN plus a window function has no such restriction and runs on every
+      declared adapter.
   Determinism: for each attribute the winner is chosen by the SOURCE's business
   effective date (effective_from) DESC, with source_priority order (priority_rank
   ASC) as the deterministic tie-break -- NEVER by load_datetime. load_datetime is
@@ -85,8 +85,8 @@ select
     {#- Single-source (degenerate) survivorship: one source contributes this entity,
         so there is no survivorship contest -- the golden value IS that source's value.
         Emit the bare column, NOT coalesce(x): a single-argument coalesce is a
-        Snowflake compile error (000938 "not enough arguments for function COALESCE").
-        The bare-column form runs on all three adapters. Multi-source entities take the
+        compile error on some adapters. The bare-column form runs on every declared
+        adapter. Multi-source entities take the
         else branch below, whose rendered SQL is
         byte-identical to the pre-guard output. -#}
     current_{{ source_priority[0] | lower }}.{{ attribute }} as {{ attribute }},

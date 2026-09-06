@@ -1,0 +1,13 @@
+{
+  "description": "Every column of each listed relation matches this contract's published schema (name, type and required-ness); the product is not published if it violates its own contract.",
+  "product": "investment.legal_vehicle_vault",
+  "relations": [
+    "investment.legal_vehicle_vault__hub_legal_vehicle",
+    "investment.legal_vehicle_vault__hub_fund",
+    "investment.legal_vehicle_vault__link_legal_vehicle_fund",
+    "investment.legal_vehicle_vault__sat_legal_vehicle_detail",
+    "investment.legal_vehicle_vault__golden_legal_vehicle",
+    "investment.legal_vehicle_vault__pit_legal_vehicle"
+  ],
+  "schema": "ergasterion.contract-compliance/v1"
+}

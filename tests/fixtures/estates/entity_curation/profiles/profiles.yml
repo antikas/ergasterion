@@ -1,0 +1,7 @@
+entity_curation:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/entity_curation.duckdb
+      threads: 1

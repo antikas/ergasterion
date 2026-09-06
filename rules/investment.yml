@@ -1,0 +1,73 @@
+# The investment estate's own named-rule catalogue. The engine reference
+# catalogue ships as the default; an estate catalogue may add rules to it and
+# may never redeclare one of its names.
+#
+# Three rules, for the two reasons architecture section 3.2 admits one.
+#
+# The two normalisation rules are genuinely dialect-divergent: stripping every
+# character that is not a letter or a digit out of a name is a global regular
+# expression replacement, which the declared adapters spell differently, so the
+# spelling stays inside the macro and the declaration never sees either of
+# them. They are two rules over one macro because a rule's inputs bind to the
+# columns they name: one binds the entity's own name column, the other the
+# manager name a fund lane carries beside it.
+#
+# The scoring rule is the probabilistic resolution tier. It scores one
+# candidate pair on three comparable attributes -- the normalised name, a
+# categorical attribute of the entity, and the date the record was reported --
+# and the weights it composes them with are the estate's, held here as code
+# rather than restated in every product that resolves an entity. The retired
+# scoring configuration stated them as 0.4 for the name, 0.2 for the
+# categorical attribute, 0.2 for the date and 0.2 for a monetary value; this
+# estate compares no monetary value at entity-identity grain, so that
+# sub-score is passed as absent and the composite renormalises the remaining
+# weights over what is comparable rather than reading an absent attribute as a
+# rejection. The date tolerance is 365 days.
+#
+# Every rule names one macro across the adapters, because the macro name is
+# what a generated model calls; where the adapters diverge, the divergence sits
+# inside the primitives the macro composes.
+schema: ergasterion.rule-catalogue/v1
+rules:
+  - name: investment_normalised_name_v1
+    version: 1
+    description: >-
+      An entity name reduced to the letters and digits it is spelled with, in
+      upper case, and nothing when the name is blank.
+    inputs:
+      - {name: source_name, type: string}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: dpf_investment_normalised_name}
+      - {translator: dbt, adapter: bigquery, macro: dpf_investment_normalised_name}
+  - name: investment_normalised_gp_name_v1
+    version: 1
+    description: >-
+      The same normalisation, over the manager name a fund record carries
+      beside its own, so a fund lane and a manager lane agree on one spelling.
+    inputs:
+      - {name: source_gp_name, type: string}
+    output:
+      type: string
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: dpf_investment_normalised_name}
+      - {translator: dbt, adapter: bigquery, macro: dpf_investment_normalised_name}
+  - name: investment_entity_match_score_v1
+    version: 1
+    description: >-
+      Score one candidate pair of investment records on name similarity, on
+      agreement of one categorical attribute, and on how close together the two
+      records were reported.
+    inputs:
+      - {name: normalised_name_a, type: string}
+      - {name: normalised_name_b, type: string}
+      - {name: category_a, type: string}
+      - {name: category_b, type: string}
+      - {name: reported_on_a, type: date}
+      - {name: reported_on_b, type: date}
+    output:
+      type: {name: decimal, precision: 5, scale: 4}
+    implementations:
+      - {translator: dbt, adapter: duckdb, macro: dpf_investment_entity_match_score}
+      - {translator: dbt, adapter: bigquery, macro: dpf_investment_entity_match_score}

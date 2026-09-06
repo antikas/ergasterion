@@ -1,0 +1,68 @@
+# Landing product: The storefront's order header extract as it was delivered, no column changed.
+#
+# The estate's `landed` label gives Batch Ingestion to the ingestion
+# runtime and this relation, its validation, its publication and its retry
+# wrapper to the SQL translator, so the relation is materialised from the
+# delivered extract with no column changed (architecture section 5, the
+# landing profile; owner ruling R1).
+#
+# Its schema has one origin: the relation it lands, bound here with the
+# fields that relation delivers (owner ruling R5). Every column is a
+# string, because a delivered extract states its values as text; the
+# products downstream declare the types they need and cast to them. This
+# is the only product that reads the delivered relation: nothing else in
+# the estate does.
+product:
+  name: cartivo_order_extract
+  domain: ecommerce
+  version: "1.0"
+  layer: landed
+  owner: ecommerce-domain
+
+sources:
+  - contract: ecommerce.cartivo_order_extract_delivery@1
+    kind: fixture
+    fixture:
+      relation: raw_cartivo_orders
+      fields:
+        - {name: cartivo_record_id, type: string}
+        - {name: cartivo_order_id, type: string}
+        - {name: cartivo_customer_id, type: string}
+        - {name: order_date, type: string}
+        - {name: order_status, type: string}
+        - {name: currency, type: string}
+        - {name: order_total, type: string}
+        - {name: channel, type: string}
+    expect:
+      fields: [cartivo_record_id, cartivo_order_id, cartivo_customer_id]
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - {field: cartivo_record_id, not_null: true}
+      - {field: cartivo_record_id, unique: true}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The storefront's order header extract as it was delivered, no column changed."
+    ownership: ecommerce-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 3
+  backoff: exponential

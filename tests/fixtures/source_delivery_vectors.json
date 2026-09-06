@@ -1,12 +1,12 @@
 {
   "schema": "ergasterion.source-delivery-vectors/v1",
-  "note": "Semantic (cross-field) vectors for ergasterion.source_delivery's mode matrix, codec rules, typed-scalar rules, schedule grammar and projection lineage. Every payload here is already a valid BronzeProductContract WIRE shape: it round-trips through ergasterion.framework.bronze_contract. Each negative entry states which semantic entry point rejects it: 'delivery' runs validate_delivery_policy against the delivery block alone, 'contract' runs validate_contract over the whole record. A patch key is a dotted path into the payload; its value replaces that node whole.",
+  "note": "Semantic (cross-field) vectors for ergasterion.source_delivery's mode matrix, codec rules, typed-scalar rules, schedule grammar and projection lineage. Every payload here is already a valid LandingProductContract WIRE shape: it round-trips through ergasterion.framework.landing_contract. Each negative entry states which semantic entry point rejects it: 'delivery' runs validate_delivery_policy against the delivery block alone, 'contract' runs validate_contract over the whole record. A patch key is a dotted path into the payload; its value replaces that node whole.",
   "positive": [
     {
       "case": "cdc_managed_explicit_tombstone",
       "note": "CDC mode: sequence progress, event and load timestamps, explicit_tombstone with a matching fingerprint scope, one nullable physical column, interval schedule.",
       "payload": {
-        "schema": "ergasterion.bronze-product/v1",
+        "schema": "ergasterion.landing-product/v1",
         "logical_identity": {"estate_namespace": "com.example.ergasterion", "source": "acme", "table": "accounts"},
         "product": {
           "product_version": "1.0.0", "display_name": "Accounts", "description": "Synthetic accounts feed.",
@@ -49,14 +49,14 @@
           {"source": "account_id", "name": "account_id", "logical_type": "utf8_string", "nullable": false},
           {"source": "loaded_at", "name": "loaded_at", "logical_type": "utc_instant", "nullable": false}
         ],
-        "interfaces": {"raw": "bronze-acme-accounts-raw", "source_native": "bronze-acme-accounts-source-native", "published": "bronze-acme-accounts-published", "quarantine": "bronze-acme-accounts-quarantine", "deletion_evidence": "bronze-acme-accounts-deletion-evidence"}
+        "interfaces": {"raw": "landing-acme-accounts-raw", "source_native": "landing-acme-accounts-source-native", "published": "landing-acme-accounts-published", "quarantine": "landing-acme-accounts-quarantine", "deletion_evidence": "landing-acme-accounts-deletion-evidence"}
       }
     },
     {
       "case": "append_only_managed_opaque_batch",
       "note": "Append-only mode: opaque_batch progress, delete_strategy none, load timestamp only, publish_valid_rows, both content encodings admitted.",
       "payload": {
-        "schema": "ergasterion.bronze-product/v1",
+        "schema": "ergasterion.landing-product/v1",
         "logical_identity": {"estate_namespace": "com.example.ergasterion", "source": "acme", "table": "orders"},
         "product": {
           "product_version": "1.0.0", "display_name": "Orders", "description": "Synthetic source-aligned orders.",
@@ -90,14 +90,14 @@
           {"source": "order_id", "name": "order_id", "logical_type": "utf8_string", "nullable": false},
           {"source": "loaded_at", "name": "loaded_at", "logical_type": "utc_instant", "nullable": false}
         ],
-        "interfaces": {"raw": "bronze-acme-orders-raw", "source_native": "bronze-acme-orders-source-native", "published": "bronze-acme-orders-published", "quarantine": "bronze-acme-orders-quarantine", "deletion_evidence": "bronze-acme-orders-deletion-evidence"}
+        "interfaces": {"raw": "landing-acme-orders-raw", "source_native": "landing-acme-orders-source-native", "published": "landing-acme-orders-published", "quarantine": "landing-acme-orders-quarantine", "deletion_evidence": "landing-acme-orders-deletion-evidence"}
       }
     },
     {
       "case": "complete_snapshot_managed",
       "note": "Complete-snapshot mode: opaque_batch progress, snapshot_diff with a matching fingerprint scope, effective and load timestamps.",
       "payload": {
-        "schema": "ergasterion.bronze-product/v1",
+        "schema": "ergasterion.landing-product/v1",
         "logical_identity": {"estate_namespace": "com.example.ergasterion", "source": "acme", "table": "customers"},
         "product": {
           "product_version": "1.0.0", "display_name": "Customers", "description": "Synthetic customer population snapshot.",
@@ -137,14 +137,14 @@
           {"source": "customer_id", "name": "customer_id", "logical_type": "utf8_string", "nullable": false},
           {"source": "loaded_at", "name": "loaded_at", "logical_type": "utc_instant", "nullable": false}
         ],
-        "interfaces": {"raw": "bronze-acme-customers-raw", "source_native": "bronze-acme-customers-source-native", "published": "bronze-acme-customers-published", "quarantine": "bronze-acme-customers-quarantine", "deletion_evidence": "bronze-acme-customers-deletion-evidence"}
+        "interfaces": {"raw": "landing-acme-customers-raw", "source_native": "landing-acme-customers-source-native", "published": "landing-acme-customers-published", "quarantine": "landing-acme-customers-quarantine", "deletion_evidence": "landing-acme-customers-deletion-evidence"}
       }
     },
     {
       "case": "csv_external_append_only",
       "note": "The CSV codec and the external integration, with a cron schedule and every typed-scalar rule family: accepted_values over utf8_string, a decimal range over a parameterised decimal column, a date range, and row_count bounds.",
       "payload": {
-        "schema": "ergasterion.bronze-product/v1",
+        "schema": "ergasterion.landing-product/v1",
         "logical_identity": {"estate_namespace": "com.example.ergasterion", "source": "ledger", "table": "postings"},
         "product": {
           "product_version": "2.3.1", "display_name": "Ledger postings", "description": "Synthetic ledger postings delivered by an external pipeline.",
@@ -207,7 +207,7 @@
           {"source": "memo", "name": "memo", "logical_type": "utf8_string", "nullable": true},
           {"source": "loaded_at", "name": "loaded_at", "logical_type": "utc_instant", "nullable": false}
         ],
-        "interfaces": {"raw": "bronze-ledger-postings-raw", "source_native": "bronze-ledger-postings-source-native", "published": "bronze-ledger-postings-published", "quarantine": "bronze-ledger-postings-quarantine", "deletion_evidence": "bronze-ledger-postings-deletion-evidence"}
+        "interfaces": {"raw": "landing-ledger-postings-raw", "source_native": "landing-ledger-postings-source-native", "published": "landing-ledger-postings-published", "quarantine": "landing-ledger-postings-quarantine", "deletion_evidence": "landing-ledger-postings-deletion-evidence"}
       }
     }
   ],
@@ -241,9 +241,9 @@
     {"case": "cron_expression_descending_range", "validator": "delivery", "note": "the v1 cron grammar admits ascending ranges alone.", "base": "csv_external_append_only", "patch": {"delivery.schedule": {"kind": "cron", "expression": "30 2 * * 5-1", "timezone": "Europe/London", "starts_at": "2026-01-01T00:00:00.000000Z", "timezone_data_version": "2026.2"}}, "expected_error_substring": "ascending ranges"},
     {"case": "cron_unknown_timezone", "validator": "delivery", "note": "the timezone names a zone the installed tzdata carries.", "base": "csv_external_append_only", "patch": {"delivery.schedule": {"kind": "cron", "expression": "30 2 * * *", "timezone": "Mars/Olympus_Mons", "starts_at": "2026-01-01T00:00:00.000000Z", "timezone_data_version": "2026.2"}}, "expected_error_substring": "names no zone in tzdata"},
     {"case": "projection_source_unknown", "validator": "contract", "note": "a published column selects a declared physical column.", "base": "append_only_managed_opaque_batch", "patch": {"projection": [{"source": "no_such_column", "name": "order_id", "logical_type": "utf8_string", "nullable": false}]}, "expected_error_substring": "names no declared physical column"},
-    {"case": "projection_type_mismatch", "validator": "contract", "note": "Bronze publishes a source column unchanged.", "base": "append_only_managed_opaque_batch", "patch": {"projection": [{"source": "order_id", "name": "order_id", "logical_type": "int64", "nullable": false}]}, "expected_error_substring": "publishes a source column unchanged"},
+    {"case": "projection_type_mismatch", "validator": "contract", "note": "Landing publishes a source column unchanged.", "base": "append_only_managed_opaque_batch", "patch": {"projection": [{"source": "order_id", "name": "order_id", "logical_type": "int64", "nullable": false}]}, "expected_error_substring": "publishes a source column unchanged"},
     {"case": "projection_narrows_nullability", "validator": "contract", "note": "a published column cannot promise non-null over a nullable source column.", "base": "cdc_managed_explicit_tombstone", "patch": {"projection": [{"source": "is_deleted", "name": "is_deleted", "logical_type": "boolean", "nullable": false}]}, "expected_error_substring": "non-nullable column over the nullable source"},
-    {"case": "projection_empty", "validator": "contract", "note": "a Bronze product publishes at least one column.", "base": "append_only_managed_opaque_batch", "patch": {"projection": []}, "expected_error_substring": "publish at least one column"},
+    {"case": "projection_empty", "validator": "contract", "note": "a Landing product publishes at least one column.", "base": "append_only_managed_opaque_batch", "patch": {"projection": []}, "expected_error_substring": "publish at least one column"},
     {"case": "projection_duplicate_output_name", "validator": "contract", "note": "one output name is published once.", "base": "append_only_managed_opaque_batch", "patch": {"projection": [{"source": "order_id", "name": "order_id", "logical_type": "utf8_string", "nullable": false}, {"source": "loaded_at", "name": "order_id", "logical_type": "utc_instant", "nullable": false}]}, "expected_error_substring": "output name twice"},
     {"case": "record_key_unknown_column", "validator": "contract", "note": "record_key.fields name declared physical columns.", "base": "append_only_managed_opaque_batch", "patch": {"delivery.record_key": {"fields": ["no_such_column"]}}, "expected_error_substring": "delivery.record_key.fields 'no_such_column'"},
     {"case": "progress_field_unknown_column", "validator": "contract", "note": "sequence progress names a declared physical column.", "base": "cdc_managed_explicit_tombstone", "patch": {"delivery.progress": {"kind": "sequence", "field": "no_such_column"}}, "expected_error_substring": "delivery.progress.field 'no_such_column'"},
@@ -256,6 +256,6 @@
     {"case": "external_trust_without_keys", "validator": "contract", "note": "external receipt trust names at least one key.", "base": "csv_external_append_only", "patch": {"landing.integration.receipt_trust": {"policy_ref": "external-receipt-default", "allowed_key_ids": [], "future_clock_skew_seconds": 60}}, "expected_error_substring": "must name at least one key"},
     {"case": "duplicate_physical_column", "validator": "contract", "note": "a physical column name is declared once.", "base": "append_only_managed_opaque_batch", "patch": {"landing.physical_columns": [{"name": "order_id", "logical_type": "utf8_string", "nullable": false}, {"name": "order_id", "logical_type": "int64", "nullable": false}, {"name": "loaded_at", "logical_type": "utc_instant", "nullable": false}]}, "expected_error_substring": "must not repeat a column name"},
     {"case": "duplicate_content_encoding", "validator": "contract", "note": "content_encodings is a set.", "base": "append_only_managed_opaque_batch", "patch": {"landing.content_encodings": ["identity", "identity"]}, "expected_error_substring": "must not repeat an encoding"},
-    {"case": "authored_interfaces_rejected", "validator": "contract", "note": "lineage interface names are derived from logical identity and carry no authoring surface.", "base": "append_only_managed_opaque_batch", "patch": {"interfaces": {"raw": "custom-raw", "source_native": "bronze-acme-orders-source-native", "published": "bronze-acme-orders-published", "quarantine": "bronze-acme-orders-quarantine", "deletion_evidence": "bronze-acme-orders-deletion-evidence"}}, "expected_error_substring": "carry no authoring surface"}
+    {"case": "authored_interfaces_rejected", "validator": "contract", "note": "lineage interface names are derived from logical identity and carry no authoring surface.", "base": "append_only_managed_opaque_batch", "patch": {"interfaces": {"raw": "custom-raw", "source_native": "landing-acme-orders-source-native", "published": "landing-acme-orders-published", "quarantine": "landing-acme-orders-quarantine", "deletion_evidence": "landing-acme-orders-deletion-evidence"}}, "expected_error_substring": "carry no authoring surface"}
   ]
 }

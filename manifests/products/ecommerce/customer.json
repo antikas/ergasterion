@@ -1,0 +1,45 @@
+{
+  "aggregation": [],
+  "materialisation": {
+    "intent": "table",
+    "publication_mode": "atomic",
+    "strategy": "swap",
+    "unique_key": []
+  },
+  "product": "ecommerce.customer",
+  "relations": {
+    "auxiliary": [
+      "ecommerce.customer__checked_post",
+      "ecommerce.customer__checked_pre",
+      "ecommerce.customer__current",
+      "ecommerce.customer__pending_keys",
+      "ecommerce.customer__quarantine_post",
+      "ecommerce.customer__quarantine_pre",
+      "ecommerce.customer__resolution",
+      "ecommerce.customer__sla"
+    ],
+    "published": [
+      "ecommerce.customer"
+    ]
+  },
+  "retry_policy": {
+    "backoff": "fixed",
+    "max_retries": 2
+  },
+  "run_boundary": {
+    "checkpoint": true,
+    "granularity": "step",
+    "occurrences": [
+      "steps[0]:batch_transfer",
+      "steps[1]:data_validation",
+      "steps[2]:schema_transform",
+      "steps[3]:calculated_fields",
+      "steps[4]:data_enrichment",
+      "steps[5]:data_curation",
+      "steps[6]:data_validation",
+      "steps[11]:data_publish"
+    ]
+  },
+  "schema": "ergasterion.product-runtime/v1",
+  "translator": "dbt"
+}

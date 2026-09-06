@@ -1,6 +1,6 @@
 {
  "cdc": {
-  "schema": "ergasterion.bronze-product/v1",
+  "schema": "ergasterion.landing-product/v1",
   "logical_identity": {
    "estate_namespace": "com.example.ergasterion.acceptance",
    "source": "acceptance",
@@ -153,7 +153,7 @@
   }
  },
  "append_v1": {
-  "schema": "ergasterion.bronze-product/v1",
+  "schema": "ergasterion.landing-product/v1",
   "logical_identity": {
    "estate_namespace": "com.example.ergasterion.acceptance",
    "source": "acceptance",
@@ -345,7 +345,7 @@
   }
  },
  "append_v1_1_additive": {
-  "schema": "ergasterion.bronze-product/v1",
+  "schema": "ergasterion.landing-product/v1",
   "logical_identity": {
    "estate_namespace": "com.example.ergasterion.acceptance",
    "source": "acceptance",
@@ -548,7 +548,7 @@
   }
  },
  "snapshot": {
-  "schema": "ergasterion.bronze-product/v1",
+  "schema": "ergasterion.landing-product/v1",
   "logical_identity": {
    "estate_namespace": "com.example.ergasterion.acceptance",
    "source": "acceptance",

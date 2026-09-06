@@ -1,0 +1,87 @@
+# The estate's delivered feed: one row per change event from either of two
+# source systems, each row carrying the entity key an already agreed,
+# upstream resolution process stamped on it (ownership is declared, never
+# inferred). No product in this estate publishes crm.customer_event_feed:
+# its source is bound to a fixture relation for local proof (architecture
+# section 12), and the binding carries the fields that relation delivers.
+#
+# The seeded population is what makes the known answers known:
+#   * entity E-001 changes three times -- once from source system crm,
+#     once from billing, once more from crm -- so its history carries
+#     three versions over two source keys;
+#   * entity E-002 changes three times: once from crm, once from
+#     billing with no attribute difference from the first, and once
+#     more from crm with a changed loyalty total, so its history
+#     carries two versions;
+#   * source key CRM-100 is delivered against E-001 twice and then, by
+#     its latest event, against E-002 -- a source key is re-pointed to
+#     a different entity over time, and its cross-reference resolves
+#     to the entity the latest event names, not to every entity it was
+#     ever seen under.
+product:
+  name: customer_events
+  domain: crm
+  version: "1.0"
+  layer: delivered
+  profile: serving
+  owner: fixture-team
+
+sources:
+  - contract: crm.customer_event_feed@1
+    kind: fixture
+    fixture:
+      relation: customer_events
+      fields:
+        - {name: eid, type: string}
+        - {name: ssys, type: string}
+        - {name: skey, type: string}
+        - {name: ent_id, type: string}
+        - {name: nm, type: string}
+        - {name: seg, type: string}
+        - {name: pts, type: integer}
+        - {name: chg_ts, type: timestamp}
+        - {name: op, type: string}
+    expect:
+      fields: [eid, ent_id, chg_ts]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: eid
+        not_null: true
+      - field: ent_id
+        not_null: true
+  - pattern: schema_transform
+    mapping:
+      - {from: eid, to: event_id, type: string}
+      - {from: ssys, to: source_system, type: string}
+      - {from: skey, to: source_key, type: string}
+      - {from: ent_id, to: entity_id, type: string}
+      - {from: nm, to: customer_name, type: string}
+      - {from: seg, to: customer_segment, type: string}
+      - {from: pts, to: loyalty_points, type: integer}
+      - {from: chg_ts, to: changed_at, type: timestamp}
+      - {from: op, to: operation, type: string}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per delivered change event, with the entity key an already agreed resolution process stamped on it."
+    ownership: fixture-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
+  checkpoint: true

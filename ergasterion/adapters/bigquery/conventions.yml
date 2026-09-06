@@ -1,0 +1,61 @@
+# BigQuery adapter conventions (architecture sections 10, 11; owner ruling
+# R10; plan decision D35). BigQuery is the estate's deployment adapter and
+# final_target. Loaded only through ergasterion/framework/adapters.py.
+#
+# deny_rules guards what this adapter cannot accept. With two declared
+# adapters, the live portability risk runs one way: DuckDB, the reference adapter,
+# accepts direct SQL surface BigQuery has no equivalent for. This is a new,
+# minimal list (not a lift) guarding exactly that: the Postgres/DuckDB
+# ``::`` cast operator, DuckDB's direct file-scanning table functions, and
+# DuckDB's struct_pack(...) constructor.
+#
+# type_mapping is the dpf_type() token table (macros/cross_db.sql) resolves
+# for this adapter, traced from the installed dbt-core/dbt-bigquery
+# packages rather than guessed: dbt.type_int/type_float dispatch through
+# BigQueryColumn.TYPE_LABELS (INTEGER -> INT64, FLOAT -> FLOAT64);
+# dbt.type_numeric dispatches through BigQueryColumn.numeric_type, which
+# BigQuery overrides to drop precision/scale entirely (bare NUMERIC, which
+# BigQuery itself then defaults to NUMERIC(38,9)); dbt.type_string falls
+# through translate_type with no BigQueryColumn override and compiles as
+# the literal token 'string', shown here in its canonical upper-case
+# spelling (BigQuery's real, native type name -- not an alias).
+# dbt.type_boolean falls through the same way and compiles as the literal
+# token 'boolean': recorded here as BOOLEAN, matching what the macro
+# actually emits. BOOLEAN is not BigQuery's native type name -- that is
+# BOOL -- it is an alias BigQuery accepts for it, so the compiled SQL is
+# valid but names a different word, not a differently-cased spelling of
+# the same one. 'date' is the literal ANSI token dpf_type() returns
+# directly. The macro remains the executed implementation; this is the
+# same mapping expressed as adapter package data (architecture section
+# 3.3, P6).
+#
+# identifier_rules is P7's parked per-adapter case/quoting policy: no engine
+# code normalises identifiers yet, so this is the adapter's own declared
+# policy, structurally validated and ready for the item that consumes it.
+# Relation/column length budgets stay declarations/targets/bigquery.yml's
+# job (structural budgets), never duplicated here.
+adapter: bigquery
+kind: deployment
+dialect: bigquery
+incremental_strategy: merge
+deny_rules:
+  - token: postgres_cast_operator
+    pattern: '::[a-zA-Z_]'
+    message: "DuckDB/Postgres-style ::type cast -- use CAST(...) / {{ dpf_safe_cast(...) }}"
+  - token: duckdb_file_scan
+    pattern: '\b(?:read_csv_auto|read_parquet|read_csv)\s*\('
+    message: "DuckDB direct file-scanning function -- BigQuery has no equivalent; declare the input as a source"
+  - token: struct_pack
+    pattern: '\bstruct_pack\s*\('
+    message: "DuckDB struct_pack(...) -- route via {{ dpf_to_json_object(...) }}"
+type_mapping:
+  int: INT64
+  float: FLOAT64
+  numeric: NUMERIC
+  string: STRING
+  timestamp: TIMESTAMP
+  date: DATE
+  boolean: BOOLEAN
+identifier_rules:
+  quote_character: '`'
+  unquoted_case_folding: none

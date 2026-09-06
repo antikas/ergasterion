@@ -13,9 +13,9 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from ergasterion.framework.bronze_contract import BronzeProductContract
+from ergasterion.framework.landing_contract import LandingProductContract
 from ergasterion.framework.runtime_binding import InterfaceReadiness, ReadinessResult, RuntimeBinding
-from ergasterion.ingestion.duckdb_bronze import DuckDBLandingAdapter, DuckDBStore, identity_key
+from ergasterion.ingestion.duckdb_landing import DuckDBLandingAdapter, DuckDBStore, identity_key
 from ergasterion.ingestion.duckdb_lifecycle import DuckDBLifecycleSink
 from ergasterion.ingestion.duckdb_projection import DuckDBProjectionPublisher
 from ergasterion.ingestion.duckdb_remediation import DuckDBRemediationRepository
@@ -155,12 +155,12 @@ def implementation_versions() -> dict[str, str]:
     return {name: LOCAL_IMPLEMENTATION_VERSION for name in PORT_FIELD_ORDER}
 
 
-def contract_digest(contract: BronzeProductContract) -> str:
+def contract_digest(contract: LandingProductContract) -> str:
     return canonical_digest(contract.model_dump(mode="json", by_alias=True))
 
 
 def build_readiness(
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     runtime_manifest_digest: str,
     *,
     now: str,
@@ -170,12 +170,12 @@ def build_readiness(
     body = {
         "schema": "ergasterion.interface-readiness/v1",
         "logical_identity": contract.logical_identity.model_dump(mode="json", by_alias=True),
-        "projection_target": "bronze",
+        "projection_target": "landing",
         "runtime_manifest_digest": runtime_manifest_digest,
         "contract_digest": digest,
         "source_schema_digest": compute_source_schema_digest(contract),
         "published_schema_digest": compute_published_schema_digest(contract),
-        "version_interface_ref": "bronze.v1",
+        "version_interface_ref": "landing.v1",
         "capability_digest": capability_digest,
         "classification": SYNTHETIC_CLASSIFICATION,
         "access_policy_ref": SYNTHETIC_ACCESS_POLICY,
@@ -187,12 +187,12 @@ def build_readiness(
     return InterfaceReadiness(
         schema="ergasterion.interface-readiness/v1",
         logical_identity=contract.logical_identity,
-        projection_target="bronze",
+        projection_target="landing",
         runtime_manifest_digest=runtime_manifest_digest,
         contract_digest=digest,
         source_schema_digest=body["source_schema_digest"],
         published_schema_digest=body["published_schema_digest"],
-        version_interface_ref="bronze.v1",
+        version_interface_ref="landing.v1",
         capability_digest=capability_digest,
         classification=SYNTHETIC_CLASSIFICATION,
         access_policy_ref=SYNTHETIC_ACCESS_POLICY,
@@ -217,7 +217,7 @@ class LocalRuntimeSession:
     """One open local runtime for a single logical identity."""
 
     layout: LocalLayout
-    contract: BronzeProductContract
+    contract: LandingProductContract
     ports: PortSet
     runtime: IngestionRuntime
     clock: Clock
@@ -263,7 +263,7 @@ class LocalRuntimeSession:
 
 def open_session(
     layout: LocalLayout,
-    contract: BronzeProductContract,
+    contract: LandingProductContract,
     *,
     projection_fail_first_n: int | None = None,
     clock: Clock | None = None,

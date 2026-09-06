@@ -1,0 +1,90 @@
+# The identifier the source systems share for a fund, against the business
+# key the fund vault resolved that fund on.
+#
+# A deal names the fund it converted into by the shared identifier. The
+# fund vault identifies the same fund by its legal entity identifier, so
+# the two are different strings for one fund and an association keyed on
+# the first would never meet the second.
+#
+# It reads the vault's surviving record, naming that relation (owner ruling
+# R4), so there is one row per fund the estate recognises before the grain
+# is taken. A fund no source system gives a shared identifier is excluded
+# by the named predicate rather than grouped under nothing. The grain is
+# the identifier normalised for case and padding, and every consumer looks
+# it up under the same normalisation.
+product:
+  name: fund_external_index
+  domain: investment
+  version: "1.0"
+  layer: silver
+  profile: derivation
+  owner: investment-domain
+
+sources:
+  - contract: investment.fund_vault@1
+    relation: golden_fund
+    expect:
+      fields:
+        - fund_hk
+        - fund_business_key
+        - fund_name
+        - fund_asset_class
+        - fund_strategy
+        - fund_gp_business_key
+        - fund_vintage_year
+        - fund_committed_capital_usd
+        - fund_status
+        - fund_external_identity
+        - fund_external_id
+        - fund_lei
+        - fund_domicile
+        - fund_currency
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    stage: pre
+    on_failure: abort
+    rules:
+      - {field: fund_business_key, not_null: true}
+  - pattern: calculated_fields
+    fields:
+      - {name: fund_external_lookup_key, type: string, expression: "upper(trim(fund_external_id))"}
+  - pattern: data_filtering
+    predicates:
+      - name: shared_identifier_stated_only
+        expression: "fund_external_lookup_key is not null"
+  - pattern: data_aggregation
+    grain: [fund_external_lookup_key]
+    aggregates:
+      - {name: fund_business_key, expression: "min(fund_business_key)", type: string}
+      - {name: fund_entity_count, expression: "count(distinct fund_business_key)", type: integer}
+    late_arrival_policy: recompute_period
+  - pattern: data_validation
+    stage: post
+    on_failure: abort
+    rules:
+      - {field: fund_external_lookup_key, not_null: true}
+      - {field: fund_external_lookup_key, unique: true}
+      - {field: fund_entity_count, max: 1}
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "Each shared fund identifier against the business key the fund vault resolved it to."
+    ownership: investment-domain
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: incremental
+    unique_key: [fund_external_lookup_key]
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 08:00 UTC"
+    access:
+      classification: confidential
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed
