@@ -42,6 +42,7 @@ def runtime_manifest(
     materialisation: str,
     published_relations: Sequence[str],
     auxiliary_relations: Sequence[str],
+    stored: Sequence[dict[str, Any]],
     aggregation: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """The runtime manifest for one product: its run boundary, its retry
@@ -51,7 +52,14 @@ def runtime_manifest(
 
     ``aggregation`` is a list because a composition may aggregate more than
     once; a product that aggregates not at all carries an empty one, which
-    is a fact about the composition rather than an absent field."""
+    is a fact about the composition rather than an absent field.
+
+    ``stored`` carries one entry per published relation whose declaration
+    states a name of its own: the relation, the ``physical_relation`` schema
+    and name it is stored under, and the ``physical_name`` beside the
+    logical ``name`` of every column that is stored under one. A product
+    that renames nothing carries none, so a runtime reading the manifest
+    reads a rename only where one was declared."""
 
     missing = [key for key in REQUIRED_CHECKPOINT_KEYS if checkpointing.get(key) is None]
     if missing:
@@ -90,4 +98,5 @@ def runtime_manifest(
             "published": list(published_relations),
             "auxiliary": list(auxiliary_relations),
         },
+        **({"stored": [dict(entry) for entry in stored]} if stored else {}),
     }

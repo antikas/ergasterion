@@ -101,7 +101,7 @@ import json
 from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Mapping, Sequence
 
 import yaml
 
@@ -119,6 +119,7 @@ from ergasterion.framework.declaration import (
     ValidatedProduct,
     conformance_mapping,
     declared_combination,
+    physical_declaration,
 )
 from ergasterion.framework.generated import YAML_HEADER
 from ergasterion.framework.models import FrameworkError, RelationField, RelationSchema
@@ -764,11 +765,19 @@ class ConformedColumn:
     opens with: the name the source carries it under, the name the opening
     relation publishes it under, and the neutral type a conformance
     mapping casts it to (``None`` where the column is carried as it
-    arrives)."""
+    arrives).
+
+    ``physical_source_name`` is the name the producer stores the column
+    under where the producer declares one, so a consumer reads the stored
+    name and carries the logical one. ``None`` where the producer stores it
+    under the one name it has, which is the ordinary case. A physical name
+    never propagates into the consumer's own relation: what a product
+    publishes is what the product itself declares."""
 
     source_name: str
     name: str
     cast_type: Any | None
+    physical_source_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -839,13 +848,25 @@ def _conform_source(
     for field in schema.fields:
         entry = renames.get(field.name)
         if entry is None:
-            fields.append(field)
-            columns.append(ConformedColumn(source_name=field.name, name=field.name, cast_type=None))
+            fields.append(replace(field, physical_name=None))
+            columns.append(
+                ConformedColumn(
+                    source_name=field.name,
+                    name=field.name,
+                    cast_type=None,
+                    physical_source_name=field.physical_name,
+                )
+            )
             continue
         target = str(entry["to"])
         fields.append(RelationField(name=target, type=entry["type"]))
         columns.append(
-            ConformedColumn(source_name=field.name, name=target, cast_type=entry["type"])
+            ConformedColumn(
+                source_name=field.name,
+                name=target,
+                cast_type=entry["type"],
+                physical_source_name=field.physical_name,
+            )
         )
     seen: set[str] = set()
     for field in fields:
@@ -1276,10 +1297,20 @@ def landing_schema_for(
     binding = bindings[0]["fixture"]
     return RelationSchema(
         name=product,
-        fields=tuple(
-            RelationField(name=field["name"], type=field["type"])
-            for field in binding["fields"]
-        ),
+        fields=tuple(_bound_field(field) for field in binding["fields"]),
+    )
+
+
+def _bound_field(field: Mapping[str, Any]) -> RelationField:
+    """One field a bound relation delivers, with the name it is stored
+    under where the binding declares one. A landing product publishes the
+    relation it lands, so a delivered column's stored name is the stored
+    name of the column its contract publishes."""
+
+    return RelationField(
+        name=field["name"],
+        type=field["type"],
+        physical_name=field.get("physical_name"),
     )
 
 
@@ -1307,10 +1338,7 @@ def fixture_relation_schemas(
             target = _source_published_name(source.get("contract"))
             schemas[str(target)] = RelationSchema(
                 name=str(target),
-                fields=tuple(
-                    RelationField(name=field["name"], type=field["type"])
-                    for field in binding["fields"]
-                ),
+                fields=tuple(_bound_field(field) for field in binding["fields"]),
             )
     return schemas
 
@@ -1516,6 +1544,76 @@ def consumer_source_schemas(
     return schemas
 
 
+class UnknownPhysicalColumnError(FrameworkError):
+    """A declaration states the stored name of a column its relation does
+    not publish. Names the product, the relation and the column: a stated
+    name nothing carries is a declaration about nothing, and ignoring it
+    would leave the estate believing a column was renamed."""
+
+    code = "unknown_physical_column"
+
+    def __init__(self, *, product: str, relation: str, column: str, available: Sequence[str]) -> None:
+        self.product = product
+        self.relation = relation
+        self.column = column
+        super().__init__(
+            f"product {product!r}: relation {relation!r} does not publish column {column!r}, "
+            f"whose stored name it declares; it publishes {sorted(available)!r}"
+        )
+
+
+def apply_physical_names(
+    relations: tuple[ShapeRelation, ...], document: Mapping[str, Any], *, product: str
+) -> tuple[ShapeRelation, ...]:
+    """Every relation one product publishes, carrying the stored names its
+    declaration states for them (architecture section 3, P7).
+
+    One owner: the contract, the runtime manifest, the graph and every
+    rendered artefact read the stored names off the relations this returns,
+    so none of them parses the declaration for itself. A declaration that
+    states nothing leaves every relation exactly as its shape rendered it.
+
+    A relation entry addressing a relation the shape does not publish, or a
+    field entry naming a column the relation does not publish, fails closed.
+    ``ergasterion.framework.declaration.validate_physical_names`` has
+    already judged every stated name against every declared adapter."""
+
+    declared = physical_declaration(document, product=product)
+    if not declared:
+        return relations
+    resolved: list[ShapeRelation] = []
+    for relation in relations:
+        entry = declared.get(relation.suffix)
+        if entry is None:
+            resolved.append(relation)
+            continue
+        stored = dict(entry.fields)
+        available = {field.name for field in relation.schema.fields}
+        for column in stored:
+            if column not in available:
+                raise UnknownPhysicalColumnError(
+                    product=product,
+                    relation=relation.schema.name,
+                    column=column,
+                    available=sorted(available),
+                )
+        resolved.append(
+            replace(
+                relation,
+                schema=replace(
+                    relation.schema,
+                    fields=tuple(
+                        replace(field, physical_name=stored.get(field.name))
+                        for field in relation.schema.fields
+                    ),
+                    physical_name=entry.name,
+                    physical_schema=entry.schema,
+                ),
+            )
+        )
+    return tuple(resolved)
+
+
 def resolve_relation_registry(
     entries: Mapping[str, tuple[dict, ValidatedProduct]], *, landing_schemas: Mapping[str, RelationSchema]
 ) -> dict[str, tuple[ShapeRelation, ...]]:
@@ -1549,8 +1647,10 @@ def resolve_relation_registry(
                 schema = landing_schema_for(
                     document, product=published_name, landing_schemas=landing_schemas
                 )
-                resolved[published_name] = shape_relations_for(
-                    document, validated, fields=schema.fields
+                resolved[published_name] = apply_physical_names(
+                    shape_relations_for(document, validated, fields=schema.fields),
+                    document,
+                    product=published_name,
                 )
                 del remaining[published_name]
                 progressed = True
@@ -1575,8 +1675,10 @@ def resolve_relation_registry(
                 resolved=resolved,
                 opening_schemas=landing_schemas,
             )
-            resolved[published_name] = derive_shape_relations(
-                document, validated, source_schemas=source_schemas
+            resolved[published_name] = apply_physical_names(
+                derive_shape_relations(document, validated, source_schemas=source_schemas),
+                document,
+                product=published_name,
             )
             del remaining[published_name]
             progressed = True
@@ -1720,11 +1822,22 @@ def build_product_contract(
 
 
 def _field_document(field: RelationField) -> dict[str, Any]:
-    return {"name": field.name, "type": field.type, "required": field.required}
+    document: dict[str, Any] = {"name": field.name, "type": field.type, "required": field.required}
+    if field.physical_name is not None:
+        document["physicalName"] = field.physical_name
+    return document
 
 
 def _relation_document(relation: RelationSchema) -> dict[str, Any]:
-    return {"name": relation.name, "fields": [_field_document(f) for f in relation.fields]}
+    document: dict[str, Any] = {
+        "name": relation.name,
+        "fields": [_field_document(f) for f in relation.fields],
+    }
+    if relation.physical_name is not None:
+        document["physicalName"] = relation.physical_name
+    if relation.physical_schema is not None:
+        document["physicalSchema"] = relation.physical_schema
+    return document
 
 
 def contract_document(contract: ProductContract) -> dict[str, Any]:
@@ -1828,6 +1941,11 @@ def build_odcs_document(contract: ProductContract, relation: RelationSchema) -> 
     properties: list[dict[str, Any]] = []
     for field in relation.fields:
         prop: dict[str, Any] = {"name": field.name, "logicalType": _odcs_logical_type(field.type)}
+        # The stored name, and only where the declaration states one: a
+        # contract for a relation that renames nothing says nothing about a
+        # physical column name it does not have.
+        if field.physical_name is not None:
+            prop["physicalName"] = field.physical_name
         if field.required:
             prop["required"] = True
         if field.description is not None:
@@ -1836,11 +1954,20 @@ def build_odcs_document(contract: ProductContract, relation: RelationSchema) -> 
 
     schema_object: dict[str, Any] = {
         "name": relation_short_name,
-        "physicalName": relation_short_name,
+        "physicalName": relation.physical_name or relation_short_name,
         "logicalType": "object",
         "physicalType": "table",
         "properties": properties,
     }
+    if relation.physical_schema is not None:
+        # ODCS v3.1 has a physical name for a schema object and no field for
+        # the schema it is stored in, so the declared override is carried as
+        # a custom property rather than as a field the standard does not
+        # have. The runtime manifest and the product graph carry the same
+        # coordinate in their own vocabulary.
+        schema_object["customProperties"] = [
+            {"property": "dpf.physicalSchema", "value": relation.physical_schema}
+        ]
     if contract.quality:
         schema_object["quality"] = [
             {

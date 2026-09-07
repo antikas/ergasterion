@@ -1,4 +1,4 @@
-"""Product declaration validation, layer 1 (architecture sections 3.1-3.4, 9).
+"""Product declaration validation, layer 1 (architecture sections 3.1-3.5, 9).
 
 This module loads a product declaration (a plain dict parsed from YAML),
 validates it structurally against ``ergasterion/schemas/product-declaration-
@@ -34,15 +34,22 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field as dataclass_field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping, Sequence
 
 import jsonschema
 import re
 import yaml
 
-from ergasterion.estate import EstateContext
+from ergasterion.estate import EstateContext, load_estate_adapters
+from ergasterion.framework.adapters import (
+    IDENTIFIER_CASE_COMPARISON,
+    IDENTIFIER_QUOTE_CHARACTER,
+    PHYSICAL_NAME_FORBIDDEN_TEXT,
+    comparison_key,
+    load_adapter_conventions,
+)
 from ergasterion.framework.models import (
     FrameworkError,
     InvalidProfileDefinitionError,
@@ -129,6 +136,24 @@ SOURCE_CONFORM_KEY = "conform"
 # swapped whole (architecture section 4, Data Publish).
 PUBLICATION_MODE_INCREMENTAL = "incremental"
 
+# The block a product declares the exact stored names of what it publishes
+# in, and the keys inside it (architecture section 3, P7). A declaration
+# keeps plain lower-case logical names; this block is the only place an
+# externally required physical name is stated, and nothing infers one.
+PHYSICAL_KEY = "physical"
+PHYSICAL_NAME_KEY = "physical_name"
+PHYSICAL_TABLE_KEY = "name"
+PHYSICAL_SCHEMA_KEY = "schema"
+PHYSICAL_FIELDS_KEY = "fields"
+PHYSICAL_RELATIONS_KEY = "relations"
+
+# The estate's per-adapter identifier budgets, read from the target
+# declaration beside estate.yml (ergasterion.structure_gate). Named here so
+# the rule and the gate mean the same two budgets.
+RELATION_CHARS_BUDGET = "max_relation_identifier_chars"
+COLUMN_CHARS_BUDGET = "max_column_identifier_chars"
+
+
 # A contract reference is "<domain-or-namespace-segment>(.<segment>)+@<major>":
 # at least two dot-separated segments, then an integer major version. A bare
 # relation/table name (no dot, no "@") never matches -- this is exactly the
@@ -188,12 +213,30 @@ class EstatePolicy:
     carries every profile this estate may name, the five reference profiles
     plus any the estate declares of its own (section 11, "the profiles it
     uses, either the reference profiles or its own"), each already parsed
-    and validated against the pattern registry."""
+    and validated against the pattern registry.
+
+    ``adapters`` names the adapters the estate declares, in declaration
+    order, and ``identifier_budgets`` carries the estate's declared
+    identifier budgets for each of them. ``identifier_policies()`` reads the
+    adapter packages' own identifier rules against those names, and is what
+    the physical-identifier rules are judged by, so validation and emission
+    read one answer. It resolves on demand rather than at load, because
+    whether a declared adapter is one this engine carries is
+    ``ergasterion.framework.estate_config``'s answer to give, not this
+    loader's."""
 
     expression_mode: str
     structured_types: frozenset[str]
     labels: dict[str, tuple[str, ...]]
     profiles: dict[str, Profile]
+    adapters: tuple[str, ...] = ()
+    identifier_budgets: dict[str, dict[str, int]] = dataclass_field(default_factory=dict)
+
+    def identifier_policies(self) -> tuple["AdapterIdentifierPolicy", ...]:
+        """One identifier policy per declared adapter: that adapter
+        package's own rules with this estate's budgets for it beside them."""
+
+        return adapter_identifier_policies(self.adapters, budgets=self.identifier_budgets)
 
 
 def load_estate_policy(estate_file: Path) -> EstatePolicy:
@@ -273,7 +316,48 @@ def load_estate_policy(estate_file: Path) -> EstatePolicy:
         structured_types=structured_types,
         labels=labels,
         profiles=profiles,
+        adapters=_declared_adapters(estate),
+        identifier_budgets=_declared_identifier_budgets(estate_file, estate),
     )
+
+
+def _declared_adapters(estate: dict) -> tuple[str, ...]:
+    """Every adapter name the estate declares, in declaration order.
+    ``ergasterion.estate.load_estate_adapters`` owns what a well-formed
+    adapters block is and fails closed on a malformed one; this reads the
+    names off it so the identifier rules know which adapters a declaration
+    has to be portable across."""
+
+    declared = estate.get("adapters")
+    if not isinstance(declared, dict):
+        return ()
+    return tuple(str(name) for name in declared)
+
+
+def _declared_identifier_budgets(estate_file: Path, estate: dict) -> dict[str, dict[str, int]]:
+    """The estate's declared identifier budgets, per adapter, from the
+    target declaration beside ``estate.yml``
+    (``declarations/targets/<adapter>.yml``, the file
+    ``ergasterion.structure_gate`` owns and validates). Only the two
+    identifier budgets are read here, and an estate that declares none for
+    an adapter has no length for a stored name to exceed."""
+
+    directory = estate_file.parent / "declarations" / "targets"
+    budgets: dict[str, dict[str, int]] = {}
+    for adapter in _declared_adapters(estate):
+        path = directory / f"{adapter}.yml"
+        if not path.is_file():
+            continue
+        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        declared = (document.get("budgets") or {}) if isinstance(document, dict) else {}
+        entry = {
+            key: value
+            for key in (RELATION_CHARS_BUDGET, COLUMN_CHARS_BUDGET)
+            if isinstance(value := declared.get(key), int) and not isinstance(value, bool)
+        }
+        if entry:
+            budgets[adapter] = entry
+    return budgets
 
 
 def _load_profiles(estate_file: Path, estate: dict) -> dict[str, Profile]:
@@ -357,6 +441,368 @@ def resolve_profile_for_label(policy: EstatePolicy, *, product: str, label: obje
             detail=f"label {label!r} does not admit profile {profile!r}; admitted: {admitted!r}",
         )
     return profile
+
+
+# --------------------------------------------------------------------------- physical identifiers
+
+
+@dataclass(frozen=True)
+class PhysicalRelation:
+    """The stored coordinate one declaration states for one published
+    relation: the table name, the schema, and each logical column mapped to
+    the name it is stored under. ``None`` on either coordinate means the
+    declaration states nothing there and the relation keeps the name and the
+    schema it would otherwise have."""
+
+    name: str | None
+    schema: str | None
+    fields: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class AdapterIdentifierPolicy:
+    """One declared adapter's answer to what a stored name may be: the
+    character it wraps an identifier in, whether two spellings differing
+    only in case are one name, and the estate's identifier budgets for it."""
+
+    adapter: str
+    quote_character: str
+    case_comparison: str
+    max_relation_chars: int | None
+    max_column_chars: int | None
+
+
+def adapter_identifier_policies(
+    adapters: Sequence[str], *, budgets: Mapping[str, Mapping[str, int]]
+) -> tuple[AdapterIdentifierPolicy, ...]:
+    """One policy per declared adapter: the adapter package's own identifier
+    rules, with the estate's declared identifier budgets for that adapter
+    beside them. Neither side is duplicated here."""
+
+    policies: list[AdapterIdentifierPolicy] = []
+    for adapter in adapters:
+        rules = load_adapter_conventions(adapter).identifier_rules
+        declared = budgets.get(adapter) or {}
+        policies.append(
+            AdapterIdentifierPolicy(
+                adapter=adapter,
+                quote_character=str(rules[IDENTIFIER_QUOTE_CHARACTER]),
+                case_comparison=str(rules[IDENTIFIER_CASE_COMPARISON]),
+                max_relation_chars=declared.get(RELATION_CHARS_BUDGET),
+                max_column_chars=declared.get(COLUMN_CHARS_BUDGET),
+            )
+        )
+    return tuple(policies)
+
+
+def physical_declaration(document: Mapping[str, Any], *, product: str) -> dict[str | None, PhysicalRelation]:
+    """The ``physical`` block of one declaration, keyed by the relation it
+    addresses: ``None`` for the product's own published relation, and the
+    shape's own name for each entry under ``relations``. A declaration with
+    no block resolves to nothing at all, which is the ordinary case."""
+
+    block = document.get(PHYSICAL_KEY)
+    if block is None:
+        return {}
+    if not isinstance(block, Mapping):
+        raise DeclarationError(
+            product=product,
+            rule="physical_name_missing",
+            occurrence=PHYSICAL_KEY,
+            detail=f"the {PHYSICAL_KEY!r} block must be a mapping, got {block!r}",
+        )
+    resolved: dict[str | None, PhysicalRelation] = {}
+    own = {key: value for key, value in block.items() if key != PHYSICAL_RELATIONS_KEY}
+    if own:
+        resolved[None] = _physical_relation(own, product=product, occurrence=PHYSICAL_KEY)
+    for relation_name, entry in (block.get(PHYSICAL_RELATIONS_KEY) or {}).items():
+        occurrence = f"{PHYSICAL_KEY}.{PHYSICAL_RELATIONS_KEY}.{relation_name}"
+        if not isinstance(entry, Mapping):
+            raise DeclarationError(
+                product=product,
+                rule="physical_name_missing",
+                occurrence=occurrence,
+                detail=f"a relation entry must be a mapping, got {entry!r}",
+            )
+        resolved[str(relation_name)] = _physical_relation(entry, product=product, occurrence=occurrence)
+    return resolved
+
+
+def _physical_relation(entry: Mapping[str, Any], *, product: str, occurrence: str) -> PhysicalRelation:
+    fields: list[tuple[str, str]] = []
+    for index, field in enumerate(entry.get(PHYSICAL_FIELDS_KEY) or []):
+        if not isinstance(field, Mapping) or PHYSICAL_NAME_KEY not in field or "name" not in field:
+            raise DeclarationError(
+                product=product,
+                rule="physical_name_missing",
+                occurrence=f"{occurrence}.{PHYSICAL_FIELDS_KEY}[{index}]",
+                detail=f"a field entry states a logical 'name' and a {PHYSICAL_NAME_KEY!r}, got {field!r}",
+            )
+        fields.append((str(field["name"]), field[PHYSICAL_NAME_KEY]))
+    return PhysicalRelation(
+        name=entry.get(PHYSICAL_TABLE_KEY),
+        schema=entry.get(PHYSICAL_SCHEMA_KEY),
+        fields=tuple(fields),
+    )
+
+
+def addressable_relations(published_name: str, relation_names: Sequence[str]) -> dict[str | None, str]:
+    """Every relation one product publishes, keyed the way a declaration
+    addresses it: ``None`` for the product's own relation, and the name the
+    shape gives each further relation, without the product prefix. One
+    implementation, so the rules and the graph resolve a ``physical`` entry to
+    the same relation; the contract pipe reaches the same answer by matching
+    the key against the shape's own relation suffix, which is where these
+    names come from."""
+
+    names = tuple(relation_names)
+    prefix = f"{published_name}__"
+    addressable: dict[str | None, str] = {}
+    for name in names:
+        if name == published_name:
+            # The composition's own relation carries no name of its own, so
+            # a declaration addresses it as the product's own coordinate.
+            addressable[None] = name
+        elif name.startswith(prefix):
+            addressable[name[len(prefix):]] = name
+    return addressable
+
+
+def _unportable_reason(value: object, *, quote_character: str, budget: int | None) -> str | None:
+    """Why ``value`` cannot be written as a stored name on one adapter, or
+    ``None`` when it can. One implementation, so a table name, a column name
+    and a schema are all judged by the same answer."""
+
+    carried = [
+        text for text in (quote_character, *PHYSICAL_NAME_FORBIDDEN_TEXT) if text in str(value)
+    ]
+    if carried:
+        return f"it carries {carried!r}, which this adapter cannot address inside a quoted name"
+    if budget is not None and len(str(value)) > budget:
+        return f"it is {len(str(value))} characters and this estate budgets {budget} for this adapter"
+    return None
+
+
+def _missing(value: object) -> bool:
+    return not isinstance(value, str) or not value.strip()
+
+
+def validate_physical_names(
+    documents: Mapping[str, Mapping[str, Any]],
+    *,
+    policies: Sequence[AdapterIdentifierPolicy],
+    relation_names: Mapping[str, Sequence[str]],
+) -> None:
+    """The five named physical-identifier rules, over one estate's worth of
+    declarations, for every declared adapter (architecture section 3, P7).
+
+    ``documents`` maps each published name to its declaration.
+    ``relation_names`` carries every relation each product's shape publishes,
+    so a declaration addressing one the shape does not render fails closed
+    rather than being ignored. Every failure names the product, the relation,
+    the column and the adapter.
+
+    The rules: ``physical_name_missing`` for an empty or blank name;
+    ``physical_name_unportable`` for a name carrying an adapter's quote
+    character, a dot or a line break, or exceeding the estate's identifier
+    budget for that adapter; ``physical_name_duplicate`` for two columns of
+    one relation reaching one stored name under the adapter's own comparison
+    rule; ``physical_relation_conflict`` for two published relations reaching
+    one stored schema and table under the same rule;
+    ``physical_schema_unaddressable`` for a schema override the adapter
+    cannot address."""
+
+    if not policies:
+        declared = sorted(name for name, document in documents.items() if document.get(PHYSICAL_KEY))
+        if declared:
+            raise DeclarationError(
+                product=declared[0],
+                rule="physical_name_unportable",
+                occurrence=PHYSICAL_KEY,
+                detail=(
+                    "this estate declares no adapter, so no identifier rules say what a stored "
+                    "name may be"
+                ),
+            )
+        return
+
+    coordinates: dict[str, list[tuple[str, str, str | None, str]]] = {
+        policy.adapter: [] for policy in policies
+    }
+    for published_name in sorted(documents):
+        document = documents[published_name]
+        declared = physical_declaration(document, product=published_name)
+        addressable = addressable_relations(
+            published_name, relation_names.get(published_name) or ()
+        )
+        for key, entry in sorted(declared.items(), key=lambda item: (item[0] is not None, item[0] or "")):
+            relation = addressable.get(key)
+            if relation is None:
+                raise DeclarationError(
+                    product=published_name,
+                    rule="physical_name_missing",
+                    occurrence=f"{PHYSICAL_KEY}.{PHYSICAL_RELATIONS_KEY}.{key}",
+                    detail=(
+                        f"this product's shape publishes {sorted(addressable) !r}, and {key!r} is "
+                        "none of them"
+                    ),
+                )
+            _check_relation(
+                entry,
+                product=published_name,
+                relation=relation,
+                policies=policies,
+            )
+        for key, relation in sorted(addressable.items(), key=lambda item: item[1]):
+            entry = declared.get(key)
+            table = (entry.name if entry is not None else None) or relation.replace(".", "__", 1)
+            schema = entry.schema if entry is not None else None
+            for policy in policies:
+                coordinates[policy.adapter].append(
+                    (
+                        comparison_key(str(schema or ""), comparison=policy.case_comparison),
+                        comparison_key(str(table), comparison=policy.case_comparison),
+                        relation,
+                        published_name,
+                    )
+                )
+
+    for policy in policies:
+        seen: dict[tuple[str, str], tuple[str, str]] = {}
+        for schema_key, table_key, relation, published_name in coordinates[policy.adapter]:
+            previous = seen.get((schema_key, table_key))
+            if previous is not None:
+                raise DeclarationError(
+                    product=published_name,
+                    rule="physical_relation_conflict",
+                    occurrence=relation,
+                    detail=(
+                        f"relation {relation!r} of product {published_name!r} and relation "
+                        f"{previous[1]!r} of product {previous[0]!r} are stored under one schema "
+                        f"and table on adapter {policy.adapter!r}, whose identifier rules compare "
+                        f"names {policy.case_comparison!r} (column: n/a)"
+                    ),
+                )
+            seen[(schema_key, table_key)] = (published_name, relation)
+
+
+def _check_relation(
+    entry: PhysicalRelation,
+    *,
+    product: str,
+    relation: str,
+    policies: Sequence[AdapterIdentifierPolicy],
+) -> None:
+    """Every rule one declared relation coordinate is held to, on every
+    declared adapter."""
+
+    for policy in policies:
+        if entry.name is not None:
+            _check_name(
+                entry.name,
+                product=product,
+                relation=relation,
+                column=None,
+                policy=policy,
+                budget=policy.max_relation_chars,
+            )
+        if entry.schema is not None:
+            if _missing(entry.schema):
+                raise DeclarationError(
+                    product=product,
+                    rule="physical_name_missing",
+                    occurrence=f"{relation}.{PHYSICAL_SCHEMA_KEY}",
+                    detail=(
+                        f"the schema override of relation {relation!r} of product {product!r} is "
+                        f"blank on adapter {policy.adapter!r} (column: n/a)"
+                    ),
+                )
+            reason = _unportable_reason(
+                entry.schema,
+                quote_character=policy.quote_character,
+                budget=policy.max_relation_chars,
+            )
+            if reason is not None:
+                raise DeclarationError(
+                    product=product,
+                    rule="physical_schema_unaddressable",
+                    occurrence=f"{relation}.{PHYSICAL_SCHEMA_KEY}",
+                    detail=(
+                        f"schema {entry.schema!r} of relation {relation!r} of product {product!r} "
+                        f"cannot be addressed on adapter {policy.adapter!r}: {reason} (column: n/a)"
+                    ),
+                )
+        stored: dict[str, str] = {}
+        logical_seen: set[str] = set()
+        for logical, physical in entry.fields:
+            if logical in logical_seen:
+                raise DeclarationError(
+                    product=product,
+                    rule="physical_name_duplicate",
+                    occurrence=f"{relation}.{logical}",
+                    detail=(
+                        f"column {logical!r} of relation {relation!r} of product {product!r} is "
+                        f"given a stored name twice, and adapter {policy.adapter!r} stores it once"
+                    ),
+                )
+            logical_seen.add(logical)
+            _check_name(
+                physical,
+                product=product,
+                relation=relation,
+                column=logical,
+                policy=policy,
+                budget=policy.max_column_chars,
+            )
+            key = comparison_key(str(physical), comparison=policy.case_comparison)
+            if key in stored:
+                raise DeclarationError(
+                    product=product,
+                    rule="physical_name_duplicate",
+                    occurrence=f"{relation}.{logical}",
+                    detail=(
+                        f"columns {stored[key]!r} and {logical!r} of relation {relation!r} of "
+                        f"product {product!r} both reach stored name {physical!r} on adapter "
+                        f"{policy.adapter!r}, whose identifier rules compare names "
+                        f"{policy.case_comparison!r}"
+                    ),
+                )
+            stored[key] = logical
+
+
+def _check_name(
+    value: object,
+    *,
+    product: str,
+    relation: str,
+    column: str | None,
+    policy: AdapterIdentifierPolicy,
+    budget: int | None,
+) -> None:
+    where = column if column is not None else "n/a"
+    occurrence = f"{relation}.{column}" if column is not None else relation
+    if _missing(value):
+        raise DeclarationError(
+            product=product,
+            rule="physical_name_missing",
+            occurrence=occurrence,
+            detail=(
+                f"the stored name of relation {relation!r} of product {product!r} (column: "
+                f"{where}) is {value!r} on adapter {policy.adapter!r}; state the exact name or "
+                "state none at all"
+            ),
+        )
+    reason = _unportable_reason(value, quote_character=policy.quote_character, budget=budget)
+    if reason is not None:
+        raise DeclarationError(
+            product=product,
+            rule="physical_name_unportable",
+            occurrence=occurrence,
+            detail=(
+                f"stored name {value!r} of relation {relation!r} of product {product!r} (column: "
+                f"{where}) is not portable on adapter {policy.adapter!r}: {reason}"
+            ),
+        )
 
 
 # --------------------------------------------------------------------------- schema loading
@@ -977,7 +1423,13 @@ def validate_estate_products(products_dir: Path, *, policy: EstatePolicy) -> lis
     estate publishes that contract, the binding would be a second,
     hand-maintained copy of that product's resolved schema, free to drift
     from it. The fixture hook is for a contract this estate does not
-    produce, so the pair fails closed naming both."""
+    produce, so the pair fails closed naming both.
+
+    The physical-identifier rules run here too
+    (``validate_physical_names``), because two of them compare one
+    declaration against the rest of the estate: two published relations may
+    not reach one stored schema and table, and a declaration may not address
+    a relation its shape does not publish."""
 
     if not products_dir.is_dir():
         return []
@@ -985,10 +1437,18 @@ def validate_estate_products(products_dir: Path, *, policy: EstatePolicy) -> lis
     published_names: dict[str, Path] = {}
     fixture_bound: dict[str, tuple[str, Path]] = {}
     validated: list[str] = []
+    documents: dict[str, dict] = {}
+    relation_names: dict[str, tuple[str, ...]] = {}
     for path in paths:
         document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         result = validate_declaration(document, policy=policy)
         published_name = f"{result.domain}.{result.name}"
+        documents[published_name] = document
+        relation_names[published_name] = get_shape(result.shape).relation_names(
+            domain=result.domain,
+            name=result.name,
+            shape_config=(document.get("target") or {}).get("shape_config") or {},
+        )
         if published_name in published_names:
             raise DeclarationError(
                 product=result.name,
@@ -1021,6 +1481,18 @@ def validate_estate_products(products_dir: Path, *, policy: EstatePolicy) -> lis
                     "is for a contract this estate does not produce"
                 ),
             )
+
+    # The identifier rules resolve the adapter packages, so they are asked
+    # for only when a declaration states a stored name at all. An estate
+    # that states none is judged by nothing it did not declare, and an
+    # adapter this engine does not carry is still reported by the estate
+    # configuration rather than by this pass.
+    states_physical = any(document.get(PHYSICAL_KEY) for document in documents.values())
+    validate_physical_names(
+        documents,
+        policies=policy.identifier_policies() if states_physical else (),
+        relation_names=relation_names,
+    )
     return sorted(validated)
 
 
@@ -1069,8 +1541,59 @@ def main() -> int:
         print(f"validate FAIL (layer 2): {error}")
         return 1
 
+    try:
+        resolve_stored_columns(ctx, products_dir=products_dir)
+    except (FrameworkError, ValueError) as error:
+        print(f"validate FAIL (layer 1): {error}")
+        return 1
+
     print(f"validate OK: {len(names)} product declaration(s) valid under {products_dir}")
     return 0
+
+
+def resolve_stored_columns(ctx: EstateContext, *, products_dir: Path) -> None:
+    """Refuse a stated stored column name that no relation publishes.
+
+    Which columns a relation publishes is the contract pipe's answer, not
+    this layer's: it comes out of the composition, so a declaration that
+    states a stored name for a column nothing carries can only be caught
+    once the estate's relations are resolved. That resolution is the one the
+    emission route already makes, and running it here is what lets
+    ``validate`` refuse the same declaration ``emit-products`` would rather
+    than leaving the reader to find out at emission.
+
+    An estate that states no stored column name resolves nothing and behaves
+    exactly as it did. An estate that states one resolves its relations, so
+    anything else that resolution refuses -- a shape constraint, an
+    interface boundary -- is reported here too, which is the same answer
+    emission would give.
+
+    The import is local because the emission route reads this module: the
+    two are composed at call time, never at import time."""
+
+    documents = (
+        {
+            path: yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for path in sorted(products_dir.rglob("*.yml"))
+        }
+        if products_dir.is_dir()
+        else {}
+    )
+    states_columns = any(
+        (document.get(PHYSICAL_KEY) or {}).get(PHYSICAL_FIELDS_KEY)
+        or any(
+            (entry or {}).get(PHYSICAL_FIELDS_KEY)
+            for entry in ((document.get(PHYSICAL_KEY) or {}).get(PHYSICAL_RELATIONS_KEY) or {}).values()
+        )
+        for document in documents.values()
+        if isinstance(document.get(PHYSICAL_KEY), dict)
+    )
+    if not states_columns:
+        return
+
+    from ergasterion.emit_products import resolve_estate_relations
+
+    resolve_estate_relations(ctx, products_dir=products_dir)
 
 
 if __name__ == "__main__":

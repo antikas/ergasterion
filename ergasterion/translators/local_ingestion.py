@@ -88,7 +88,7 @@ from ergasterion.ingestion.settings import (
 LOCAL_TARGET_NAME = "local-ingestion"
 LOCAL_TRANSLATOR_ID = "local-ingestion"
 LOCAL_TRANSLATOR_VERSION = "1.0.0"
-ENGINE_VERSION = "0.6.0"
+ENGINE_VERSION = "0.6.1"
 VALIDATION_VERSION = "1.0.0"
 CODEC_VERSION = "1.0.0"
 

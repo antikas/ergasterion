@@ -163,6 +163,21 @@ A capability is a tuple: (pattern or shape, translator, adapter). Routing matche
 
 So the answer to "does per-adapter implementation give the split" is: only with the translator axis beside it. Platform alone would let a warehouse macro satisfy a rule that a job-based translator cannot render. The two-axis capability model and the two gates are what keep declarations portable while letting an estate target anything.
 
+### 3.5 Identifiers: one logical name, one declared stored name
+
+A declaration carries plain lower-case logical identifiers and nothing else. The engine never folds, quotes or rewrites a declared name, and never infers one name from another.
+
+Where an interface outside the estate requires an exact name the estate does not own, the declaration states that name beside the logical one. A product may state the table its published relation is stored as, the schema it is stored in, and the stored name of any of its columns; a shape publishing several relations addresses each by the name the shape gives it. A landing declaration states the same for a delivered table and each delivered column, in the product declaration and in the portable landing IDL. Every one of those is optional and absent by default.
+
+The rest follows without a second declaration anywhere:
+
+- a consumer references producer columns by logical name only, and the renderer resolves the producer's stored name through the producer's contract;
+- the published relation's final projection renames each logical column to its stored name, and the relation takes the declared table name and schema;
+- quoting is the adapter's, not the engine's. Generated SQL stays one text for every declared platform and carries no quote character; a stored name reaches it through a dispatch macro that calls the running adapter's own quoting, and the per-adapter parse gate resolves that call from the adapter's declared identifier rules;
+- the contract, the runtime manifest and the product graph carry both names wherever they differ, so a downstream check compares the estate's output against the required schema with no rename step.
+
+Five named rules hold it closed, each naming the product, the relation, the column and the adapter: a missing or blank stored name; a stored name that is not portable on an adapter (its quote character, a dot, a line break, or more characters than the estate budgets for that adapter); two columns of one relation reaching one stored name after the adapter's declared comparison rule; two published relations reaching one stored schema and table after the same rule; and a schema override an adapter cannot address.
+
 ## 4. The fifteen patterns as the engine's only vocabulary
 
 The catalogue is closed. Adding a processing capability means adding a pattern to the catalogue through the owner, not adding a special case to the engine. Each pattern is a contract the engine holds once:
@@ -370,7 +385,7 @@ These were open at approval. None of them changed the architecture above. Severa
 | P4 | Physical layout | Partly ruled 2026-09-04 (D6, D9): a product declares a materialisation intent, and the adapter's conventions render it, the incremental strategy included; no strategy text appears in a declaration. Partitioning, clustering and cluster keys stay open in the blocked follow-up F2. |
 | P5 | Physical coordinates | Project, dataset, database and schema per environment through the runtime binding; how a product's published name maps to them |
 | P6 | Physical type mapping | Ruled 2026-09-04 (D8): each adapter package owns its mapping table, decimal precision and scale reach the built relation through it, every aggregate and calculated field is cast to its declared type at emission, and contract compliance compares column set, order and required-ness while the casts and the per-adapter parse gate prove the types. Who may extend an adapter's table is still the adapter package's owner. |
-| P7 | Identifier rules | Case, quoting and length per adapter; whether the engine normalises names or the adapter does |
+| P7 | Identifier rules | Ruled 2026-09-06: the engine normalises nothing. A declaration carries logical names and states a stored name where an interface requires one; the adapter owns quoting, through a dispatch macro that calls its own; case comparison and the quote character are adapter conventions, the length budget is the estate's, and five named rules fail closed on the rest. See section 3.5. |
 | P8 | Incremental strategies | Ruled 2026-09-04 (D9): the strategy is adapter convention, selected by the adapter package from the product's declared materialisation intent, so a declaration never names one. |
 | P9 | Aggregation-heavy idioms | Whether inline SQL plus named rules stays workable when BigQuery-native idioms such as safe division and struct access dominate a product, or the named-rule library grows faster than it is worth |
 | P10 | Live evidence lane | Open, in the blocked follow-up F1. What the shipped documentation says when no binding exists is settled: section 12's boundary, stated as such and not implied to be more. |
@@ -420,6 +435,7 @@ ruling that changed nothing about what the engine does is not recorded here.
 | 2026-09-05 | D12, section 9 | The generated marker has one text and one owner, and every writer and every reader imports it from there. A marker defined twice can drift, and a drifted marker silently reclassifies a whole tree as hand-authored. | Section 9. |
 | 2026-09-05 | D37, section 3.1 | A merge declares which rows it keeps, `inner` or `outer`, and there is no default. The published contract follows that answer: an outer merge keeps every row of every source, so a non-key field inherited from a side that can be unmatched is published as optional; an inner merge keeps only the rows every source carries the key of, so each field stays as required as the source it came from. A merge with no declared join would either drop rows or publish empty values in a column a consumer was told is always present, and the compliance check and the contract would disagree by construction. | Sections 3.1, 7, 8. |
 | 2026-09-05 | R6, section 6 | The estate owns one time-spine relation per granularity. It sits under the estate namespace, belongs to no product, appears in no contract, and registers as an estate-level auxiliary relation. Each dimensional product declares its own aggregation window. The spine covers the union of all declared windows. An estate-configured window remains an owner decision. | Sections 6, 10. |
+| 2026-09-06, owner | P7 | Logical and stored identifiers are two declared names, never one inferred from the other. A declaration keeps plain lower-case logical names; an optional block states the stored table, schema and column names an external interface requires, for a published relation and for a delivered one. A consumer reads a producer's stored names through the producer's contract and carries the logical ones. Quoting is adapter-owned through a dispatch macro; the engine writes no quote character and does not transpile. The contract, the runtime manifest and the product graph carry both names. Five named rules fail closed, each naming product, relation, column and adapter, with duplicates judged after the adapter's declared case comparison. P7 closes. | Sections 3.5, 7, 9, 10, 11, 13; P7. |
 
 ### Registered and blocked, never silently dropped
 

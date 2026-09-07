@@ -13,7 +13,7 @@ logical_identity:
   estate_namespace: com.example.ergasterion
   source: reference
   table: orders
-contract_digest: 28bd6e7be492875dd405a8e69b7e8872d9c2acbef13c1ffa0f62404c133f9b12
+contract_digest: 51089eb943d2e58a7b0c8c4091badd5517e4ca6bb63587a5396500325657d855
 execution_plan_digest: af10dae0d89adcda3e9e9634b7d093b89ca98ec38489b08c2886d46091dda2aa
 projection_target: landing
 ports:

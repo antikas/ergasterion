@@ -1,0 +1,24 @@
+name: physical_names
+version: "1.0.0"
+config-version: 2
+
+profile: physical_names
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+
+target-path: target
+clean-targets: ["target", "logs"]
+
+# The relation the landing product lands, standing in as a seed. Its column
+# types are declared here rather than inferred, so the delivered product
+# type code stays the string its contract declares instead of being read as
+# a number and losing its leading zero.
+seeds:
+  physical_names:
+    energy__tariff_extract:
+      +column_types:
+        PERIOD_RECORD_ID: varchar
+        TARIFF_TYPE_NO: varchar
+        Account_In_Scope_Flag: varchar

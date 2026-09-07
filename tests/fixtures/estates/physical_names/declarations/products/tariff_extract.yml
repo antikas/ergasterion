@@ -1,0 +1,56 @@
+# The landing product: the tariff master extract enters the estate here.
+# Its label gives every occurrence, and its shape, to the ingestion runtime
+# translator, so the dbt route emits nothing for it and the relation it
+# lands stands in as a seed of the same name.
+#
+# The extract is delivered under names the estate does not own. Each
+# delivered column therefore states two names: the plain lower-case logical
+# name every declaration downstream composes with, and the stored name the
+# delivered relation actually carries. Nothing infers one from the other.
+product:
+  name: tariff_extract
+  domain: energy
+  version: "1.0"
+  layer: landed
+  owner: fixture-team
+
+sources:
+  - contract: energy.tariff_delivery@1
+    kind: fixture
+    fixture:
+      relation: energy__tariff_extract
+      fields:
+        - {name: period_record_id, type: string, physical_name: PERIOD_RECORD_ID}
+        - {name: tariff_type_no, type: string, physical_name: TARIFF_TYPE_NO}
+        - {name: account_in_scope_flag, type: string, physical_name: Account_In_Scope_Flag}
+
+steps:
+  - pattern: batch_ingestion
+    scope: full
+    cadence: daily
+    extract_mode: full
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: period_record_id
+        not_null: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "The delivered tariff master extract, one row per delivered record."
+    ownership: fixture-team
+  - pattern: schema_publish
+  - pattern: data_publish
+    publication_mode: atomic
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 05:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

@@ -43,6 +43,7 @@ from ergasterion.translators.dbt_patterns.sql import (
     RenderingError,
     cast_expression,
     identifier,
+    quoted_physical_identifier,
     ref,
     select_projection,
 )
@@ -95,9 +96,20 @@ def _column_expression(
 ) -> str:
     """One source column as it is read: the column itself, qualified by the
     source's alias where the read carries one, and cast to the neutral type
-    its conformance mapping declares where it carries one."""
+    its conformance mapping declares where it carries one.
 
-    expression = identifier(column.source_name, product=product, occurrence=OPENING_OCCURRENCE)
+    Where the producer stores the column under a name of its own, the read
+    is of that stored name, quoted by the running adapter. The consumer
+    still carries the column under the logical name its own composition
+    knows it by (``_projected_column``), so a declaration downstream of a
+    renamed column never spells the stored name."""
+
+    if column.physical_source_name is not None:
+        expression = quoted_physical_identifier(
+            column.physical_source_name, product=product, occurrence=OPENING_OCCURRENCE
+        )
+    else:
+        expression = identifier(column.source_name, product=product, occurrence=OPENING_OCCURRENCE)
     if alias is not None:
         expression = f"{alias}.{expression}"
     if column.cast_type is not None:

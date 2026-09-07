@@ -1,0 +1,19 @@
+# DuckDB executes this estate; BigQuery is parsed only, so its output needs
+# no credentials and reaches no account.
+physical_names:
+  target: duckdb
+  outputs:
+    duckdb:
+      type: duckdb
+      path: target/physical_names.duckdb
+      threads: 1
+    bigquery:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('DPF_BQ_PROJECT', 'your-bq-project') }}"
+      dataset: "{{ env_var('DPF_BQ_DATASET', 'physical_names') }}"
+      location: "{{ env_var('DPF_BQ_LOCATION', 'US') }}"
+      threads: 1
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1

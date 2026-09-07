@@ -19,6 +19,10 @@ import json
 import re
 from typing import Any, Sequence
 
+from ergasterion.framework.adapters import (
+    PHYSICAL_NAME_FORBIDDEN_TEXT,
+    shipped_quote_characters,
+)
 from ergasterion.framework.models import FrameworkError, RelationField
 
 # The dispatch macro every scalar cast resolves through, and the one that
@@ -41,13 +45,18 @@ SCALAR_TYPE_TOKENS: dict[str, str] = {
 
 DECIMAL_TYPE_NAME = "decimal"
 
-# A declared identifier is written into generated SQL unquoted, so it must
-# already be a plain lower-case SQL name. Anything else fails closed rather
-# than being quoted, folded or rewritten: identifier normalisation is a
-# parked adapter question (P7), and guessing one here would make the same
-# declaration render differently per adapter.
+# A declared logical identifier is written into generated SQL unquoted, so
+# it must already be a plain lower-case SQL name. Anything else fails closed
+# rather than being folded or rewritten: a name whose exact spelling the
+# estate has to reproduce is declared as a physical name beside the logical
+# one and rendered through the adapter's own quoting (below), never by
+# writing a different name here.
 IDENTIFIER_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
+# The dispatch macro every physical identifier is written through. Its body
+# calls the running adapter's own quoting, so the generated text stays one
+# text for every adapter and this module never writes a quote character.
+QUOTE_MACRO = "dpf_quote"
 
 class RenderingError(FrameworkError):
     """One product-rendering failure. Always names the product and, where
@@ -78,6 +87,98 @@ def identifier(value: object, *, product: str, occurrence: str | None = None) ->
             ),
         )
     return value
+
+
+def physical_identifier(value: object, *, product: str, occurrence: str | None = None) -> str:
+    """A declared physical name, checked as text that can be written into
+    one generated statement for every adapter. Returned exactly as declared:
+    nothing here folds, trims or re-cases a name the estate does not own."""
+
+    # What no stored name may carry anywhere (the adapter package's own
+    # answer, never a literal here) plus every shipped adapter's quote
+    # character: the renderer writes one text for every platform, so it
+    # refuses a name any of them could not address. The estate-aware rules
+    # in ergasterion.framework.declaration own the per-adapter judgment;
+    # this is the renderer's own last gate before it writes.
+    forbidden = (*PHYSICAL_NAME_FORBIDDEN_TEXT, *sorted(shipped_quote_characters()))
+    if not isinstance(value, str) or not value.strip():
+        raise RenderingError(
+            product=product,
+            occurrence=occurrence,
+            rule="unrenderable_physical_identifier",
+            detail=f"{value!r} is not a declared physical name",
+        )
+    carried = [text for text in forbidden if text in value]
+    if carried:
+        raise RenderingError(
+            product=product,
+            occurrence=occurrence,
+            rule="unrenderable_physical_identifier",
+            detail=(
+                f"physical name {value!r} carries {carried!r}, which no generated statement "
+                "can write for every adapter"
+            ),
+        )
+    return value
+
+
+def quoted_physical_identifier(value: object, *, product: str, occurrence: str | None = None) -> str:
+    """A declared physical name as the generated artefact carries it: the
+    dispatch macro call the running adapter resolves through its own
+    quoting. The one place a physical name reaches generated SQL."""
+
+    return macro_call(
+        QUOTE_MACRO,
+        jinja_literal(physical_identifier(value, product=product, occurrence=occurrence)),
+    )
+
+
+def stored_name(field: RelationField) -> str:
+    """The name one published column is stored under: the physical name the
+    declaration states for it, or its logical name where it states none.
+    Every generated artefact that has to name the column of a built
+    relation -- a compliance check, a generated test, a schema document --
+    reads it from here, so one answer holds across all of them."""
+
+    return field.physical_name or field.name
+
+
+def stored_names(fields: Sequence[RelationField]) -> dict[str, str]:
+    """Every published column's logical name mapped to the name it is
+    stored under."""
+
+    return {field.name: stored_name(field) for field in fields}
+
+
+def read_projection(
+    name: str, physical: str | None, *, product: str, occurrence: str | None = None
+) -> str:
+    """One upstream column as a consumer reads it: the producer's stored
+    name, quoted by the running adapter, under the logical name every
+    declaration composes with. A producer that declares no physical name
+    for the column is read under the one name it has."""
+
+    logical = identifier(name, product=product, occurrence=occurrence)
+    if physical is None:
+        return logical
+    return f"{quoted_physical_identifier(physical, product=product, occurrence=occurrence)} as {logical}"
+
+
+def publish_projection(
+    field: RelationField, *, product: str, occurrence: str | None = None
+) -> str:
+    """One published column as the relation stores it: the logical name the
+    composition carries, renamed to the declared physical name through the
+    running adapter's own quoting. A column with no declared physical name
+    is published under its logical name unchanged."""
+
+    logical = identifier(field.name, product=product, occurrence=occurrence)
+    if field.physical_name is None:
+        return logical
+    return (
+        f"{logical} as "
+        f"{quoted_physical_identifier(field.physical_name, product=product, occurrence=occurrence)}"
+    )
 
 
 def macro_call(name: str, *arguments: str) -> str:
@@ -141,9 +242,11 @@ def declared_type_projection(
     fields: Sequence[RelationField], *, product: str, occurrence: str
 ) -> list[str]:
     """Every field of one relation as a select-list entry: the column cast
-    to the neutral type its contract declares, under its own name. One
-    implementation, so a relation a shape renders and a relation a declared
-    select body produces carry their declared types the same way."""
+    to the neutral type its contract declares, under the name the relation
+    stores it as -- its own name, or the physical name the declaration
+    states for it, quoted by the running adapter. One implementation, so a
+    relation a shape renders and a relation a declared select body produces
+    carry their declared types and their stored names the same way."""
 
     return [
         "{expression} as {name}".format(
@@ -153,7 +256,13 @@ def declared_type_projection(
                 product=product,
                 occurrence=occurrence,
             ),
-            name=identifier(field.name, product=product, occurrence=occurrence),
+            name=(
+                identifier(field.name, product=product, occurrence=occurrence)
+                if field.physical_name is None
+                else quoted_physical_identifier(
+                    field.physical_name, product=product, occurrence=occurrence
+                )
+            ),
         )
         for field in fields
     ]

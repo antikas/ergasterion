@@ -332,6 +332,7 @@ def reconcile_tests(
     occurrence: str,
     published_model: str | None,
     published_columns: Sequence[str],
+    published_stored: Mapping[str, str],
     composition: OpeningComposition,
     source_models: Mapping[str, str],
 ) -> tuple[GeneratedTest, ...]:
@@ -420,6 +421,11 @@ def reconcile_tests(
                     ),
                 )
             brought = {column.name: column.source_name for column in source.columns}
+            stored_source = {
+                column.name: column.physical_source_name
+                for column in source.columns
+                if column.physical_source_name is not None
+            }
             for key in keys:
                 if key not in brought:
                     raise RenderingError(
@@ -451,8 +457,18 @@ def reconcile_tests(
                     column=None,
                     arguments={
                         "source": f"ref('{source_model}')",
+                        # The names each side actually carries: the stored
+                        # name where a declaration states one, the logical
+                        # name everywhere else. A generated test names a
+                        # stored column plainly, because every declared
+                        # adapter compares an identifier without regard to
+                        # case and the duplicate rule has already refused a
+                        # pair one of them would read as one name.
                         "keys": [
-                            identifier(key, product=product, occurrence=tag) for key in keys
+                            published_stored[key]
+                            if key in published_stored
+                            else identifier(key, product=product, occurrence=tag)
+                            for key in keys
                         ],
                         # The same columns as this source names them, in
                         # the same order: a union source is read under its
@@ -460,7 +476,9 @@ def reconcile_tests(
                         # proof compares the two namings, not one of them
                         # twice.
                         "source_columns": [
-                            identifier(brought[key], product=product, occurrence=tag)
+                            stored_source[key]
+                            if key in stored_source
+                            else identifier(brought[key], product=product, occurrence=tag)
                             for key in keys
                         ],
                     },
@@ -482,6 +500,7 @@ def render_segment(
     previous: str,
     published_model: str | None,
     published_columns: Sequence[str],
+    published_stored: Mapping[str, str],
     composition: OpeningComposition,
     source_models: Mapping[str, str],
 ) -> Segment:
@@ -503,6 +522,7 @@ def render_segment(
         occurrence=occurrence,
         published_model=published_model,
         published_columns=published_columns,
+        published_stored=published_stored,
         composition=composition,
         source_models=source_models,
     )

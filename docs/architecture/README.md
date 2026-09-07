@@ -157,6 +157,56 @@ that renames and casts its fields onto the shape the combination needs. A source
 producer that publishes several relations also carries `relation`, naming the one it
 reads as the producer's shape names it.
 
+### Stored names
+
+Every name in a declaration is a plain lower-case logical name, and the engine never
+folds, quotes or rewrites one. Where an interface outside the estate requires an exact
+name the estate does not own, that name is declared beside the logical one in an optional
+`physical` block:
+
+```yaml
+physical:
+  name: LEGACY_TARIFF_MASTER_T0   # the table this relation is stored as
+  schema: LEGACY_WORK             # optional: the schema it is stored in
+  fields:
+    - {name: period_record_id, physical_name: PERIOD_RECORD_ID}
+    - {name: tariff_type_no, physical_name: TARIFF_TYPE_NO}
+  relations:                      # only for a shape that publishes several
+    fact_order_line:
+      name: FACT_ORDER_LINE_T0
+      fields:
+        - {name: order_line_id, physical_name: ORDER_LINE_ID}
+```
+
+A landing product's delivered columns state the same thing where the extract arrives
+under names the estate does not own: each `fixture` field may carry `physical_name`, and
+the portable Landing IDL carries the same optional name for a delivered table and each
+delivered column.
+
+Everything else follows from that one block. A consumer references producer columns by
+logical name only and never spells a stored name it does not own; the renderer resolves
+the producer's stored name through its contract and reads `<stored> as <logical>`. The
+published relation's final projection renders `<logical> as <stored>`, and the relation
+takes the declared table name and schema. Quoting is the running adapter's own: the
+generated SQL stays one text for every platform and carries no quote character of its
+own. The declared schema is the one place the generated project defines dbt's
+`generate_schema_name` hook, and it applies to the marked relations alone; every other
+node keeps dbt's own default answer.
+
+The generated contract carries both names, the runtime manifest records the stored schema,
+table and column names beside the logical ones, and the product graph resolves each
+logical column to the name the built relation carries. A declaration that states no
+`physical` block emits exactly what it always did.
+
+Five rules hold the block honest, and each fails closed naming the product, the relation,
+the column and the adapter: `physical_name_missing` for a blank name,
+`physical_name_unportable` for one carrying an adapter's quote character, a dot, a line
+break or more characters than the estate budgets, `physical_name_duplicate` for two
+columns of one relation reaching one stored name under the adapter's own comparison rule,
+`physical_relation_conflict` for two published relations reaching one stored schema and
+table, and `physical_schema_unaddressable` for a schema override an adapter cannot
+address.
+
 ### Source declarations
 
 A product's first generation has to start somewhere. A **source declaration** at
