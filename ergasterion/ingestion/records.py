@@ -1857,6 +1857,7 @@ SCALAR_ALIAS_BY_IDL_NAME: dict[str, object] = {
     "ByteStringBase64Url": landing_contract.ByteStringBase64Url,
     "Token": landing_contract.Token,
     "Identifier": landing_contract.Identifier,
+    "PhysicalIdentifier": landing_contract.PhysicalIdentifier,
     "EstateNamespace": landing_contract.EstateNamespace,
     "SemVer": landing_contract.SemVer,
     "UtcInstant": landing_contract.UtcInstant,

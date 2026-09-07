@@ -121,6 +121,11 @@ translator, declared adapters and artefact count, then the structural-budget res
 every declared adapter. It writes nothing outside `models/`, `contracts/`, `graphs/` and
 `manifests/`.
 
+Run `emit-products` before `emit-products --check`. The check regenerates and compares
+against what is on disk, so on an estate that has never been emitted it exits non-zero
+and names every file that is missing, which is the drift gate reporting an absent tree
+rather than the estate being wrong.
+
 Then build the generated project:
 
 ```bash
@@ -264,6 +269,48 @@ Both transcribe structure only. They leave every decision their input does not s
 ownership, scheduling, what counts as a passing row, which layer label the table sits in,
 how its records resolve against other sources -- as an explicit note for a person to
 answer. [`DEMO.md`](DEMO.md) works both through end to end.
+
+### Reproduce a name the estate does not own
+
+Declarations keep plain lower-case names. Where an interface outside the estate requires
+an exact table, schema or column name, state it in the product's optional `physical`
+block:
+
+```yaml
+physical:
+  name: LEGACY_TARIFF_MASTER_T0   # the table this relation is stored as
+  schema: LEGACY_WORK             # optional: the schema it is stored in
+  fields:
+    - {name: period_record_id, physical_name: PERIOD_RECORD_ID}
+    - {name: tariff_type_no, physical_name: TARIFF_TYPE_NO}
+  relations:                      # only for a shape publishing several relations
+    fact_order_line:
+      name: FACT_ORDER_LINE_T0
+      fields:
+        - {name: order_line_id, physical_name: ORDER_LINE_ID}
+```
+
+Where the extract itself arrives under such names, each delivered field carries
+`physical_name` beside its logical `name` in the landing product's `fixture` block, and
+the portable Landing IDL carries the same optional name for a delivered table and each
+delivered column.
+
+Nothing else changes. A consumer keeps referencing columns by logical name; the engine
+resolves the producer's stored name through its contract. Quoting is the running
+adapter's own, so the same generated SQL stores the exact case on DuckDB and BigQuery
+alike. A declared `physical.schema` is the one case where the generated project defines
+dbt's `generate_schema_name` hook (`macros/identifiers.sql`), and that override is
+narrow: it applies only to a relation whose product declared a schema, which the
+renderer marks in the model's config. A seed or a model your estate gives a schema of
+its own keeps resolving `<target schema>_<your schema>`, exactly as dbt does without it. The generated contract, the runtime manifest and the product graph all carry both
+names, so a downstream check compares the estate's output against the required schema
+with no rename step.
+
+`ergasterion validate` refuses a blank name, a name carrying an adapter's quote
+character, a dot, a line break or more characters than the estate budgets, two columns of
+one relation reaching one stored name, two relations reaching one stored schema and
+table, and a schema override an adapter cannot address. Each failure names the product,
+the relation, the column and the adapter.
 
 ## 6. Operate a data_vault re-baseline
 

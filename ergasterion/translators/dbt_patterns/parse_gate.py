@@ -16,6 +16,10 @@ honestly claim to have parsed.
     removed;
   * ``ref`` and ``source`` become a relation name quoted the way the
     adapter's own ``identifier_rules`` quote one;
+  * ``dpf_quote`` becomes its declared physical name wrapped in the same
+    adapter's own quote character -- the real per-adapter text, because
+    quoting is exactly where the two platforms diverge and the generated
+    model deliberately carries none of it;
   * ``dpf_type`` and ``dpf_decimal_type`` become the concrete physical type
     the adapter's own ``type_mapping`` declares -- the real per-adapter
     text, because a cast target is exactly where two dialects diverge. A
@@ -35,13 +39,14 @@ from __future__ import annotations
 import re
 from typing import Sequence
 
-from ergasterion.framework.adapters import load_adapter_conventions
+from ergasterion.framework.adapters import IDENTIFIER_QUOTE_CHARACTER, load_adapter_conventions
 from ergasterion.framework.expressions import parse_statement
 from ergasterion.framework.models import FrameworkError
 
 CONFIG_CALL = "config"
 REF_CALLS: frozenset[str] = frozenset({"ref", "source"})
 TYPE_CALL = "dpf_type"
+QUOTE_CALL = "dpf_quote"
 DECIMAL_TYPE_CALL = "dpf_decimal_type"
 # The neutral token whose adapter mapping names the decimal type family.
 DECIMAL_TYPE_TOKEN = "numeric"
@@ -128,6 +133,24 @@ def _resolve_expression(
                 detail=f"{name}(...) takes plain string arguments, found {body.strip()!r}",
             )
         return f"{quote}{'.'.join(str(part) for part in parts)}{quote}"
+    if name == QUOTE_CALL:
+        declared = _string_argument(arguments[0]) if len(arguments) == 1 else None
+        if declared is None:
+            raise ArtefactParseError(
+                artefact=artefact,
+                adapter=adapter,
+                detail=f"{QUOTE_CALL}(...) takes one plain string argument, found {body.strip()!r}",
+            )
+        if quote in declared:
+            raise ArtefactParseError(
+                artefact=artefact,
+                adapter=adapter,
+                detail=(
+                    f"{QUOTE_CALL}({declared!r}) carries this adapter's own quote character, so "
+                    "the quoting it resolves to would not close"
+                ),
+            )
+        return f"{quote}{declared}{quote}"
     if name == TYPE_CALL:
         token = _string_argument(arguments[0]) if arguments else None
         physical = type_mapping.get(str(token))
@@ -168,14 +191,11 @@ def resolve_for_adapter(text: str, *, artefact: str, adapter: str) -> str:
     with every template construct resolved as the module docstring
     describes."""
 
+    # ``load_adapter_conventions`` owns what an adapter's identifier rules
+    # must state and fails closed on a conventions file that states no quote
+    # character, so this reads the answer rather than checking it again.
     conventions = load_adapter_conventions(adapter)
-    quote = str(conventions.identifier_rules.get("quote_character") or "")
-    if not quote:
-        raise ArtefactParseError(
-            artefact=artefact,
-            adapter=adapter,
-            detail="this adapter's identifier_rules declare no quote_character",
-        )
+    quote = str(conventions.identifier_rules[IDENTIFIER_QUOTE_CHARACTER])
     statement = _STATEMENT_TAG.search(text)
     if statement is not None:
         raise ArtefactParseError(

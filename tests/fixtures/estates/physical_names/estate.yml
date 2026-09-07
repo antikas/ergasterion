@@ -1,0 +1,52 @@
+# An estate whose interface has to reproduce names it does not own.
+#
+# The tariff master an external schema requires is stored as
+# LEGACY_WORK.LEGACY_TARIFF_MASTER_T0, with columns PERIOD_RECORD_ID,
+# TARIFF_TYPE_NO and Account_In_Scope_Flag. None of those is a plain
+# lower-case name, and none of them is inferred: the declarations keep
+# lower-case logical names and state the stored names beside them.
+#
+# Two labels, neither of which the engine has ever seen. "landed" is where
+# the extract enters: the table gives every occurrence of that label, and
+# the shape itself, to the ingestion runtime translator, so dbt renders
+# nothing for it and a seed of the same name stands in for the landed
+# relation. Its delivered columns already carry the stored names, so the
+# product that reads it reads those names and carries the logical ones.
+# "foundation" carries the product that publishes the required interface.
+estate:
+  namespace: io.antikas.fixture
+  support: fixture-support
+  team: fixture-team
+  expression_mode: sql
+  labels:
+    landed:
+      profiles: [landing]
+    foundation:
+      profiles: [serving]
+  adapters:
+    duckdb:
+      kind: reference
+    bigquery:
+      kind: deployment
+  final_target: bigquery
+  translators:
+    landed:
+      batch_ingestion: local-ingestion
+      data_validation: local-ingestion
+      data_publish: local-ingestion
+      checkpoint_retries: local-ingestion
+      declared: local-ingestion
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication
+    foundation:
+      batch_transfer: dbt
+      data_validation: dbt
+      data_publish: dbt
+      checkpoint_retries: dbt
+      declared: dbt
+      data_contracts: publication
+      schema_publish: publication
+      metadata_capture: publication
+      lineage_capture: publication

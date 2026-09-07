@@ -91,7 +91,7 @@ import csv
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Iterable, Mapping, Protocol, Sequence
 
 import yaml
 
@@ -103,6 +103,8 @@ from ergasterion.framework.contract import (
     resolve_relation_name,
 )
 from ergasterion.framework.declaration import (
+    addressable_relations,
+    physical_declaration,
     SOURCE_KIND_FIXTURE as DECLARED_FIXTURE_SOURCE_KIND,
     SOURCE_CONFORM_KEY,
     EstatePolicy,
@@ -317,6 +319,32 @@ class FieldLineageEdge:
 
 
 @dataclass(frozen=True)
+class StoredField:
+    """One published column whose declaration states the name it is stored
+    under, beside the logical name the field lineage carries it by. The
+    lineage rows name a column by its logical name everywhere, because that
+    is the name the composition and every consumer compose with; this is
+    where a reader resolves that logical name to the name the built relation
+    actually carries."""
+
+    product: str
+    relation: str
+    field: str
+    physical_name: str
+
+
+@dataclass(frozen=True)
+class StoredRelation:
+    """One published relation whose declaration states the schema and table
+    it is stored under."""
+
+    product: str
+    relation: str
+    physical_schema: str | None
+    physical_name: str | None
+
+
+@dataclass(frozen=True)
 class DeclaredField:
     """One field a composition declares as an output of one occurrence.
     Read alongside the field lineage: coverage requires every declared
@@ -366,6 +394,8 @@ class ProductGraph:
     validations: tuple[ValidationOccurrence, ...]
     declared_fields: tuple[DeclaredField, ...] = ()
     auxiliary: tuple[AuxiliaryRelation, ...] = ()
+    stored_relations: tuple[StoredRelation, ...] = ()
+    stored_fields: tuple[StoredField, ...] = ()
 
     def order(self) -> tuple[str, ...]:
         """Every product's published name in topological order."""
@@ -691,6 +721,53 @@ def _generation_of(
     return GENERATION_FIRST
 
 
+def _stored_names_for(
+    published: str, document: dict, relation_names: Sequence[str]
+) -> tuple[list[StoredRelation], list[StoredField]]:
+    """The names one product's declaration states its relations and columns
+    are stored under. A declaration that states none produces nothing, so
+    the graph of an estate that renames nothing is exactly the graph it was.
+    ``ergasterion.framework.declaration.physical_declaration`` is the one
+    reader of the block; this places each entry on the relation it
+    addresses."""
+
+    declared = physical_declaration(document, product=published)
+    if not declared:
+        return [], []
+    addressable = addressable_relations(published, relation_names)
+    relations: list[StoredRelation] = []
+    fields: list[StoredField] = []
+    for key, entry in declared.items():
+        relation = addressable.get(key)
+        if relation is None:
+            # The rules have already refused a key the shape does not
+            # publish; reaching one here would mean the graph was built from
+            # declarations nothing validated.
+            raise ProductGraphCoverageError(
+                f"product {published!r} states a stored name for relation {key!r}, which its "
+                f"shape does not publish: {sorted(addressable)!r}"
+            )
+        if entry.name is not None or entry.schema is not None:
+            relations.append(
+                StoredRelation(
+                    product=published,
+                    relation=relation,
+                    physical_schema=entry.schema,
+                    physical_name=entry.name,
+                )
+            )
+        for logical, physical in entry.fields:
+            fields.append(
+                StoredField(
+                    product=published,
+                    relation=relation,
+                    field=logical,
+                    physical_name=str(physical),
+                )
+            )
+    return relations, fields
+
+
 def _composition_fields_for(
     published: str, document: dict
 ) -> tuple[tuple[FieldLineageEdge, ...], tuple[DeclaredField, ...]]:
@@ -923,6 +1000,8 @@ def build_product_graph(
     field_lineage: list[FieldLineageEdge] = []
     declared_fields: list[DeclaredField] = []
     validations: list[ValidationOccurrence] = []
+    stored_relations: list[StoredRelation] = []
+    stored_fields: list[StoredField] = []
     for name in order:
         document, validated = entries[name]
         checkpoint = _checkpoint_declared(document)
@@ -944,6 +1023,9 @@ def build_product_graph(
         field_lineage.extend(product_lineage)
         declared_fields.extend(product_declared)
         validations.extend(_validations_for(name, document))
+        product_relations, product_fields = _stored_names_for(name, document, relations[name])
+        stored_relations.extend(product_relations)
+        stored_fields.extend(product_fields)
 
     registrations = auxiliary.relations() if auxiliary is not None else ()
     published_relations = {relation for names in relations.values() for relation in names}
@@ -986,6 +1068,8 @@ def build_product_graph(
         validations=tuple(validations),
         declared_fields=tuple(declared_fields),
         auxiliary=registrations,
+        stored_relations=tuple(stored_relations),
+        stored_fields=tuple(stored_fields),
     )
     assert_product_graph_coverage(graph)
     return graph
@@ -1223,6 +1307,42 @@ def build_graph_description(graph: ProductGraph) -> dict[str, Any]:
             }
             for entry in graph.auxiliary
         ],
+        # The stored names, and only where a declaration states one. The
+        # field-lineage rows name every column by the logical name the
+        # composition carries it under; these two lists are where a reader
+        # resolves a logical name to the schema, table and column the built
+        # relation actually carries. Both are absent from the description of
+        # an estate that states none.
+        **(
+            {
+                "stored_relations": [
+                    {
+                        "product": entry.product,
+                        "relation": entry.relation,
+                        "physical_schema": entry.physical_schema,
+                        "physical_name": entry.physical_name,
+                    }
+                    for entry in graph.stored_relations
+                ]
+            }
+            if graph.stored_relations
+            else {}
+        ),
+        **(
+            {
+                "stored_fields": [
+                    {
+                        "product": entry.product,
+                        "relation": entry.relation,
+                        "field": entry.field,
+                        "physical_name": entry.physical_name,
+                    }
+                    for entry in graph.stored_fields
+                ]
+            }
+            if graph.stored_fields
+            else {}
+        ),
         "counts": {
             "products": len(graph.nodes),
             "edges": len(graph.edges),

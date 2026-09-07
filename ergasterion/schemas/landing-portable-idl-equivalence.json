@@ -2,7 +2,7 @@
   "schema": "ergasterion.landing-portable-idl-equivalence/v1",
   "idl_schema": "ergasterion.portable-idl/v1",
   "idl_version": "1.0.0",
-  "idl_sha256": "46c1a380ccf476f50c7614b39c664149e6fef6f113d19a48854b92217db727b9",
+  "idl_sha256": "8dd2cc12ecbea479cc8b2005744b21185105b1b1b747a4106ad04e98013b95b7",
   "records": {
     "AcceptedValuesRule": {
       "status": "ok",
@@ -1026,7 +1026,7 @@
     },
     "LandingContract": {
       "status": "ok",
-      "field_count": 7,
+      "field_count": 8,
       "fields_ok": true,
       "missing_in_model": [],
       "extra_in_model": [],
@@ -2856,7 +2856,7 @@
     },
     "SourceField": {
       "status": "ok",
-      "field_count": 3,
+      "field_count": 4,
       "fields_ok": true,
       "missing_in_model": [],
       "extra_in_model": [],
@@ -4134,6 +4134,11 @@
       "base_ok": true,
       "length_ok": true
     },
+    "PhysicalIdentifier": {
+      "status": "ok",
+      "base_ok": true,
+      "pattern_ok": true
+    },
     "PositiveInteger": {
       "status": "ok",
       "base_ok": true,
@@ -4271,8 +4276,8 @@
       "ok": 9
     },
     "scalars": {
-      "total": 23,
-      "ok": 23
+      "total": 24,
+      "ok": 24
     },
     "port_operation_order": {
       "total": 9,

@@ -35,7 +35,7 @@ from ergasterion.framework.models import HandoffSchemaId, PatternId
 
 # --------------------------------------------------------------------------- IDL pin
 
-EXPECTED_IDL_SHA256 = "46c1a380ccf476f50c7614b39c664149e6fef6f113d19a48854b92217db727b9"
+EXPECTED_IDL_SHA256 = "8dd2cc12ecbea479cc8b2005744b21185105b1b1b747a4106ad04e98013b95b7"
 """Git-blob-byte SHA-256 of ``docs/specifications/landing-portable-idl-v1.json``. Every
 generator/equivalence entry point in this file family asserts the real file hashes to
 this value before trusting anything it parses from it."""
@@ -91,6 +91,11 @@ Base64Url = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]+$")]
 ByteStringBase64Url = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]*$")]
 Token = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9._:-]{0,126}$")]
 Identifier = Annotated[str, StringConstraints(pattern=r"^[a-z_][a-z0-9_]*$")]
+# A stored name: what a delivered table or column is actually called where it
+# is stored, when that is not the plain lower-case Identifier the estate
+# composes with. Anything but a dot and a line break; which quote character
+# wraps it and how long it may be are per-adapter facts, not wire shape.
+PhysicalIdentifier = Annotated[str, StringConstraints(pattern=r"^[^.\r\n]+$")]
 _ESTATE_NAMESPACE_RE = re.compile(
     r"^(?=.{3,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
 )
@@ -638,6 +643,9 @@ class SourceField(ClosedModel):
     name: Identifier
     logical_type: LogicalType
     nullable: BooleanScalar
+    physical_name: PhysicalIdentifier | None = None
+
+    _omittable_not_nullable = frozenset({"physical_name"})
 
 
 # --------------------------------------------------------------------------- identity / product facts
@@ -731,6 +739,9 @@ class LandingContract(ClosedModel):
     content_encodings: tuple[ContentEncoding, ...]
     codec: Codec
     physical_columns: tuple[SourceField, ...]
+    physical_name: PhysicalIdentifier | None = None
+
+    _omittable_not_nullable = frozenset({"physical_name"})
 
 
 # --------------------------------------------------------------------------- schedule / delivery policy
@@ -1160,6 +1171,7 @@ SCALAR_PATTERNS: dict[str, str] = {
     "ByteStringBase64Url": r"^[A-Za-z0-9_-]*$",
     "Token": r"^[a-z][a-z0-9._:-]{0,126}$",
     "Identifier": r"^[a-z_][a-z0-9_]*$",
+    "PhysicalIdentifier": r"^[^.\r\n]+$",
     "EstateNamespace": r"^(?=.{3,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
     "SemVer": r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$",
     "UtcInstant": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z$",

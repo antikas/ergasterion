@@ -962,6 +962,7 @@ def test_the_runtime_manifest_refuses_a_policy_nobody_declared() -> None:
         "materialisation": "table",
         "published_relations": ["retail.order"],
         "auxiliary_relations": [],
+        "stored": [],
     }
     for checkpointing, occurrences, token in (
         ({"granularity": "step", "max_retries": 1}, complete["occurrences"], "backoff"),
@@ -977,6 +978,7 @@ def test_the_runtime_manifest_refuses_a_policy_nobody_declared() -> None:
 
 def test_the_parse_gate_fails_closed_on_an_adapter_that_declares_no_quote_character() -> None:
     from ergasterion.framework import adapters as fw_adapters
+    from ergasterion.framework.models import FrameworkError
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -1000,8 +1002,11 @@ def test_the_parse_gate_fails_closed_on_an_adapter_that_declares_no_quote_charac
         fw_adapters.ADAPTERS_DIR = root
         try:
             parse_gate.resolve_for_adapter("select 1", artefact="probe.sql", adapter="quoteless")
-        except parse_gate.ArtefactParseError as error:
-            assert "no quote_character" in str(error), str(error)
+        except FrameworkError as error:
+            # The conventions loader owns what identifier rules must state,
+            # so an adapter that declares no quote character never reaches
+            # the gate at all.
+            assert "quote_character" in str(error), str(error)
         else:
             raise AssertionError("expected an adapter with no quote character to fail closed")
         finally:
@@ -2187,6 +2192,7 @@ def test_the_coverage_renderer_refuses_a_product_that_combines_nothing() -> None
             occurrence="steps[1]:data_validation",
             published_model="crm__lone",
             published_columns=("customer_id",),
+            published_stored={},
             composition=composition,
             source_models={"crm.customer_a": "crm__customer_a"},
         )
@@ -2325,6 +2331,7 @@ def test_the_coverage_renderer_refuses_a_contract_the_product_does_not_read() ->
             occurrence="steps[1]:data_validation",
             published_model="crm__pair",
             published_columns=("customer_id",),
+            published_stored={},
             composition=composition,
             source_models={"crm.customer_a": "crm__customer_a"},
         )

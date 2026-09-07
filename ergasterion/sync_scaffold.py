@@ -224,6 +224,8 @@ PROJECT_NAME = "ergasterion"
 #                               unstored-key macros;
 #   entity_resolution_scoring.sql  the curation pattern's match scoring;
 #   filter_log.sql              the filtering occurrence's excluded-row count;
+#   identifiers.sql             the adapter's own identifier quoting and the
+#                               schema resolution a declared physical schema needs;
 #   product_tests.sql           every generated test the route attaches;
 #   publish.sql                 the publication timestamp and the incremental strategy;
 #   quarantine.sql              the quarantine relation's generated tests;
@@ -253,6 +255,7 @@ SCAFFOLD_MACROS = (
     "entity_resolution_scoring.sql",
     "estate_evolution.sql",
     "filter_log.sql",
+    "identifiers.sql",
     "product_tests.sql",
     "publish.sql",
     "quarantine.sql",

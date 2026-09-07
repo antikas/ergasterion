@@ -1,6 +1,6 @@
 {
   "schema": "ergasterion.landing-schema-vectors/v1",
-  "idl_sha256": "46c1a380ccf476f50c7614b39c664149e6fef6f113d19a48854b92217db727b9",
+  "idl_sha256": "8dd2cc12ecbea479cc8b2005744b21185105b1b1b747a4106ad04e98013b95b7",
   "positive": [
     {
       "record": "LandingProductContract",
@@ -11217,6 +11217,65 @@
         "prior_committed_at": "2026-01-01T00:00:00.000000Z",
         "lineage_digest": "00000000000000000000000000000000000000000000000000000000000007b2"
       }
+    },
+    {
+      "record": "LandingContract",
+      "note": "A delivered table and one of its columns stored under names the estate does not own: the optional physical names, absent everywhere else.",
+      "payload": {
+        "kind": "source",
+        "source_name": "ledger",
+        "identifier": "accounts",
+        "integration": {
+          "kind": "external",
+          "delivery_id_column": "delivery_id",
+          "visibility_epoch_column": "epoch",
+          "visibility_kind_column": "visibility_kind",
+          "visibility_id_column": "visibility_id",
+          "raw_reference_field": "raw_ref",
+          "candidate_reference_field": "candidate_ref",
+          "frame_index_reference_field": "frame_index_ref",
+          "receipt_trust": {
+            "policy_ref": "trust-default",
+            "allowed_key_ids": [
+              "key-a",
+              "key-b"
+            ],
+            "future_clock_skew_seconds": 30
+          }
+        },
+        "content_encodings": [
+          "identity",
+          "gzip"
+        ],
+        "codec": {
+          "kind": "csv",
+          "version": 1,
+          "charset": "utf-8",
+          "delimiter": ",",
+          "header": true,
+          "quote": "\"",
+          "escape": "\\",
+          "newline": "lf",
+          "null_tokens": [
+            ""
+          ],
+          "trim_whitespace": false
+        },
+        "physical_columns": [
+          {
+            "name": "acct_id",
+            "logical_type": "utf8_string",
+            "nullable": false,
+            "physical_name": "ACCT_ID"
+          },
+          {
+            "name": "is_deleted",
+            "logical_type": "boolean",
+            "nullable": true
+          }
+        ],
+        "physical_name": "ACCOUNT_SNAPSHOT_T0"
+      }
     }
   ],
   "negative": [
@@ -11461,6 +11520,67 @@
           "quarantine": "q.accounts",
           "deletion_evidence": "del.accounts"
         }
+      }
+    },
+    {
+      "record": "LandingContract",
+      "model": "LandingContract",
+      "field": "physical_name",
+      "note": "A dotted stored name is not one: a dot reads as a qualification the declaration did not make.",
+      "payload": {
+        "kind": "source",
+        "source_name": "ledger",
+        "identifier": "accounts",
+        "integration": {
+          "kind": "external",
+          "delivery_id_column": "delivery_id",
+          "visibility_epoch_column": "epoch",
+          "visibility_kind_column": "visibility_kind",
+          "visibility_id_column": "visibility_id",
+          "raw_reference_field": "raw_ref",
+          "candidate_reference_field": "candidate_ref",
+          "frame_index_reference_field": "frame_index_ref",
+          "receipt_trust": {
+            "policy_ref": "trust-default",
+            "allowed_key_ids": [
+              "key-a",
+              "key-b"
+            ],
+            "future_clock_skew_seconds": 30
+          }
+        },
+        "content_encodings": [
+          "identity",
+          "gzip"
+        ],
+        "codec": {
+          "kind": "csv",
+          "version": 1,
+          "charset": "utf-8",
+          "delimiter": ",",
+          "header": true,
+          "quote": "\"",
+          "escape": "\\",
+          "newline": "lf",
+          "null_tokens": [
+            ""
+          ],
+          "trim_whitespace": false
+        },
+        "physical_columns": [
+          {
+            "name": "acct_id",
+            "logical_type": "utf8_string",
+            "nullable": false,
+            "physical_name": "ACCT_ID"
+          },
+          {
+            "name": "is_deleted",
+            "logical_type": "boolean",
+            "nullable": true
+          }
+        ],
+        "physical_name": "LEGACY_WORK.ACCOUNT_SNAPSHOT_T0"
       }
     }
   ]

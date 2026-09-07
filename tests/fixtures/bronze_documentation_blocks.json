@@ -155,36 +155,40 @@
     },
     "RUNBOOK.md#22": {
       "kind": "illustrative",
-      "note": "placeholder product and satellite tokens"
+      "note": "the optional physical block a declaration states an externally required stored name in"
     },
     "RUNBOOK.md#23": {
       "kind": "illustrative",
       "note": "placeholder product and satellite tokens"
     },
     "RUNBOOK.md#24": {
+      "kind": "illustrative",
+      "note": "placeholder product and satellite tokens"
+    },
+    "RUNBOOK.md#25": {
       "kind": "manual",
       "prerequisites": "a configured estate, the pinned dbt stack, and the dbt packages already materialised or a network for dbt deps",
       "side_effects": "regenerates the project and builds it into a local database"
     },
-    "RUNBOOK.md#25": {
+    "RUNBOOK.md#26": {
       "kind": "illustrative",
       "note": "placeholder product and satellite tokens"
     },
-    "RUNBOOK.md#26": {
+    "RUNBOOK.md#27": {
       "kind": "manual",
       "prerequisites": "network access, pip",
       "side_effects": "installs packages from the package index into the active environment"
     },
-    "RUNBOOK.md#27": {
+    "RUNBOOK.md#28": {
       "kind": "offline_documented",
       "note": "reads back an activated environment this test does not construct"
     },
-    "RUNBOOK.md#28": {
+    "RUNBOOK.md#29": {
       "kind": "manual",
       "prerequisites": "a configured estate, the pinned dbt stack, and the dbt packages already materialised or a network for dbt deps",
       "side_effects": "regenerates the project and builds it into a local database"
     },
-    "RUNBOOK.md#29": {
+    "RUNBOOK.md#30": {
       "kind": "offline_documented",
       "note": "regenerates the estate tree; owned by tests/python/test_crm_estate.py"
     },
@@ -230,9 +234,13 @@
     },
     "docs/architecture/README.md#2": {
       "kind": "illustrative",
-      "note": "the resolution pipeline, as text"
+      "note": "the optional physical block a declaration states an externally required stored name in"
     },
     "docs/architecture/README.md#3": {
+      "kind": "illustrative",
+      "note": "the resolution pipeline, as text"
+    },
+    "docs/architecture/README.md#4": {
       "kind": "illustrative",
       "note": "one line of emission output"
     },

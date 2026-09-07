@@ -28,6 +28,8 @@
         "additionalProperties": false,
         "properties": {
           "name": { "type": "string", "minLength": 1 },
+          "physicalName": { "type": "string", "minLength": 1 },
+          "physicalSchema": { "type": "string", "minLength": 1 },
           "fields": {
             "type": "array",
             "items": {
@@ -37,7 +39,8 @@
               "properties": {
                 "name": { "type": "string", "minLength": 1 },
                 "type": { "type": ["string", "object"] },
-                "required": { "type": "boolean" }
+                "required": { "type": "boolean" },
+                "physicalName": { "type": "string", "minLength": 1 }
               }
             }
           }

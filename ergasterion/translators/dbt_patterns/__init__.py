@@ -103,8 +103,11 @@ from ergasterion.translators.dbt_patterns.sql import (
     jinja_literal,
     model_name,
     normalise_generated_text,
+    publish_projection,
     ref,
     select_projection,
+    stored_name,
+    stored_names,
     suffixed_model_name,
     suffixed_relation_name,
 )
@@ -412,6 +415,15 @@ def _render_segment(plan: ProductPlan, index: int, previous: str) -> Segment:
             if composition_relation is not None
             else ()
         )
+        keywords["published_stored"] = (
+            {
+                entry.name: entry.physical_name
+                for entry in composition_relation.fields
+                if entry.physical_name is not None
+            }
+            if composition_relation is not None
+            else {}
+        )
         keywords["composition"] = plan.composition
         keywords["source_models"] = plan.source_models
     return SEGMENT_RENDERERS[pattern](**keywords)
@@ -455,9 +467,12 @@ def _check_produced_columns(
 
 
 def _column_metadata(plan: ProductPlan, fields: Sequence[RelationField]) -> list[dict[str, Any]]:
-    """One entry per published column, carrying the named rule and the
-    declared rule version wherever a calculated field is computed by one
-    (architecture section 4, Calculated Fields: "version captured").
+    """One entry per published column, named as the built relation stores
+    it, and carrying the named rule and the declared rule version wherever a
+    calculated field is computed by one (architecture section 4, Calculated
+    Fields: "version captured"). The entry names the stored column because
+    the schema document describes the relation dbt built, not the
+    composition that produced it.
 
     Only a composition-rendered product reaches this with a rule: a
     declared select body cannot call a dispatch macro, so
@@ -475,7 +490,7 @@ def _column_metadata(plan: ProductPlan, fields: Sequence[RelationField]) -> list
                 "rule": rule_name,
                 "rule_version": entry.get("rule_version", signature.version),
             }
-    return [{"name": entry.name, "rule": rules.get(entry.name)} for entry in fields]
+    return [{"name": stored_name(entry), "rule": rules.get(entry.name)} for entry in fields]
 
 
 def _check_body_can_carry_the_composition(plan: ProductPlan) -> None:
@@ -600,8 +615,12 @@ def _compliance_test(model: str, relation: RelationSchema) -> GeneratedTest:
         name=f"dpf_contract_compliance_{model}",
         column=None,
         arguments={
-            "columns": [entry.name for entry in relation.fields],
-            "required": [entry.name for entry in relation.fields if entry.required],
+            # The names the built relation actually carries: the stored
+            # name where the declaration states one, the logical name
+            # everywhere else. The check reads the relation's own columns,
+            # so it compares what was created against what is stored.
+            "columns": [stored_name(entry) for entry in relation.fields],
+            "required": [stored_name(entry) for entry in relation.fields if entry.required],
         },
         severity=SEVERITY_ERROR,
         store_failures=True,
@@ -629,6 +648,38 @@ def _model_artefact(
 
 
 BASE_SUFFIX = "base"
+
+# The common table expression a relation's own projection moves into when
+# its declaration renames columns. The rename is then one projection over
+# it, so every derivation a shape has an arm for is renamed the same way and
+# no arm carries a stored name of its own.
+STORED_NAMES_CTE = "stored_names_input"
+
+
+def _stored_projection(
+    relation: ShapeRelation,
+    *,
+    ctes: Sequence[Cte],
+    columns: Sequence[str],
+    final_cte: str,
+    product: str,
+) -> tuple[list[Cte], list[str], str]:
+    """One shape relation's rendering, with its columns stored under the
+    names its declaration states. A relation whose declaration states none
+    is returned exactly as its arm rendered it, so nothing changes for a
+    product that renames nothing."""
+
+    if all(field.physical_name is None for field in relation.schema.fields):
+        return list(ctes), list(columns), final_cte
+    moved = [*ctes, Cte(name=STORED_NAMES_CTE, body=select_projection(list(columns), final_cte))]
+    return (
+        moved,
+        [
+            publish_projection(field, product=product, occurrence="target")
+            for field in relation.schema.fields
+        ],
+        STORED_NAMES_CTE,
+    )
 
 
 def _render_chain(
@@ -784,16 +835,18 @@ def _relation_config(plan: ProductPlan, relation: ShapeRelation) -> str:
     (``publish.incremental_config``). A shape declaring no materialisation
     for a relation it renders over the composition takes the table."""
 
+    coordinate = publish_mod.stored_coordinate(relation.schema, product=plan.published_name)
     if relation.materialisation == MATERIALISATION_VIEW:
-        return VIEW_CONFIG
+        return VIEW_CONFIG.replace(") }}", coordinate + ") }}") if coordinate else VIEW_CONFIG
     if relation.materialisation == MATERIALISATION_INCREMENTAL:
         return publish_mod.incremental_config(
             relation.key,
             product=plan.published_name,
             strategies=plan.incremental_strategies,
             occurrence=f"target.shape_config:{relation.suffix}",
+            relation=relation.schema,
         )
-    return TABLE_CONFIG
+    return TABLE_CONFIG.replace(") }}", coordinate + ") }}") if coordinate else TABLE_CONFIG
 
 
 def _renders_composition(plan: ProductPlan) -> bool:
@@ -825,15 +878,16 @@ def _contiguity_test(model: str, relation: ShapeRelation) -> GeneratedTest:
     before it starts."""
 
     effective_from, effective_to = relation.range_columns or ("", "")
+    stored = stored_names(relation.schema.fields)
     return GeneratedTest(
         model=model,
         test=TEST_RANGE_CONTIGUITY,
         name=f"dpf_effective_range_contiguity_{model}",
         column=None,
         arguments={
-            "key": list(relation.key),
-            "effective_from": effective_from,
-            "effective_to": effective_to,
+            "key": [stored.get(name, name) for name in relation.key],
+            "effective_from": stored.get(effective_from, effective_from),
+            "effective_to": stored.get(effective_to, effective_to),
         },
         severity=SEVERITY_ERROR,
         store_failures=True,
@@ -867,8 +921,15 @@ def render_product(
         if interface
         else f"{MODELS_ROOT}/{plan.domain}"
     )
+    # The relation the product's own model publishes, where its shape
+    # publishes the composition's relation at all: the model is stored under
+    # whatever coordinate that relation declares.
+    composition_relation = plan.relations[0].schema if _renders_composition(plan) else None
     model_config = publish_mod.model_config(
-        publish_step, product=plan.published_name, strategies=plan.incremental_strategies
+        publish_step,
+        product=plan.published_name,
+        strategies=plan.incremental_strategies,
+        relation=composition_relation,
     )
     aggregation_facts = _aggregation_facts(plan, publish_step)
 
@@ -967,14 +1028,17 @@ def render_product(
                 model_config=model_config,
                 ctes=ctes,
                 columns=[
-                    identifier(entry.name, product=plan.published_name, occurrence="target")
+                    publish_projection(entry, product=plan.published_name, occurrence="target")
                     for entry in relation.fields
                 ],
                 final_cte=previous,
             )
 
+        stored = stored_names(relation.fields)
         for fact in aggregation_facts:
-            tests.append(_unique_key_test(product_model, fact["grain"]))
+            tests.append(
+                _unique_key_test(product_model, [stored.get(name, name) for name in fact["grain"]])
+            )
         tests.append(_compliance_test(product_model, relation))
         _publication_relations(
             plan,
@@ -1064,6 +1128,9 @@ def render_product(
             suffix = str(entry.suffix)
             model = models_by_suffix[suffix]
             relation_ctes, columns, final_cte = shape_relations_mod.render_relation(entry, context)
+            relation_ctes, columns, final_cte = _stored_projection(
+                entry, ctes=relation_ctes, columns=columns, final_cte=final_cte, product=plan.published_name
+            )
             artefacts[f"{directory}/{model}.sql"] = _model_artefact(
                 templates,
                 sql_header=sql_header,
@@ -1072,8 +1139,11 @@ def render_product(
                 columns=columns,
                 final_cte=final_cte,
             )
-            key_columns = list(entry.key) + (
-                [entry.range_columns[0]] if entry.range_columns else []
+            entry_stored = stored_names(entry.schema.fields)
+            key_columns = [entry_stored.get(name, name) for name in entry.key] + (
+                [entry_stored.get(entry.range_columns[0], entry.range_columns[0])]
+                if entry.range_columns
+                else []
             )
             tests.append(_unique_key_test(model, key_columns))
             if entry.range_columns:
@@ -1147,10 +1217,39 @@ def render_product(
         materialisation=plan.materialisation,
         published_relations=[entry.schema.name for entry in plan.relations],
         auxiliary_relations=sorted(entry.relation for entry in auxiliary),
+        stored=_stored_facts(plan),
         aggregation=aggregation_facts,
     )
     artefacts[f"{MANIFESTS_ROOT}/{plan.domain}/{plan.name}.json"] = dump_json(manifest)
     return ProductArtefacts(artefacts=artefacts, auxiliary=tuple(auxiliary))
+
+
+def _stored_facts(plan: ProductPlan) -> list[dict[str, Any]]:
+    """What the runtime manifest records about the names this product's
+    relations are stored under: one entry per relation whose declaration
+    states a stored name for the relation or for any of its columns. A
+    product that renames nothing produces none."""
+
+    facts: list[dict[str, Any]] = []
+    for entry in plan.relations:
+        schema = entry.schema
+        columns = [
+            {"name": field.name, "physical_name": field.physical_name}
+            for field in schema.fields
+            if field.physical_name is not None
+        ]
+        if schema.physical_name is None and schema.physical_schema is None and not columns:
+            continue
+        fact: dict[str, Any] = {"relation": schema.name}
+        if schema.physical_name is not None or schema.physical_schema is not None:
+            fact["physical_relation"] = {
+                "schema": schema.physical_schema,
+                "name": schema.physical_name,
+            }
+        if columns:
+            fact["columns"] = columns
+        facts.append(fact)
+    return facts
 
 
 def render_time_spine(

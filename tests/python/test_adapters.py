@@ -55,6 +55,7 @@ _GOOD_TEMPLATE = (
     "{type_mapping}\n"
     "identifier_rules:\n"
     "  quote_character: '\"'\n"
+    "  case_comparison: insensitive\n"
 )
 
 
@@ -169,9 +170,36 @@ def test_type_mapping_missing_neutral_token_fails_closed() -> None:
 
 def test_identifier_rules_must_be_a_mapping_fails_closed() -> None:
     body = _good_yaml("fixture").replace(
-        "identifier_rules:\n  quote_character: '\"'\n", "identifier_rules: not-a-mapping\n"
+        "identifier_rules:\n  quote_character: '\"'\n  case_comparison: insensitive\n",
+        "identifier_rules: not-a-mapping\n",
     )
     _assert_red(body, ("identifier_rules", "mapping"))
+
+
+def test_missing_quote_character_fails_closed() -> None:
+    # P7: a stored name is written through the adapter's own quoting, so an
+    # adapter that declares no quote character has nothing to quote with.
+    body = _good_yaml("fixture").replace("  quote_character: '\"'\n", "")
+    _assert_red(body, ("identifier_rules.quote_character",))
+
+
+def test_a_multi_character_quote_character_fails_closed() -> None:
+    body = _good_yaml("fixture").replace("  quote_character: '\"'\n", "  quote_character: '[]'\n")
+    _assert_red(body, ("identifier_rules.quote_character", "single"))
+
+
+def test_missing_case_comparison_fails_closed() -> None:
+    # The duplicate rules judge two declared stored names under this answer,
+    # so an adapter that declares none leaves them with nothing to judge by.
+    body = _good_yaml("fixture").replace("  case_comparison: insensitive\n", "")
+    _assert_red(body, ("identifier_rules.case_comparison",))
+
+
+def test_an_unknown_case_comparison_fails_closed() -> None:
+    body = _good_yaml("fixture").replace(
+        "  case_comparison: insensitive\n", "  case_comparison: whichever\n"
+    )
+    _assert_red(body, ("identifier_rules.case_comparison", "whichever"))
 
 
 def test_discover_adapters_finds_the_two_shipped_packages() -> None:
@@ -210,6 +238,10 @@ TESTS: list[Callable[[], None]] = [
     test_type_mapping_must_be_a_mapping_fails_closed,
     test_type_mapping_missing_neutral_token_fails_closed,
     test_identifier_rules_must_be_a_mapping_fails_closed,
+    test_missing_quote_character_fails_closed,
+    test_a_multi_character_quote_character_fails_closed,
+    test_missing_case_comparison_fails_closed,
+    test_an_unknown_case_comparison_fails_closed,
     test_discover_adapters_finds_the_two_shipped_packages,
     test_shipped_duckdb_and_bigquery_conventions_load_clean,
 ]

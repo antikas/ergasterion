@@ -64,6 +64,27 @@ NEUTRAL_TYPE_TOKENS: frozenset[str] = frozenset(
 )
 
 
+# ``identifier_rules`` keys every adapter declares, and the comparison
+# vocabulary the duplicate rules judge two declared physical names under
+# (architecture section 15, P7). ``quote_character`` is the character the
+# platform wraps an identifier in so its exact spelling is stored;
+# ``case_comparison`` says whether the platform treats two spellings that
+# differ only in case as one name, which is what makes two declared
+# physical names a collision rather than two names.
+IDENTIFIER_QUOTE_CHARACTER = "quote_character"
+IDENTIFIER_CASE_COMPARISON = "case_comparison"
+CASE_SENSITIVE = "sensitive"
+CASE_INSENSITIVE = "insensitive"
+CASE_COMPARISONS: tuple[str, ...] = (CASE_SENSITIVE, CASE_INSENSITIVE)
+
+# What no stored name may carry, whichever platform addresses it: a dot would
+# read as a qualification the declaration did not make, and a line break would
+# end the statement mid-identifier. Declared here, once, beside the quote
+# characters: the declaration rules judge a stated name against it per adapter,
+# and the renderer refuses to write one carrying it at all.
+PHYSICAL_NAME_FORBIDDEN_TEXT: tuple[str, ...] = (".", chr(10), chr(13))
+
+
 class UnknownAdapterError(FrameworkError):
     """Raised when a name is not a registered adapter: no
     ``ergasterion/adapters/<name>/conventions.yml`` ships for it."""
@@ -211,6 +232,19 @@ def load_adapter_conventions(adapter_name: str) -> AdapterConventions:
     if not isinstance(identifier_rules, dict):
         raise FrameworkError(f"{path}: 'identifier_rules' must be a mapping")
 
+    quote = identifier_rules.get(IDENTIFIER_QUOTE_CHARACTER)
+    if not isinstance(quote, str) or len(quote) != 1:
+        raise FrameworkError(
+            f"{path}: identifier_rules.{IDENTIFIER_QUOTE_CHARACTER} must be the single "
+            f"character this platform wraps an identifier in, got {quote!r}"
+        )
+    comparison = identifier_rules.get(IDENTIFIER_CASE_COMPARISON)
+    if comparison not in CASE_COMPARISONS:
+        raise FrameworkError(
+            f"{path}: identifier_rules.{IDENTIFIER_CASE_COMPARISON} must be one of "
+            f"{CASE_COMPARISONS}, got {comparison!r}"
+        )
+
     conventions = AdapterConventions(
         adapter=adapter_name,
         kind=kind,
@@ -222,3 +256,44 @@ def load_adapter_conventions(adapter_name: str) -> AdapterConventions:
     )
     _CONVENTIONS_CACHE[adapter_name] = conventions
     return conventions
+
+
+def quote_character(adapter_name: str) -> str:
+    """The character ``adapter_name`` wraps an identifier in so its exact
+    spelling is stored and addressed. Read from the adapter's own
+    ``identifier_rules``; the loader has already refused a conventions file
+    that declares none."""
+
+    return str(load_adapter_conventions(adapter_name).identifier_rules[IDENTIFIER_QUOTE_CHARACTER])
+
+
+def case_comparison(adapter_name: str) -> str:
+    """Whether ``adapter_name`` treats two identifier spellings that differ
+    only in case as one name (``insensitive``) or as two (``sensitive``)."""
+
+    return str(load_adapter_conventions(adapter_name).identifier_rules[IDENTIFIER_CASE_COMPARISON])
+
+
+def comparison_key(value: str, *, comparison: str) -> str:
+    """``value`` reduced to the form two declared names are judged equal
+    under on an adapter whose comparison rule is ``comparison``. One
+    implementation, so the duplicate-column rule and the relation-conflict
+    rule can never judge a pair differently."""
+
+    if comparison == CASE_INSENSITIVE:
+        return value.casefold()
+    if comparison == CASE_SENSITIVE:
+        return value
+    raise FrameworkError(
+        f"unknown identifier case comparison {comparison!r}; expected one of {CASE_COMPARISONS}"
+    )
+
+
+def shipped_quote_characters() -> frozenset[str]:
+    """Every quote character any adapter this build ships declares. A
+    declared physical name carrying one of them cannot be written into a
+    single generated text that every platform reads the same way, so the
+    renderer and the validation rule both refuse it, and neither carries a
+    literal quote character of its own to compare against."""
+
+    return frozenset(quote_character(name) for name in ADAPTER_NAMES)

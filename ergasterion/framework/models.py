@@ -162,12 +162,20 @@ class RelationField:
     ``description`` is what a consumer has to know about the column beyond
     its name and type, and only a shape that generates the column sets it:
     a column the composition carries is described by the declaration that
-    produced it. The published contract carries it through."""
+    produced it. The published contract carries it through.
+
+    ``physical_name`` is the exact stored name of the column, declared and
+    never inferred. ``name`` stays the plain lower-case logical name every
+    declaration composes with; ``physical_name`` is what the relation is
+    stored and addressed under when the estate has to reproduce a name it
+    does not own. ``None`` means the two are the same name, which is the
+    ordinary case."""
 
     name: str
     type: Any
     required: bool = False
     description: str | None = None
+    physical_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,10 +188,18 @@ class RelationSchema:
     relations a product publishes and with which fields
     (``ergasterion.framework.shapes``), and the contract propagates the
     field set through the composition. One vocabulary, read by both, so
-    neither carries a private copy of the other's."""
+    neither carries a private copy of the other's.
+
+    ``physical_name`` and ``physical_schema`` are the exact stored name of
+    the relation and the schema it is stored in, declared and never
+    inferred. ``None`` on either means the relation is stored under the
+    name ``name`` carries and in whichever schema the running profile
+    resolves, which is the ordinary case."""
 
     name: str
     fields: tuple[RelationField, ...] = ()
+    physical_name: str | None = None
+    physical_schema: str | None = None
 
 
 # --------------------------------------------------------------------------- graph IR

@@ -29,9 +29,12 @@
 # same mapping expressed as adapter package data (architecture section
 # 3.3, P6).
 #
-# identifier_rules is P7's parked per-adapter case/quoting policy: no engine
-# code normalises identifiers yet, so this is the adapter's own declared
-# policy, structurally validated and ready for the item that consumes it.
+# identifier_rules is the adapter's own case and quoting policy (P7,
+# ruled 2026-09-06). Two readers consume it: the dbt translator writes every
+# declared physical name through the dispatch macro that calls this
+# platform's own quoting, and the per-adapter parse gate resolves that call
+# to the quote_character below. case_comparison is what the duplicate and
+# relation-conflict rules judge two declared names under.
 # Relation/column length budgets stay declarations/targets/bigquery.yml's
 # job (structural budgets), never duplicated here.
 adapter: bigquery
@@ -59,3 +62,11 @@ type_mapping:
 identifier_rules:
   quote_character: '`'
   unquoted_case_folding: none
+  # BigQuery resolves a column reference without regard to case, so two
+  # declared physical column names that differ only in case are one name
+  # here. A dataset or table name is case-sensitive on this platform, so
+  # judging a relation pair under the same rule refuses a pair BigQuery
+  # would in fact keep apart. That is deliberate: a declared pair that
+  # differs only in case is a collision on the reference adapter, and one
+  # declaration renders on both.
+  case_comparison: insensitive

@@ -1,0 +1,59 @@
+# The product that publishes the required interface.
+#
+# It reads the extract by logical name only: nothing in this declaration
+# spells a stored name it does not own. The renderer resolves each read
+# through the producer's contract, which is where the stored names of the
+# delivered columns are recorded.
+#
+# What this product itself publishes is stored under names the estate does
+# not own either, and those it does state: the table
+# LEGACY_TARIFF_MASTER_T0 in the schema LEGACY_WORK, with three columns
+# whose case and spelling are the ones the external schema requires.
+product:
+  name: tariff_master
+  domain: energy
+  version: "1.0"
+  layer: foundation
+  owner: fixture-team
+
+sources:
+  - contract: energy.tariff_extract@1
+    expect:
+      fields: [period_record_id, tariff_type_no, account_in_scope_flag]
+
+steps:
+  - pattern: batch_transfer
+  - pattern: data_validation
+    on_failure: abort
+    rules:
+      - field: period_record_id
+        not_null: true
+      - field: period_record_id
+        unique: true
+  - pattern: data_contracts
+  - pattern: lineage_capture
+  - pattern: metadata_capture
+    description: "One row per tariff master record, under the names the interface requires."
+    ownership: fixture-team
+  - pattern: data_publish
+    publication_mode: atomic
+
+physical:
+  name: LEGACY_TARIFF_MASTER_T0
+  schema: LEGACY_WORK
+  fields:
+    - {name: period_record_id, physical_name: PERIOD_RECORD_ID}
+    - {name: tariff_type_no, physical_name: TARIFF_TYPE_NO}
+    - {name: account_in_scope_flag, physical_name: Account_In_Scope_Flag}
+
+target:
+  shape: declared
+  contract:
+    freshness: "daily by 06:00 UTC"
+    access:
+      classification: internal
+
+checkpointing:
+  granularity: step
+  max_retries: 2
+  backoff: fixed

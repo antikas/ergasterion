@@ -63,6 +63,7 @@ BUILD_MACROS = (
     "data_vault.sql",
     "entity_resolution_scoring.sql",
     "filter_log.sql",
+    "identifiers.sql",
     "product_tests.sql",
     "publish.sql",
     "quarantine.sql",

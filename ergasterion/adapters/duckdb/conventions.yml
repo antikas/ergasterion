@@ -28,9 +28,12 @@
 # dispatch. The macro remains the executed implementation; this is the same
 # mapping expressed as adapter package data (architecture section 3.3, P6).
 #
-# identifier_rules is P7's parked per-adapter case/quoting policy: no engine
-# code normalises identifiers yet, so this is the adapter's own declared
-# policy, structurally validated and ready for the item that consumes it.
+# identifier_rules is the adapter's own case and quoting policy (P7,
+# ruled 2026-09-06). Two readers consume it: the dbt translator writes every
+# declared physical name through the dispatch macro that calls this
+# platform's own quoting, and the per-adapter parse gate resolves that call
+# to the quote_character below. case_comparison is what the duplicate and
+# relation-conflict rules judge two declared names under.
 # DuckDB preserves the case an unquoted identifier is written in (confirmed
 # against the installed package: information_schema reports a mixed-case
 # name unchanged) and resolves references to it case-insensitively; it
